@@ -1,6 +1,7 @@
 // Help → "Behind the scenes": why the game exists and how each model works.
 // Numbers quoted here are the ones the code uses; live figures come from the running city.
 import { el, fmtInt } from './util.js';
+import { NOTICE, FICTION } from './credits.js';
 import { WALK_WEIGHTS } from './walkscore.js';
 import { CAT_WEIGHT } from './vibrancy.js';
 import { CFG } from './config.js';
@@ -275,11 +276,13 @@ export const CHAPTERS = [
         [A('https://www.mass.gov/info-details/massgis-data-property-tax-parcels', 'MassGIS property tax parcels'), ' and ', A('https://www.mass.gov/info-details/massgis-data-building-structures-2-d', 'building structures'), ', Commonwealth of Massachusetts'],
         [A('https://docs.overturemaps.org/guides/places/', 'Overture Maps places'), ' (CDLA-Permissive-2.0)'],
         [A('https://geo-massdot.opendata.arcgis.com/', 'MassDOT Road Inventory'), ' (traffic counts, lanes); ', A('https://highways.dot.gov/safety/proven-safety-countermeasures/roundabouts', 'FHWA on roundabouts'), ' (crash effects); Highway Capacity Manual, 6th ed. (signal and roundabout capacity and delay)'],
+        [A('https://lehd.ces.census.gov/data/', 'US Census Bureau LEHD LODES'), ' (commute flows; public domain)'],
         [A('https://www.walkscore.com/methodology.shtml', 'Walk Score methodology'), ', the structure of the walkability index (no Walk Score data is used)'],
         [A('https://www.mass.gov/info-details/levy-limits-a-primer-on-proposition-2-12', 'Levy Limits: A Primer on Proposition 2½'), ', MA Division of Local Services'],
         [A('https://www.watertownmanews.com', 'Watertown News'), ', inspiration for the agenda']
       ),
-      P('Inspired by SimCity 2000. Not affiliated with Maxis or Electronic Arts. Source code: ', A('https://github.com/samuelling/Townies', 'github.com/samuelling/Townies'), '.'),
+      P(FICTION),
+      P(NOTICE, ' Source code: ', A('https://github.com/samuelling/Townies', 'github.com/samuelling/Townies'), '.'),
     ],
   },
 ];

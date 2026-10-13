@@ -13,6 +13,7 @@ import { behindScenes } from './bts.js';
 import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
+import { NOTICE, DATA_CREDITS, FICTION } from './credits.js';
 import { meloraStatus } from './melora.js';
 import { ASSUMPTIONS, EVIDENCE, presetOf } from './assumptions.js';
 import { resetGreed } from './storefronts.js';
@@ -1082,9 +1083,10 @@ export class UI {
     this.win('about', 'About Townies', (body) => {
       const w = this.w;
       body.append(
-        el('p', {}, 'A city-building game set in the real Watertown, Massachusetts, inspired by SimCity 2000. Not affiliated with Maxis or EA.'),
-        el('p', {}, `Every tile is ${CFG.TILE_M} m across, true to scale. Streets, buildings, rivers, parks and businesses come from OpenStreetMap; parcels, assessed values, year built and use come from the MassGIS statewide property tax parcels. Council agenda items are fictionalised riffs on recurring local storylines.`),
-        el('p', { class: 'fine' }, `Map data © OpenStreetMap contributors (ODbL), via Geofabrik. Parcels and building footprints: MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts. Business listings: Overture Maps Foundation (CDLA-Permissive-2.0). ${w.sources && w.sources.footprintsAdded ? `${fmtInt(w.sources.footprintsAdded)} buildings filled in from MassGIS; ` : ''}${w.sources && w.sources.places ? `${fmtInt(w.sources.places)} businesses from Overture. ` : ''}${w.stats ? `${fmtInt(w.stats.buildings)} buildings, ${fmtInt(w.stats.lots)} lots.` : ''} ${w.hasParcels ? '' : 'Parcel data was unavailable; values are estimated.'} Data downloaded ${w.fetched ? new Date(w.fetched).toLocaleDateString() : ''}.`),
+        el('p', {}, 'A city-building game set in the real Watertown, Massachusetts.'),
+        el('p', {}, NOTICE),
+        el('p', {}, `Every tile is ${CFG.TILE_M} m across, true to scale. Streets, buildings, rivers, parks and businesses come from OpenStreetMap; parcels, assessed values, year built and use come from the MassGIS statewide property tax parcels. ${FICTION}`),
+        el('p', { class: 'fine' }, `${DATA_CREDITS} ${w.sources && w.sources.footprintsAdded ? `${fmtInt(w.sources.footprintsAdded)} buildings filled in from MassGIS; ` : ''}${w.sources && w.sources.places ? `${fmtInt(w.sources.places)} businesses from Overture. ` : ''}${w.stats ? `${fmtInt(w.stats.buildings)} buildings, ${fmtInt(w.stats.lots)} lots.` : ''} ${w.hasParcels ? '' : 'Parcel data was unavailable; values are estimated.'} Data downloaded ${w.fetched ? new Date(w.fetched).toLocaleDateString() : ''}.`),
         el('p', { class: 'fine' }, 'Keys: Q query · H pan · B bulldoze · D road · 1/2/3 zone R/C/I · P park · , . rotate · + − zoom · space pause · arrows pan.')
       );
     });

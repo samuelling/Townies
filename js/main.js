@@ -1,5 +1,6 @@
 import { CFG } from './config.js';
 import { loadRawData, kvGet, kvSet, kvDel } from './data.js';
+import { SHORT_CREDITS } from './credits.js';
 import { buildWorld } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
@@ -43,7 +44,7 @@ function titleScreen() {
     el('p', { class: 'tblurb' }, 'Four square miles, true to scale: every street, building and parcel, with real assessed values. You’re the new City Manager. The Council is watching. So is the comment section.'),
     btns,
     status,
-    el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels & footprints: MassGIS · Places: Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
+    el('p', { class: 'tcred' }, SHORT_CREDITS)
   );
   t.append(card);
   let preset = 'thesis';

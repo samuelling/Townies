@@ -19,7 +19,21 @@ On phones: one finger uses the tool, two fingers pan and pinch.
 
 Music is generated live in the browser.
 
-## Credits
-Map data © OpenStreetMap contributors (ODbL), via Geofabrik. Parcels and building footprints: MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts. Business listings: Overture Maps Foundation (CDLA-Permissive-2.0). Inspired by SimCity 2000; not affiliated with Maxis or EA.
+## License & credits
+Townies is an original, non-commercial fan and art project inspired by SimCity 2000. It is not affiliated with or endorsed by Maxis or Electronic Arts. "SimCity" and "Sim" are trademarks of Electronic Arts.
+
+The code, the pixel-art rendering and the generated music are original to this project. The commenters (Melora included) are invented archetypes, and the Council agenda items are fictionalised paraphrases of recurring local storylines; none of them depicts a real person.
+
+Real data, with thanks:
+
+| Source | Used for | License / attribution |
+|---|---|---|
+| [OpenStreetMap](https://www.openstreetmap.org/copyright), via [Geofabrik](https://download.geofabrik.de/) | Streets, buildings, water, parks, businesses | © OpenStreetMap contributors, [ODbL](https://opendatacommons.org/licenses/odbl/) |
+| [MassGIS](https://www.mass.gov/orgs/massgis-bureau-of-geographic-information) property tax parcels and building structures | Parcels, assessed values, year built, missing footprints | Commonwealth of Massachusetts, MassGIS |
+| [MassDOT Road Inventory](https://geo-massdot.opendata.arcgis.com/) | Traffic counts (AADT), lanes | Massachusetts Department of Transportation |
+| [US Census Bureau LEHD LODES](https://lehd.ces.census.gov/data/) | Commute flows in and out of town | Public domain |
+| [Overture Maps](https://docs.overturemaps.org/attribution/) places | Business names and categories | © Overture Maps Foundation, [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/) |
+
+Walkability is a Walk Score–style index rebuilt from the open data above using Walk Score's published method. It is not Walk Score's own data.
 
 No build step: plain ES modules served by GitHub Pages.
