@@ -635,7 +635,7 @@ export function buildWorld(raw, progress = () => {}) {
     W, H, bbox, terrain, road, path, cover, osmRoad, roadCut, roadLines, zoneHint, inTown, lotOf, bAt, svcAt, tree, roadName, names,
     lots, bldgs, services, lvBase: new Float32Array(N),
     townFound: !!townRel, hasParcels: parcels.length > 0, parcelError: raw.parcelError || null,
-    fetched: raw.fetched, source: raw.source || 'live', demo: !!raw.demo, sources: raw.sources || null,
+    fetched: raw.fetched, source: raw.source || 'live', sources: raw.sources || null,
   };
 
   // ---- lot metrics, road access, land value field ----

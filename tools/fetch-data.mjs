@@ -5,7 +5,7 @@
 //   Parcels:    MassGIS statewide property tax parcels (assessed values, use, year, style...).
 //   Footprints: MassGIS Building Structures, used to fill in buildings missing from OSM.
 //   Businesses: Overture Maps places (pre-downloaded GeoJSON), merged with OSM points of interest.
-// Flags: --opl <file>  --places <file>  --demo  --out <path>  --no-massgis
+// Flags: --opl <file>  --places <file>  --out <path>  --no-massgis
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname } from 'node:path';
@@ -18,7 +18,6 @@ import { PEER_CENTERS, MIX_RADIUS_M } from '../js/peers.js';
 
 const args = process.argv.slice(2);
 const arg = (k) => (args.includes(k) ? args[args.indexOf(k) + 1] : null);
-const DEMO = args.includes('--demo');
 const OUT = arg('--out') || SNAPSHOT_PATH;
 const OPL = arg('--opl');
 const PLACES = arg('--places');
@@ -484,12 +483,7 @@ function benchmarks(osm, junctions, placesFile) {
 async function main() {
   let raw;
   const sources = { osm: null, parcels: 0, footprintsAdded: 0, places: 0 };
-  if (DEMO) {
-    const { makeDemoRaw } = await import('../js/demo.js');
-    raw = makeDemoRaw();
-    sources.osm = 'demo';
-    log('Using the procedural demo town');
-  } else {
+  {
     let osm;
     if (OPL && existsSync(OPL)) {
       osm = parseOPL(OPL);
@@ -540,10 +534,8 @@ async function main() {
   const nR = snap.ways.filter((w) => w[0].highway).length;
   const nP = snap.nodes.filter((n) => n[2].name).length;
   log(`Kept ${snap.nodes.length} nodes (${nP} named places), ${snap.ways.length} ways (${nB} buildings, ${nR} streets/paths), ${snap.rels.length} relations, ${snap.parcels.length} parcels`);
-  if (!DEMO) {
-    if (nB < 2000) throw new Error(`Only ${nB} buildings — refusing to write a snapshot`);
-    if (snap.parcels.length < 2000) throw new Error(`Only ${snap.parcels.length} parcels — refusing to overwrite the snapshot`);
-  }
+  if (nB < 2000) throw new Error(`Only ${nB} buildings — refusing to write a snapshot`);
+  if (snap.parcels.length < 2000) throw new Error(`Only ${snap.parcels.length} parcels — refusing to overwrite the snapshot`);
   const json = JSON.stringify(snap);
   const gz = gzipSync(json, { level: 9 });
   mkdirSync(dirname(OUT), { recursive: true });

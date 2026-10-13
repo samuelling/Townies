@@ -6,7 +6,6 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { Music } from './music.js';
 import { nextScenario, FOLLOWUPS } from './events.js';
-import { makeDemoRaw } from './demo.js';
 import { TERMS, startScenario, scenarioMonthly } from './scenarios.js';
 import { el } from './util.js';
 
@@ -61,8 +60,7 @@ function titleScreen() {
     }
   });
   btns.append(
-    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in real Watertown'),
-    el('button', { class: 'tbtn', onclick: go('demo') }, 'Demoville (offline demo)')
+    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown')
   );
   if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox');
 }
@@ -84,8 +82,8 @@ async function start(mode, status, btns, scen = 'sandbox') {
       game.world = sv.world;
       state = sv;
     } else {
-      const raw = mode === 'demo' ? makeDemoRaw() : await loadRawData({ refresh: mode === 'refresh', progress: log });
-      log(raw.demo ? 'Laying out Demoville…' : 'Building Watertown tile by tile…');
+      const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
+      log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);
     }
@@ -101,8 +99,8 @@ async function start(mode, status, btns, scen = 'sandbox') {
     status.innerHTML = '';
     status.append(
       el('div', { class: 'terr' }, `Couldn't load the map: ${e.message || e}`),
-      el('p', { class: 'fine' }, 'The OpenStreetMap servers may be busy. Try again in a minute, or play the offline demo.'),
-      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns) }, 'Try again'), el('button', { class: 'tbtn', onclick: () => start('demo', status, btns) }, 'Play Demoville'))
+      el('p', { class: 'fine' }, 'Check your connection and try again in a minute.'),
+      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns, scen) }, 'Try again'))
     );
   }
 }
@@ -136,8 +134,7 @@ function boot(state, scen = null) {
     game.renderer.z = state.z || 1;
   } else game.renderer.z = window.innerWidth < 700 ? 0.75 : 1;
   game.ui = new UI(game);
-  if (!state && !game.world.demo) startScenario(game.sim, scen || 'sandbox', game.peers);
-  else if (!state) startScenario(game.sim, 'sandbox', null);
+  if (!state) startScenario(game.sim, scen || 'sandbox', game.peers);
   game.ui.refreshHud();
   game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? state.speed : 1);
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
@@ -193,7 +190,7 @@ async function save(manual) {
     z: r.z,
     speed: game.speed,
     at: Date.now(),
-    label: `${game.world.demo ? 'Demoville' : 'Watertown'} ${game.sim.dateStr()}`,
+    label: `Watertown ${game.sim.dateStr()}`,
   };
   const ok = await kvSet(CFG.SAVE_KEY, data);
   if (manual) game.ui.toast(ok ? 'City saved' : 'Save failed');
@@ -206,7 +203,7 @@ game.restart = async (refresh) => {
   location.href = location.pathname;
 };
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && game.sim && !game.world.demo) save(false);
+  if (document.hidden && game.sim) save(false);
 });
 
 titleScreen();

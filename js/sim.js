@@ -135,7 +135,7 @@ export class Sim {
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.updateApproval(true);
     this.pushHistory(0, 0);
-    this.news('Welcome, City Manager', `The City Council has hired you to run ${this.w.demo ? 'Demoville' : 'Watertown'}. Population ${Math.round(this.pop).toLocaleString()}, about ${(this.taxBase().V / 1e9).toFixed(1)} billion dollars of taxable property, and a lot of opinions.`, 'big');
+    this.news('Welcome, City Manager', `The City Council has hired you to run Watertown. Population ${Math.round(this.pop).toLocaleString()}, about ${(this.taxBase().V / 1e9).toFixed(1)} billion dollars of taxable property, and a lot of opinions.`, 'big');
   }
 
   // aggregate counts, calibration baselines

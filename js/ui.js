@@ -414,7 +414,7 @@ export class UI {
       const t = el('table', { class: 'kv' });
       const add = (...rs) => rs.forEach((r) => r && t.append(r));
       let head = '';
-      if (!w.inTown[i]) head = `Outside ${w.demo ? 'Demoville' : 'Watertown'} — neighbouring town`;
+      if (!w.inTown[i]) head = 'Outside Watertown — neighbouring town';
       else if (w.terrain[i] === 1) head = w.road[i] ? `Bridge — ${w.names[w.roadName[i]] || 'unnamed'}` : 'Water';
       else if (w.road[i]) {
         head = w.names[w.roadName[i]] || 'Unnamed street';
@@ -785,7 +785,7 @@ export class UI {
     const proj = makeProj(this.w.bbox);
     const area = Math.PI * (MIX_RADIUS_M / 1000) ** 2;
     const rows = peers.map((p) => {
-      if (!p.home || this.w.demo) return { ...p, live: false };
+      if (!p.home) return { ...p, live: false };
       const [x, y] = proj.toGrid(p.lat, p.lon);
       const m = s.mixAt(x, y, MIX_RADIUS_M / 16);
       return { ...p, walk: s.walkAt(x, y), perKm2: Math.round(m.storefronts / area), sigPerKm2: Math.round(m.sig / area), chainShare: m.storefronts ? m.chains / m.storefronts : 0, auto: m.auto, live: true, x, y };
@@ -883,7 +883,7 @@ export class UI {
     this.win('news', 'Newspaper', (body) => {
       const s = this.sim;
       const top = s.newsLog.find((n) => n.size === 'big') || s.newsLog[0];
-      body.append(el('div', { class: 'mast' }, `The ${this.w.demo ? 'Demoville' : 'Watertown'} Townie`), el('div', { class: 'dateline' }, `${s.dateStr()} · Price: one civic grievance`));
+      body.append(el('div', { class: 'mast' }, 'The Watertown Townie'), el('div', { class: 'dateline' }, `${s.dateStr()} · Price: one civic grievance`));
       if (top) body.append(el('h2', { class: 'headline' }, top.title), top.body ? el('p', {}, top.body) : null, this.commentBlock(top.comments));
       const list = el('div', { class: 'stories' });
       for (const n of s.newsLog.slice(0, 18)) {
