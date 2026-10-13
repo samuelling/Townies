@@ -11,6 +11,7 @@ import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 import { makeProj } from './geo.js';
 import { behindScenes } from './bts.js';
 import { startTutorial } from './tutorial.js';
+import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
 const ICON = {
@@ -112,7 +113,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -448,6 +449,8 @@ export class UI {
           row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs 2027${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
+        if (lot.evClosed) add(row('Note', 'Closed: electric cars took the business. A redevelopment site waiting to happen.'));
+        if (lot.evHub) add(row('Note', '⚡ Former gas station, now an EV charging hub'));
         if (lot.built > 0 && lot.year >= CFG.START.y) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
       if (w.inTown[i] && w.terrain[i] !== 1) {
@@ -896,6 +899,35 @@ export class UI {
       }
       body.append(list);
     }, { cls: 'paper' });
+  }
+
+  techWindow() {
+    this.win('tech', 'Technology', (body) => {
+      const s = this.sim;
+      if (!s.tech) return;
+      const T = s.tech;
+      body.append(el('p', { class: 'fine' }, `${s.dateStr()}. New technologies spread on their own, along S-curves. You can't stop most of them, but you choose how the City meets each one, which changes how fast it spreads and who wins.`));
+      for (const id of TECH_IDS) {
+        const d = TECH[id];
+        const st = techStatus(s, id);
+        const box = el('div', { class: `techrow${st.future ? ' future' : ''}` });
+        box.append(el('div', { class: 'techhead' }, el('span', { class: 'techicon' }, st.future && d.arrive - s.y > 3 ? '❔' : d.icon), el('b', {}, st.future && d.arrive - s.y > 3 ? 'Something new' : d.name), el('span', { class: 'techpct' }, st.text)));
+        if (!st.future) box.append(el('div', { class: 'techbar', title: `levels off around ${Math.round(d.cap * 100)}%` }, el('i', { style: `width:${Math.round(st.a * 100)}%` }), el('u', { style: `left:${Math.round(d.cap * 100)}%` })));
+        if (!st.future || d.arrive - s.y <= 3) box.append(el('p', { class: 'fine' }, st.future ? d.what : d.changes.join(' · ')));
+        if (!st.future && d.stances) {
+          const row = el('div', { class: 'techst' });
+          for (const [k, so] of Object.entries(d.stances))
+            row.append(el('button', { class: T.stance[id] === k ? 'on' : '', title: so.fx, onclick: () => { setStance(s, id, k); this.refreshStatus(); this.wins.get('tech').refresh(); } }, el('b', {}, so.label), el('small', {}, so.fx)));
+          box.append(row);
+        }
+        body.append(box);
+      }
+      const bits = [];
+      if (T.closures) bits.push(`${T.closures} auto businesses closed`);
+      if (T.hubs) bits.push(`${T.hubs} gas stations became charging hubs`);
+      if (T.conversions) bits.push(`${T.conversions} auto and parking lots redeveloped by the market`);
+      if (bits.length) body.append(el('p', { class: 'fine' }, bits.join(' · ') + '.'));
+    }, { cls: 'wide' });
   }
 
   behindScenes(ch) {

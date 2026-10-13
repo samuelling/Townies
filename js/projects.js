@@ -3,10 +3,11 @@
 // Land costs come from real assessed values; holdouts, displacement, and politics come from what's there.
 import { ZONE, COVER } from './config.js';
 import { clamp, hash2, fmtMoney } from './util.js';
-import { developLot, demolish, computeLotMetrics, bldRate } from './world.js';
+import { developLot, demolish, computeLotMetrics, bldRate, eraStyle } from './world.js';
 import { classifyLot } from './vibrancy.js';
 import { react } from './comments.js';
 import { openShop } from './storefronts.js';
+import { techBuildCostF, techBuildTimeF } from './tech.js';
 
 const M2 = 256; // m² per tile
 export const PROGRAMS = {
@@ -136,7 +137,7 @@ export function evaluate(sim, site, prog, t) {
     o.jobs = Math.round(retail / 35);
     o.floorArea = fa;
     const spaces = Math.round(o.homes * t.parking + (retail / 1000) * 2);
-    const cost = site.acq + fa * 3900 + spaces * 45000 + (t.plaza ? A * 0.15 * 600 : 0) + t.transit * 1e6;
+    const cost = site.acq + fa * 3900 * techBuildCostF(sim) + spaces * 45000 + (t.plaza ? A * 0.15 * 600 : 0) + t.transit * 1e6;
     const value = (o.homes - o.affordable) * 820000 * lv + o.affordable * 260000 + retail * 5200 * vibF * (1 - 0.25 * (t.local / 100));
     o.devFeas = (value - cost) / cost - 0.12;
     o.newValue = fa * 3300 * lv + site.value * 0.3;
@@ -162,7 +163,7 @@ export function evaluate(sim, site, prog, t) {
     o.homes = Math.round((fa * 0.8) / 85);
     o.affordable = t.nonprofit ? o.homes : Math.round((o.homes * t.affordable) / 100);
     const spaces = Math.round(o.homes * t.parking);
-    const cost = site.acq + fa * 5200 + spaces * 40000;
+    const cost = site.acq + fa * 5200 * techBuildCostF(sim) + spaces * 40000;
     const value = (o.homes - o.affordable) * 760000 * lv + o.affordable * 260000;
     if (t.nonprofit) {
       o.cityCost = Math.max(0, cost * 0.92 - value) * 0.35; // state & federal credits cover the rest
@@ -177,7 +178,7 @@ export function evaluate(sim, site, prog, t) {
     o.floorArea = fa;
     o.jobs = Math.round(fa / 45);
     const spaces = Math.round((fa / 1000) * 2.5 * t.parking);
-    const cost = site.acq + fa * 6200 + spaces * 45000 + t.transit * 1e6;
+    const cost = site.acq + fa * 6200 * techBuildCostF(sim) + spaces * 45000 + t.transit * 1e6;
     const labMkt = clamp(1 + 0.5 * (sim.demand ? sim.demand.I : 0), 0.6, 1.5);
     const value = fa * 8300 * labMkt;
     o.devFeas = (value - cost) / cost - 0.12;
@@ -200,6 +201,7 @@ export function evaluate(sim, site, prog, t) {
   o.taxNow = site.tax;
   const r = sim.rates();
   o.taxNew = (o.newValue * (prog === 'housing' || (prog === 'infill' && t.upper === 'homes') ? (r.rateR + r.rateC) / 2 : prog === 'plaza' ? 0 : r.rateC)) / 1000;
+  o.months = Math.max(6, Math.round(o.months * techBuildTimeF(sim)));
   return o;
 }
 
@@ -363,7 +365,7 @@ const LOCAL_NAMES = ['Arax Corner Café', 'Bound & Found Books', 'Mill Street Re
 const LOCAL_KINDS = ['cafe', 'books', 'music', 'art_gallery', 'deli', 'bakery', 'second_hand', 'cafe', 'cheese', 'tea', 'florist', 'bicycle', 'restaurant', 'restaurant', 'ice_cream'];
 const CHAIN_NAMES = [['Granite Federal Bank', 'bank'], ['MetroCell Wireless', 'mobile_phone'], ['Beanstream Coffee', 'cafe'], ['Burrito Depot', 'fast_food'], ['FitBox', 'fitness'], ['Sprout Salads', 'fast_food'], ['SmileBright Dental', 'dentist'], ['QuickMart', 'convenience']];
 
-function addShops(sim, lot, local, chains, deed) {
+export function addShops(sim, lot, local, chains, deed) {
   lot.storefronts = local + chains;
   lot.sf = [];
   lot.vacant = 0;
@@ -416,6 +418,7 @@ function rebuildInfillLot(sim, p, lot) {
     b.arch = sim.rand() < 0.6 ? 'brick' : 'modern';
     b.proc = 1;
     restyle(b);
+    if (b.arch === 'modern') eraStyle(w, b);
   }
   const fa = lot.area * 0.6 * p.t.floors;
   const gf = lot.area * 0.6;
@@ -519,6 +522,7 @@ function complete(sim, p) {
         b.proc = 1;
         if (p.prog === 'lab') { b.col = '#dfe3e4'; b.col2 = '#6f8aa3'; b.roofCol = '#cfd3d6'; b.h = b.levels * 3.3; b._rgb = null; b.roof = 'flat'; b.awning = null; }
         else restyle(b);
+        if (p.prog !== 'lab') eraStyle(w, b);
         if (p.prog === 'housing') b.awning = null;
       }
       main.units = o.homes;

@@ -204,6 +204,30 @@ export class Renderer {
     this.ver[cy * this.ncx + cx]++;
     this.needs = true;
   }
+  techA(id) {
+    return this.sim && this.sim.tech ? this.sim.tech.a[id] || 0 : 0;
+  }
+  // inset copy of a screen polygon toward its centroid
+  inset(pts, k) {
+    let cx = 0, cy = 0;
+    for (const p of pts) { cx += p[0]; cy += p[1]; }
+    cx /= pts.length; cy /= pts.length;
+    return pts.map((p) => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k]);
+  }
+  solarPanel(g, poly, L) {
+    this.fillPoly(g, poly, '#2b4170', L >= 1 ? 'rgba(200,215,240,0.6)' : null);
+    if (L >= 2) {
+      g.strokeStyle = 'rgba(180,200,235,0.45)';
+      g.lineWidth = 0.6;
+      g.beginPath();
+      for (const t of [0.25, 0.5, 0.75]) {
+        const a = [poly[0][0] + (poly[1][0] - poly[0][0]) * t, poly[0][1] + (poly[1][1] - poly[0][1]) * t];
+        const b = [poly[3][0] + (poly[2][0] - poly[3][0]) * t, poly[3][1] + (poly[2][1] - poly[3][1]) * t];
+        g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
+      }
+      g.stroke();
+    }
+  }
   invalidateAll() {
     for (let i = 0; i < this.ver.length; i++) this.ver[i]++;
     this.needs = true;
@@ -470,9 +494,20 @@ export class Renderer {
         g.lineWidth = RW[c] + (ln.bridge ? 0.16 : 0.22);
         g.stroke();
       }
+    const bikes = this.sim && this.sim.tech && this.sim.tech.stance.ebike === 'embrace' && this.sim.tech.arrived.ebike != null;
     for (let c = 1; c <= 3; c++)
       for (const ln of byCls[c]) {
         trace(ln);
+        if (bikes && c === 2 && !ln.bridge) {
+          // protected bike lanes: green strips along both curbs
+          g.strokeStyle = '#3f9a5a';
+          g.lineWidth = RW[c] + 0.1;
+          g.stroke();
+          g.strokeStyle = '#4b4d53';
+          g.lineWidth = RW[c] - 0.14;
+          g.stroke();
+          continue;
+        }
         g.strokeStyle = c === 3 ? '#3e4045' : '#4b4d53';
         g.lineWidth = RW[c];
         g.stroke();
@@ -699,6 +734,29 @@ export class Renderer {
       if (corniced && L >= 0.5) this.wallQuad(g, P, pts[k], pts[k2], 0, 1, h - 0.7, h, shade(b.arch === 'modern' ? (c2 || wall) : trim, wl.f * 0.92, mix, mixAmt));
     }
     this.fillPoly(g, T0, shade(roofC, 1.02, mix, mixAmt), stroke);
+    const lotB = b.lot >= 0 ? this.world.lots[b.lot] : null;
+    const plainRoof = b.arch !== 'lab' && b.arch !== 'church' && b.arch !== 'garage' && !aband && b.area > 0.25;
+    if (plainRoof && L >= 0.5) {
+      const green = b.era === 'future' || hash2(b.id, 43, 5) < 0.9 * this.techA('green');
+      if (green) this.fillPoly(g, this.inset(T0, 0.84), shade([104, 156, 78], 1, mix, mixAmt));
+      if (hash2(b.id, 41, 3) < 0.8 * this.techA('solar')) {
+        const k = green ? 0.42 : 0.62;
+        this.solarPanel(g, this.inset(T0, k), L);
+      }
+    }
+    if (lotB && lotB.evHub && L >= 0.5) {
+      const p = P(b.cx, b.cy, h + 3);
+      g.fillStyle = 'rgba(30,140,90,0.9)';
+      g.beginPath();
+      g.arc(p[0], p[1], Math.round(9 * L), 0, Math.PI * 2);
+      g.fill();
+      g.font = `bold ${Math.round(11 * L)}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#fff';
+      g.fillText('⚡', p[0], p[1]);
+      g.textBaseline = 'alphabetic';
+    }
     if (L < 0.5) return;
     if (b.arch === 'lab' && b.area > 0.8) {
       // big rooftop mechanical penthouse, the lab-building giveaway
@@ -904,6 +962,15 @@ export class Renderer {
     });
     planesD.sort((p, r) => p.d - r.d);
     for (const { pl, f } of planesD) this.fillPoly(g, pl.map(S), shade(roofC, f, mix, mixAmt), stroke);
+    if (L >= 0.5 && !st.aband && hash2(b.id, 41, 3) < this.techA('solar')) {
+      // panels on the sunniest roof plane
+      let best = null;
+      for (const pd of planesD) if (pd.pl.length === 4 && (!best || pd.f > best.f)) best = pd;
+      if (best) {
+        const poly = this.inset(best.pl.map(S), 0.72);
+        this.solarPanel(g, poly, L);
+      } else if (type === 'flat') this.solarPanel(g, this.inset(T0, 0.6), L);
+    }
     if (ridge && L >= 1) {
       const a = S(ridge[0]), c = S(ridge[1]);
       g.strokeStyle = shade(roofC, 0.55, mix, mixAmt);
@@ -1110,9 +1177,73 @@ export class Renderer {
       if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
     }
     for (const v of vis) blit(fetch(v, 'o'));
-    const incAnim = this.drawIncidents(ctx, s, offX, offY);
+    const skyAnim = this.drawSky(ctx, s, offX, offY);
+    const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused);
+  }
+
+  // robotaxi: white pod with a teal sensor dome
+  podTop(ctx, P, pts) {
+    let cx = 0, cy = 0;
+    for (const q of pts) { cx += q[0]; cy += q[1]; }
+    cx /= 4; cy /= 4;
+    ctx.fillStyle = '#37b3a6';
+    ctx.beginPath();
+    pts.forEach((q, n) => { const pp = P(cx + (q[0] - cx) * 0.45, cy + (q[1] - cy) * 0.45, 1.9); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); });
+    ctx.closePath(); ctx.fill();
+  }
+
+  // delivery drones and air taxis
+  drawSky(ctx, s, offX, offY) {
+    if (!this.sim || !this.sim.tech || s < 0.4) return false;
+    const nD = Math.round(900 * this.techA('delivery')), nA = Math.round(140 * this.techA('airtaxi'));
+    if (!nD && !nA) return false;
+    const { W, H } = this.world;
+    const [x0, y0, x1, y1] = this.visibleRect();
+    const t = this.sim.paused ? this.frozenT3 || (this.frozenT3 = this.time) : ((this.frozenT3 = 0), this.time);
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
+    };
+    let drew = false;
+    const fly = (k, salt, speed, z, draw) => {
+      // each craft shuttles along its own straight line across town
+      const ax = hash2(k, salt, 1) * W, ay = hash2(k, salt, 2) * H;
+      const ang = hash2(k, salt, 3) * Math.PI * 2;
+      const span = 60 + 140 * hash2(k, salt, 4);
+      const u = ((t * speed + hash2(k, salt, 5) * span * 2) % (span * 2));
+      const d = u < span ? u : span * 2 - u;
+      const x = ax + Math.cos(ang) * d, y = ay + Math.sin(ang) * d;
+      if (x < x0 - 2 || x > x1 + 2 || y < y0 - 2 || y > y1 + 6) return;
+      const g0 = P(x, y, 0), a = P(x, y, z);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.beginPath(); ctx.ellipse(g0[0], g0[1], 3 * s, 1.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+      draw(a, k);
+      drew = true;
+    };
+    for (let k = 0; k < nD; k++)
+      fly(k, 71, 0.0018, 28 + 10 * hash2(k, 71, 6), (a) => {
+        const r = 2.2 * s;
+        ctx.fillStyle = '#2b2d33';
+        ctx.fillRect(a[0] - r, a[1] - 0.5 * s, r * 2, 1 * s);
+        ctx.fillStyle = 'rgba(210,215,225,0.85)';
+        for (const [dx, dy] of [[-r, -0.6 * s], [r, -0.6 * s], [-r * 0.6, 0.7 * s], [r * 0.6, 0.7 * s]]) { ctx.beginPath(); ctx.ellipse(a[0] + dx, a[1] + dy, 1.4 * s, 0.6 * s, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.fillStyle = '#e3b63c';
+        ctx.fillRect(a[0] - 0.8 * s, a[1] + 0.5 * s, 1.6 * s, 1.4 * s);
+      });
+    for (let k = 0; k < nA; k++)
+      fly(k, 83, 0.004, 90, (a, kk) => {
+        ctx.fillStyle = '#f4f6f8';
+        ctx.beginPath(); ctx.ellipse(a[0], a[1], 5 * s, 2.2 * s, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#9aa3ad';
+        ctx.lineWidth = Math.max(1, 0.8 * s);
+        ctx.beginPath(); ctx.moveTo(a[0] - 9 * s, a[1] - 0.5 * s); ctx.lineTo(a[0] + 9 * s, a[1] - 0.5 * s); ctx.stroke();
+        ctx.fillStyle = '#37b3a6';
+        ctx.fillRect(a[0] - 1.5 * s, a[1] - 1.2 * s, 3 * s, 1.2 * s);
+        if (Math.floor(this.time / 400 + kk) % 2) { ctx.fillStyle = '#ff3b30'; ctx.fillRect(a[0] - 0.8 * s, a[1] - 3 * s, 1.6 * s, 1.6 * s); }
+      });
+    return drew && !this.sim.paused;
   }
 
   visibleRect() {
@@ -1135,6 +1266,7 @@ export class Renderer {
       return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
     };
     const colors = ['#d23c3c', '#e8e8e8', '#2b5fb8', '#222', '#e3b63c', '#6a6a6a', '#3b8a4a'];
+    const podShare = this.techA('robotaxi');
     let drew = false;
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
@@ -1158,7 +1290,8 @@ export class Renderer {
             if (hash2(kk, row, dir + 7) > dens) continue;
             const cx = ew ? pos : x + lane, cy = ew ? y + lane : pos;
             const lx = ew ? 0.13 : 0.07, ly = ew ? 0.07 : 0.13;
-            const col = colors[Math.floor(hash2(kk, row, 3) * colors.length)];
+            const pod = hash2(kk, row, 13) < podShare;
+            const col = pod ? '#eef4f3' : colors[Math.floor(hash2(kk, row, 3) * colors.length)];
             const z = terrain[i] === 1 ? 0 : 0;
             const pts = [[cx - lx, cy - ly], [cx + lx, cy - ly], [cx + lx, cy + ly], [cx - lx, cy + ly]];
             ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -1169,6 +1302,7 @@ export class Renderer {
             ctx.beginPath();
             pts.forEach((q, k2) => { const p = P(q[0], q[1], 1.4); k2 ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
             ctx.closePath(); ctx.fill();
+            if (pod) this.podTop(ctx, P, pts);
             drew = true;
           }
         }
@@ -1191,6 +1325,7 @@ export class Renderer {
     const colors = ['#d23c3c', '#e8e8e8', '#2b5fb8', '#222', '#e3b63c', '#6a6a6a', '#3b8a4a'];
     const seen = new Set();
     const sp = 1.3;
+    const podShare = this.techA('robotaxi');
     let drew = false;
     for (const v of vis)
       for (const li of this.lineIdx[v.cy * this.ncx + v.cx]) {
@@ -1224,10 +1359,12 @@ export class Renderer {
               ctx.beginPath();
               q.forEach((c, n) => { const pp = P(c[0], c[1], 0); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); });
               ctx.closePath(); ctx.fill();
-              ctx.fillStyle = colors[Math.floor(hash2(li, j, dir) * colors.length)];
+              const pod = hash2(li, j, dir + 13) < podShare;
+              ctx.fillStyle = pod ? '#eef4f3' : colors[Math.floor(hash2(li, j, dir) * colors.length)];
               ctx.beginPath();
               q.forEach((c, n) => { const pp = P(c[0], c[1], 1.4); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); });
               ctx.closePath(); ctx.fill();
+              if (pod) this.podTop(ctx, P, q);
               drew = true;
             }
           }

@@ -110,6 +110,7 @@ function boot(state, scen = null) {
   const hooks = {
     invalidateTiles: (t) => game.renderer && game.renderer.invalidateTiles(t),
     invalidateBuilding: (b) => game.renderer && game.renderer.invalidateBuilding(b),
+    invalidateAll: () => game.renderer && game.renderer.invalidateAll(),
     news: (n) => {
       if (game.ui) game.ui.refreshStatus();
       if (n.size === 'big' && game.ui) game.music.sfx('news');

@@ -267,3 +267,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 700px) {
   .coach { left: 8px; right: 8px; width: auto; top: 96px; bottom: auto; font-size: 12px; }
 }
+
+/* Technology */
+.techrow { border-bottom: 1px solid var(--chrome-lo); padding: 6px 0; }
+.techrow.future { opacity: 0.75; }
+.techhead { display: flex; align-items: center; gap: 6px; }
+.techicon { font-size: 18px; width: 22px; text-align: center; }
+.techpct { margin-left: auto; font-size: 11px; color: #333; }
+.techbar { position: relative; height: 8px; background: #eee; border: 1px solid #777; margin: 4px 0 2px; }
+.techbar i { display: block; height: 100%; background: #37b3a6; }
+.techbar u { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 1px dashed #333; }
+.techst { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.techst button { flex: 1 1 120px; text-align: left; background: var(--chrome); border: 1px solid; border-color: #fff #666 #666 #fff; padding: 3px 5px; font-size: 11px; }
+.techst button small { display: block; color: #444; font-size: 10px; }
+.techst button.on { background: #ffe680; border-color: #666 #fff #fff #666; }

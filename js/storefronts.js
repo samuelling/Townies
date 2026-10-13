@@ -4,6 +4,7 @@
 import { ZONE } from './config.js';
 import { bizCategory, classifyLot, isSignature } from './vibrancy.js';
 import { clamp, hash2 } from './util.js';
+import { techFootfall, techRetailF } from './tech.js';
 
 const STOREFRONT = new Set(['food', 'retail', 'service']);
 
@@ -53,7 +54,7 @@ function footfall(sim, c) {
   const pn = sim.popNear ? sim.popNear[c] : 0;
   const jn = sim.jobsNear ? sim.jobsNear[c] : 0;
   const walk = sim.walkC ? sim.walkC[c] : 1;
-  return (pn + 0.6 * jn) * walk;
+  return techFootfall(sim, pn, jn) * walk;
 }
 
 export function initStorefronts(sim) {
@@ -203,7 +204,7 @@ export function storefrontsMonthly(sim) {
         s.lease = 60;
         if (jump > 0.15 && !s.chain) s.shock = jump;
       }
-      const rev = Math.pow(Math.max(0.2, ff), 0.6) * (1 + 0.25 * vibD) * (s.chain ? 1 : 1);
+      const rev = Math.pow(Math.max(0.2, ff), 0.6) * (1 + 0.25 * vibD) * techRetailF(sim, s);
       let margin = s.cushion + 0.5 * (rev - 1) - 0.45 * (s.rent - 1);
       if (!s.chain && P.rentRelief) {
         margin += 0.12;

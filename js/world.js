@@ -796,10 +796,31 @@ function addBuilding(world, o) {
   b.area = Math.abs(signedArea(b.pts));
   if (b.kind === 'house' && !b.obb) b.obb = b.pts.slice();
   styleBuilding(b, b.lot >= 0 ? world.lots[b.lot] : null);
+  eraStyle(world, b);
   assignFront(world, b);
   world.bldgs.push(b);
   for (const i of buildingTiles(world, b)) if (world.bAt[i] < 0) world.bAt[i] = b.id;
   return b;
+}
+
+// New construction takes on the look of its era once the technology timeline gets there (js/tech.js).
+export function eraStyle(world, b) {
+  if (!world.era || !b.proc || b.kind === 'house' || b.svcType || b.kind === 'lab' || b.kind === 'garage' || b.kind === 'church') return;
+  const r = hash2(b.id, 17, 3);
+  if (world.era === 'timber') {
+    b.arch = 'modern';
+    b.col = pick(['#c8955f', '#b98552', '#d2a873', '#a8794c'], r);
+    b.col2 = '#ecdfc4';
+    b.trim = '#5b3f28';
+    b.roofCol = '#7fa35a';
+  } else {
+    b.arch = 'glass';
+    b.col = pick(['#dfe9ea', '#e8ecef', '#d5e3e0'], r);
+    b.col2 = '#5f9c4f';
+    b.roofCol = '#77a85a';
+  }
+  b.era = world.era;
+  b._rgb = null;
 }
 
 const PROC_LEVELS = {

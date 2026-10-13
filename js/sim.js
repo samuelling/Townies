@@ -8,6 +8,7 @@ import { initStorefronts, storefrontsMonthly, policyApproval } from './storefron
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
+import { initTech, techMonthly, techTrafficF, techPollF, techDemand, techApproval } from './tech.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -131,6 +132,7 @@ export class Sim {
     this.computeAll(true);
     initStorefronts(this);
     initIncidents(this);
+    initTech(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.updateApproval(true);
@@ -251,6 +253,8 @@ export class Sim {
       if (lot.dead || lot.road < 0) continue;
       D[lot.road] += (lot.units * 2.3 * 0.4 + lot.jobs * 0.45) * lot.occ * (lot.tripF || 1);
     }
+    const tf = techTrafficF(this);
+    if (tf !== 1) for (let i = 0; i < D.length; i++) D[i] *= tf;
     T.set(D);
     const rl = this.roadList;
     const tmp = new Float32Array(this.N);
@@ -344,8 +348,9 @@ export class Sim {
     cover2(this.schoolCov, 'school', this.fund.schools);
     blur(this.parkC, 2);
     const poll = this.pollC, crime = this.crimeC;
+    const pf = techPollF(this);
     for (let i = 0; i < Nc; i++) {
-      poll[i] = this.indC[i] * 0.004 + this.trafC[i] * 0.03;
+      poll[i] = this.indC[i] * 0.004 + this.trafC[i] * 0.03 * pf;
       crime[i] = this.popC[i] * 0.002 + this.jobsC[i] * 0.0012;
     }
     blur(poll, 2);
@@ -667,6 +672,7 @@ export class Sim {
     this.updateDemand();
     projectsMonthly(this);
     this.storefrontNews(storefrontsMonthly(this));
+    techMonthly(this);
     ambient(this);
     this.updateApproval();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;
@@ -786,6 +792,9 @@ export class Sim {
       C: 0.15 + 1.4 * (this.pop / this.cjobs / (b.pop0 / b.cj0) - 1) - 2.2 * cipT - 0.6 * Math.max(0, this.congAvg - b.cong0) + 0.008 * (this.vibrancy - (b.vib0 ?? this.vibrancy)) + this.demandMod.C,
       I: cycle - 2.2 * cipT - 0.8 * (this.ijobs / b.ij0 - 1) + this.demandMod.I - (this.flags.bsl3Ban ? 0.08 : 0),
     };
+    const td = techDemand(this);
+    raw.R += td.R;
+    raw.C += td.C;
     if (!this.demand) this.demand = { R: 0, C: 0, I: 0 };
     for (const k of ['R', 'C', 'I']) this.demand[k] = clamp(this.demand[k] * 0.6 + clamp(raw[k], -1, 1) * 0.4, -1, 1);
   }
@@ -815,6 +824,7 @@ export class Sim {
     const sp = this.specialApproval();
     for (const [k, v] of Object.entries(policyApproval(this))) sp[k] = (sp[k] || 0) + v;
     for (const [k, v] of Object.entries(incidentPenalty(this))) sp[k] = (sp[k] || 0) - v;
+    for (const [k, v] of Object.entries(techApproval(this))) sp[k] = (sp[k] || 0) + v;
     for (const [k, v] of Object.entries(sp)) {
       if (k === 'all') for (const g of FACTIONS) f[g] += v;
       else if (f[k] != null) f[k] += v;

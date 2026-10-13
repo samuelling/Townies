@@ -3,6 +3,7 @@
 import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
+import { TECH_SCENARIOS } from './tech.js';
 
 const near = (s, lot, at, r) => {
   const [x, y] = s.anchor(at);
@@ -393,6 +394,7 @@ export const SCENARIOS = [
       { label: 'Skip it this year', fx: 'free · grumbling', run: (s) => s.apply({ approval: { all: -1 } }) },
     ],
   },
+  ...TECH_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
@@ -441,7 +443,7 @@ export function nextScenario(s) {
     if (ok) eligible.push(sc);
   }
   if (!eligible.length) return null;
-  let pool = eligible.filter((sc) => PRIORITY.has(sc.id));
+  let pool = eligible.filter((sc) => PRIORITY.has(sc.id) || sc.priority);
   if (!pool.length) {
     if (s.rand() > AGENDA.chance) return null;
     pool = eligible.slice();

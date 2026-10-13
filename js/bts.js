@@ -165,6 +165,26 @@ export const CHAPTERS = [
     ],
   },
   {
+    id: 'future', title: 'The future',
+    build: (g) => {
+      const s = g.sim;
+      return [
+        P('Time doesn’t stop in 2027. Technologies arrive on a plausible timeline and spread along S-curves: slowly at first, then quickly, then leveling off. The arrival years are informed guesses, and the curves are illustrations for an inner-ring Boston suburb, not forecasts.'),
+        P('You can’t stop most of them. When each one arrives, the Council decides how the City meets it: embrace it, let it happen, or restrict it. That choice speeds or slows the spread and decides who wins.'),
+        LIST(
+          [B('Electric cars'), ' need no gas and far less servicing, so the auto row empties out on its own. That isn’t automatically good news. An empty repair shop is still dead frontage, and if you do nothing the market eventually rebuilds those lots the Arsenal Yards way: apartments over national chains. Main Street infill is how you do better.'],
+          [B('Robotaxis'), ' don’t need to park near their riders, so surface parking lots become surplus land. Unpriced, empty cars cruising for the next fare add traffic; curb and congestion pricing turns that around.'],
+          [B('Delivery drones and robots'), ' cut sales at ordinary shops. Cafés, galleries and bookstores hold up, because people still go out for experiences. That makes signature shops matter even more.'],
+          [B('Hybrid work'), ' moves daytime foot traffic from office districts into neighborhoods.'],
+          [B('Mass timber'), ' makes construction up to 18% cheaper and faster, so more projects pencil out.'],
+          [B('E-bikes, solar, green roofs and air taxis'), ' change traffic, energy bills, land values and how much noise the neighbors hear.']
+        ),
+        P('The landscape changes with them. Solar panels spread across the roofs, gas stations become charging hubs, bike lanes appear when you build them, robotaxi pods replace cars, drones fill the sky, and new buildings take on the look of their era: warm mass timber in the 2030s, terraced glass and greenery in the 2040s.'),
+        s && s.tech ? NOTE(`Today: electric cars are ${Math.round(s.tech.a.ev * 100)}% of the fleet and solar is on ${Math.round(s.tech.a.solar * 100)}% of roofs. Windows → Technology shows the full timeline.`) : null,
+      ];
+    },
+  },
+  {
     id: 'inc', title: 'Crews & incidents',
     build: () => [
       P('Between monthly ticks, the town keeps happening in days: potholes, water main breaks, downed trees, unplowed streets after a storm, building fires and rat complaints.'),
