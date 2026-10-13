@@ -120,6 +120,7 @@ export function analyze(sim, lotIds, exclude = new Set()) {
 // ---------- program economics ----------
 export function evaluate(sim, site, prog, t) {
   const P = PROGRAMS[prog];
+  const pf = sim.priceF ? sim.priceF() : 1;
   const A = site.area; // m²
   const o = { prog, homes: 0, affordable: 0, storefronts: 0, localShops: 0, chainShops: 0, jobs: 0, floorArea: 0, newValue: 0, cityCost: 0, months: 24, devFeas: null, trips: 0, vibGain: 0, notes: [] };
   const lv = site.lv || 1;
@@ -137,10 +138,10 @@ export function evaluate(sim, site, prog, t) {
     o.jobs = Math.round(retail / 35);
     o.floorArea = fa;
     const spaces = Math.round(o.homes * t.parking + (retail / 1000) * 2);
-    const cost = site.acq + fa * 3900 * techBuildCostF(sim) + spaces * 45000 + (t.plaza ? A * 0.15 * 600 : 0) + t.transit * 1e6;
-    const value = (o.homes - o.affordable) * 820000 * lv + o.affordable * 260000 + retail * 5200 * vibF * (1 - 0.25 * (t.local / 100));
+    const cost = site.acq + fa * 3900 * techBuildCostF(sim) * pf + spaces * 45000 * pf + (t.plaza ? A * 0.15 * 600 * pf : 0) + t.transit * 1e6 * pf;
+    const value = (o.homes - o.affordable) * 820000 * pf * lv + o.affordable * 260000 * pf + retail * 5200 * pf * vibF * (1 - 0.25 * (t.local / 100));
     o.devFeas = (value - cost) / cost - 0.12;
-    o.newValue = fa * 3300 * lv + site.value * 0.3;
+    o.newValue = fa * 3300 * pf * lv + site.value * 0.3;
     o.months = 22 + Math.round(t.floors * 2);
     o.trips = o.homes * (0.5 + 0.5 * t.parking) + o.jobs * 0.6;
     o.spaces = spaces;
@@ -154,7 +155,7 @@ export function evaluate(sim, site, prog, t) {
     o.jobs = Math.round(retail / 30) + (t.upper === 'offices' ? Math.round((fa - retail) / 25) : 0);
     const resale = site.value * 0.55 * (t.deedRent ? 0.8 : 1);
     o.cityCost = Math.max(0, site.acq - resale);
-    o.newValue = fa * 3000 * lv;
+    o.newValue = fa * 3000 * pf * lv;
     o.months = 18 + site.ids.length * 3;
     o.trips = o.homes * 0.45 + o.jobs * 0.4;
   } else if (prog === 'housing') {
@@ -163,13 +164,13 @@ export function evaluate(sim, site, prog, t) {
     o.homes = Math.round((fa * 0.8) / 85);
     o.affordable = t.nonprofit ? o.homes : Math.round((o.homes * t.affordable) / 100);
     const spaces = Math.round(o.homes * t.parking);
-    const cost = site.acq + fa * 5200 * techBuildCostF(sim) + spaces * 40000;
-    const value = (o.homes - o.affordable) * 760000 * lv + o.affordable * 260000;
+    const cost = site.acq + fa * 5200 * techBuildCostF(sim) * pf + spaces * 40000 * pf;
+    const value = (o.homes - o.affordable) * 760000 * pf * lv + o.affordable * 260000 * pf;
     if (t.nonprofit) {
       o.cityCost = Math.max(0, cost * 0.92 - value) * 0.35; // state & federal credits cover the rest
       o.devFeas = 0.05;
     } else o.devFeas = (value - cost) / cost - 0.12;
-    o.newValue = fa * 3100 * lv;
+    o.newValue = fa * 3100 * pf * lv;
     o.months = 20 + t.floors * 2;
     o.trips = o.homes * (0.45 + 0.5 * t.parking);
     o.spaces = spaces;
@@ -178,11 +179,11 @@ export function evaluate(sim, site, prog, t) {
     o.floorArea = fa;
     o.jobs = Math.round(fa / 45);
     const spaces = Math.round((fa / 1000) * 2.5 * t.parking);
-    const cost = site.acq + fa * 6200 * techBuildCostF(sim) + spaces * 45000 + t.transit * 1e6;
+    const cost = site.acq + fa * 6200 * techBuildCostF(sim) * pf + spaces * 45000 * pf + t.transit * 1e6 * pf;
     const labMkt = clamp(1 + 0.5 * (sim.demand ? sim.demand.I : 0), 0.6, 1.5);
-    const value = fa * 8300 * labMkt;
+    const value = fa * 8300 * pf * labMkt;
     o.devFeas = (value - cost) / cost - 0.12;
-    o.newValue = fa * 5200;
+    o.newValue = fa * 5200 * pf;
     o.months = 26 + t.floors * 2;
     o.trips = o.jobs * (0.45 + 0.5 * t.parking);
     o.spaces = spaces;

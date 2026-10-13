@@ -4,6 +4,7 @@ import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
+const CACHE_PX = 48e6; // chunk cache budget in pixels (~190 MB of canvas)
 const CH = CFG.CHUNK;
 const HS = CFG.HS;
 const GREY = [128, 128, 132];
@@ -249,7 +250,7 @@ export class Renderer {
     e.ver = this.ver[ci];
     this.cache.set(key, e);
     this.cachePx += e.c ? e.c.width * e.c.height : 0;
-    while (this.cachePx > 48e6 && this.cache.size > 8) {
+    while (this.cachePx > CACHE_PX && this.cache.size > 8) {
       const [k0, v0] = this.cache.entries().next().value;
       this.cache.delete(k0);
       this.cachePx -= v0.c ? v0.c.width * v0.c.height : 0;
@@ -1111,6 +1112,21 @@ export class Renderer {
     ctx.setTransform(ax[0] - o[0], ax[1] - o[1], ay[0] - o[0], ay[1] - o[1], o[0], o[1]);
   }
 
+  // While nothing else is happening, quietly render every chunk at the lowest detail so that zooming
+  // all the way out shows the whole town immediately instead of filling it in square by square.
+  idle() {
+    if (this.prewarmDone) return;
+    const t0 = performance.now();
+    this.prewarmK = this.prewarmK || 0;
+    const n = this.ncx * this.ncy;
+    while (this.prewarmK < n * 2 && performance.now() - t0 < 6) {
+      const k = this.prewarmK++;
+      const ci = k % n, layer = k < n ? 'g' : 'o';
+      this.getChunk(ci % this.ncx, Math.floor(ci / this.ncx), LEVELS[0], layer, true);
+    }
+    if (this.prewarmK >= n * 2) this.prewarmDone = true;
+  }
+
   // ---------- frame ----------
   draw(dt) {
     this.time += dt;
@@ -1119,13 +1135,11 @@ export class Renderer {
     const s = this.scale();
     let L = LEVELS[LEVELS.length - 1];
     for (const lv of LEVELS) if (lv >= s * 0.92) { L = lv; break; }
-    const k = s / L;
     const [csx, csy] = this.camScreen(s);
     const offX = this.cw / 2 - csx, offY = this.ch / 2 - csy;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#0b0f17';
     ctx.fillRect(0, 0, this.cw, this.ch);
-    ctx.imageSmoothingEnabled = k < 0.999;
 
     // visible chunks
     const vis = [];
@@ -1138,7 +1152,16 @@ export class Renderer {
         vis.push({ cx, cy, d: rx + ry });
       }
     vis.sort((a, b) => a.d - b.d);
-    let budget = L >= 1 ? 5 : 10;
+    // Pick a detail level whose visible chunks all fit in the cache at once. Otherwise, zoomed out on a
+    // high-DPI screen, chunks evict each other forever and squares keep re-rendering across the map.
+    const PX_PER_CHUNK = 2.6 * (32 * CH) * (16 * CH); // ground + buildings at L = 1, in pixels
+    const fits = (lv) => vis.length * PX_PER_CHUNK * lv * lv < CACHE_PX * (lv === this.lastL ? 0.7 : 0.6);
+    while (L > LEVELS[0] && !fits(L)) L = LEVELS[LEVELS.indexOf(L) - 1];
+    this.lastL = L;
+    const k = s / L;
+    ctx.imageSmoothingEnabled = k < 0.999;
+    const deadline = performance.now() + 12;
+    let budget = 2; // always make some progress, then render until the frame's time is used up
     let incomplete = false;
     const blit = (e) => {
       if (!e || !e.c) return;
@@ -1149,17 +1172,19 @@ export class Renderer {
       const fresh = this.getChunk(v.cx, v.cy, L, layer, false);
       const ci = v.cy * this.ncx + v.cx;
       if (fresh && fresh.ver === this.ver[ci]) return fresh;
-      if (budget > 0) {
+      let any = fresh;
+      if (!any) for (const lv of LEVELS) { const e = this.cache.get(`${layer}${lv}:${ci}`); if (e) { any = e; break; } }
+      if (budget > 0 || performance.now() < deadline) {
         budget--;
+        // nothing to show yet: a quick low-detail pass first, so the map never has holes; refine next frames
+        if (!any && L > LEVELS[0]) {
+          incomplete = true;
+          return this.getChunk(v.cx, v.cy, LEVELS[0], layer, true);
+        }
         return this.getChunk(v.cx, v.cy, L, layer, true);
       }
       incomplete = true;
-      if (fresh) return fresh;
-      for (const lv of LEVELS) {
-        const e = this.cache.get(`${layer}${lv}:${ci}`);
-        if (e) return e;
-      }
-      return null;
+      return any || null;
     };
     for (const v of vis) blit(fetch(v, 'g'));
 
@@ -1181,6 +1206,7 @@ export class Renderer {
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused);
+    if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
   }
 
   // robotaxi: white pod with a teal sensor dome

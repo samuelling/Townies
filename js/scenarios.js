@@ -70,6 +70,16 @@ export const TERMS = {
     fail: (s) => (s.overrides || 0) > 0 ? 'You asked voters for an override.' : null,
     floor: { approval: 40 },
   },
+  boom: {
+    title: 'Before the Boom', years: 26, icon: '⏪', start: 2000, noEarly: true,
+    blurb: 'It’s 2000. The Arsenal Mall is aging, Pleasant Street is warehouses and body shops, and Kendall Square hasn’t spilled over the river yet. For 26 years you face the decisions that made today’s Watertown. Beat history: reach 2026 with at least as many homes as the real town has, more signature shops near the Square, and fewer auto-oriented parcels.',
+    goals: [
+      { id: 'homes', label: 'Homes (at least real 2026)', target: (s) => (s.w.real ? s.w.real.units : 15000), measure: (s) => s.units, fmt: (v) => fmtK(v) },
+      { id: 'sqsig', label: 'Signature shops near the Square (beat real 2026)', target: (s) => { const p = (s.peersRef || []).find((c) => c.id === 'wt-square'); return (p ? p.sig : 28) + 1; }, measure: squareSig, fmt: (v) => `${v}` },
+      { id: 'auto', label: 'Auto-oriented parcels (at most real 2026)', target: (s) => (s.w.real ? s.w.real.auto : 60), measure: (s) => autoCount(s), fmt: (v) => `${v}`, max: true },
+    ],
+    floor: { approval: 35 },
+  },
   rents: {
     title: "The Rent's Too High", years: 5, icon: '🏷',
     blurb: 'Word is out that Watertown is "the next Somerville." Landlords on Main St and Mt Auburn St are already asking 30% more. Keep at least 95% of the independent storefronts open over the next five years, and keep the Square as lively as it is today.',
@@ -85,6 +95,15 @@ export const TERMS = {
   },
 };
 
+const fmtK = (v) => Math.round(v).toLocaleString();
+function autoCount(s) {
+  if (s._autoT === s.t) return s._autoN;
+  let n = 0;
+  for (const l of s.w.lots) if (!l.dead && l.inTown && l.auto && !l.evClosed) n++;
+  s._autoT = s.t;
+  s._autoN = n;
+  return n;
+}
 const tgt = (g, s) => (typeof g.target === 'function' ? g.target(s) : g.target);
 export function goalStatus(sim) {
   const sc = sim.scenario;
@@ -130,7 +149,7 @@ export function scenarioMonthly(sim) {
   // early win when every goal is met (and "keep" goals hold)
   if (goals.length && goals.every((g) => g.met) && !goals.every((g) => g.keep || g.max)) {
     const allNonKeep = goals.filter((g) => !g.keep && !g.max);
-    if (allNonKeep.length && allNonKeep.every((g) => g.met) && sc.id !== 'labbust') return finish(sim, true);
+    if (allNonKeep.length && allNonKeep.every((g) => g.met) && sc.id !== 'labbust' && !T.noEarly) return finish(sim, true);
   }
   if (sc.deadline != null && sim.t >= sc.deadline) return finish(sim, goals.every((g) => g.met), goals.every((g) => g.met) ? null : 'Time ran out before every goal was met.');
   if (sim.t >= sc.nextReview) {

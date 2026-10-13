@@ -50,6 +50,19 @@ export const CHAPTERS = [
     },
   },
   {
+    id: 'past', title: 'Starting in 2000',
+    build: (g) => {
+      const w = g.world;
+      return [
+        P('The default game starts in 2026 with the real town. You can also start in 2000 and play through the decisions that made today’s Watertown: whether to grant one more body-shop permit, what Pleasant Street becomes, what replaces the Arsenal Mall.'),
+        P('How far back the data goes decides how honest that can be. Every property record includes the year its building was built, so anything newer than 2000 can be removed. What stood on those sites before isn’t in any dataset, because demolished buildings leave no record. Small houses keep a house; bigger sites get a stand-in (light industry, a parking lot or an auto shop, chosen by chance), and the Arsenal Yards site goes back to being the Arsenal Mall. Everything reconstructed says so when you look it up.'),
+        P('Values are deflated to 2000 dollars, and history plays out on schedule: online shopping and smartphones spread, the 2008 crash freezes lending, Kendall Square spills over the river in the mid-2010s, the pandemic empties the Square in 2020, and the lab boom cools in 2023. Business listings and the street grid are today’s, because there is no usable record of 2000’s storefronts.'),
+        P('Earlier than about 2000, too much would be invented, so the game doesn’t go further back. Old maps exist (fire-insurance maps and atlases back to the 1800s), but they’re images that would have to be traced by hand.'),
+        w && w.startYear ? NOTE(`This game started in ${w.startYear}. ${fmtInt(w.rewound || 0)} sites were reconstructed. The real town in 2026 has ${fmtInt(w.real ? w.real.units : 0)} homes.`) : null,
+      ];
+    },
+  },
+  {
     id: 'tax', title: 'Taxes & Prop 2½',
     build: () => [
       P('The budget follows real Massachusetts municipal finance, which is unusual and very constraining.'),
@@ -106,7 +119,7 @@ export const CHAPTERS = [
         [B('Pop-up arts'), ': galleries fill long-empty windows until a tenant signs.'],
         [B('Deed-restricted rents'), ': on City-led infill projects, which keep new storefronts affordable for decades.']
       ),
-      NOTE('All rents are an index relative to 2027 (1.00 = today), because real commercial asking rents aren’t public data. The real map sets the starting point; the dynamics describe what happens after you take office.'),
+      NOTE('All rents are an index relative to the year you start (1.00 = then), because real commercial asking rents aren’t public data. The real map sets the starting point; the dynamics describe what happens after you take office.'),
     ],
   },
   {
@@ -169,7 +182,7 @@ export const CHAPTERS = [
     build: (g) => {
       const s = g.sim;
       return [
-        P('Time doesn’t stop in 2027. Technologies arrive on a plausible timeline and spread along S-curves: slowly at first, then quickly, then leveling off. The arrival years are informed guesses, and the curves are illustrations for an inner-ring Boston suburb, not forecasts.'),
+        P('Time doesn’t stop in 2026. Technologies arrive on a plausible timeline and spread along S-curves: slowly at first, then quickly, then leveling off. The arrival years are informed guesses, and the curves are illustrations for an inner-ring Boston suburb, not forecasts.'),
         P('You can’t stop most of them. When each one arrives, the Council decides how the City meets it: embrace it, let it happen, or restrict it. That choice speeds or slows the spread and decides who wins.'),
         LIST(
           [B('Electric cars'), ' need no gas and far less servicing, so the auto row empties out on its own. That isn’t automatically good news. An empty repair shop is still dead frontage, and if you do nothing the market eventually rebuilds those lots the Arsenal Yards way: apartments over national chains. Main Street infill is how you do better.'],

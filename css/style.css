@@ -281,3 +281,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .techst button { flex: 1 1 120px; text-align: left; background: var(--chrome); border: 1px solid; border-color: #fff #666 #666 #fff; padding: 3px 5px; font-size: 11px; }
 .techst button small { display: block; color: #444; font-size: 10px; }
 .techst button.on { background: #ffe680; border-color: #666 #fff #fff #666; }
+.tyears { display: flex; gap: 8px; }
+.tyear { flex: 1; padding: 8px 10px; background: var(--chrome); color: #111; border: 3px solid; border-color: #fff #555 #555 #fff; text-align: left; }
+.tyear b { display: block; font-size: 16px; }
+.tyear small { display: block; font-size: 11px; color: #333; }
+.tyear.on { background: #ffe680; border-color: #555 #fff #fff #555; }
+.tbtns > .fine { color: #c9d3e0; font-size: 11px; margin: 0; }

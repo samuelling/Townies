@@ -1,5 +1,5 @@
 // Storefront economy: leases, landlord asking rents, foot traffic, closures and vacancies.
-// Everything is relative to the starting city (index 1.0 = 2027 rents / 2027 foot traffic), so the
+// Everything is relative to the starting city (index 1.0 = rents and foot traffic in the starting year), so the
 // real data sets the starting point and the dynamics come from what changes after you take office.
 import { ZONE } from './config.js';
 import { bizCategory, classifyLot, isSignature } from './vibrancy.js';
@@ -155,7 +155,8 @@ export function storefrontsMonthly(sim) {
   // "Watertown is on the rise": regional spillover plus buzz from your own successes
   const devBuzz = Math.min(0.25, (sim.megaprojects || 0) * 0.06 + (sim.flags.squareDone ? 0.08 : 0));
   // buzz feeds on vibrancy and fades when the place hollows out
-  sim.hype = clamp((sim.hype || 0) + 0.0042 + 0.0009 * (sim.vibrancy - sim.base.vib0), 0, 0.8);
+  // (before the 2010s life-science boom, nobody was calling Watertown "the next Somerville")
+  sim.hype = clamp((sim.hype || 0) + (sim.y < 2013 ? 0.0012 : 0.0042) + 0.0009 * (sim.vibrancy - sim.base.vib0), 0, 0.8);
   const hype = sim.hype + devBuzz;
   let popups = 0, reliefN = 0, vacantOld = 0;
   for (const lot of w.lots) {
@@ -267,7 +268,7 @@ export function storefrontsMonthly(sim) {
   }
   // policy costs / revenues on the budget
   const set = (key, on, label, monthly) => {
-    if (on) sim.recurring[key] = { label, monthly };
+    if (on) sim.recurring[key] = { label, monthly: monthly * (sim.priceF ? sim.priceF() : 1) };
     else delete sim.recurring[key];
   };
   set('pol:relief', P.rentRelief, 'Small-business rent relief', reliefN * 600);

@@ -8,6 +8,7 @@ import { Music } from './music.js';
 import { nextScenario, FOLLOWUPS } from './events.js';
 import { TERMS, startScenario, scenarioMonthly } from './scenarios.js';
 import { el } from './util.js';
+import { rewindWorld, PAST_STARTS } from './history.js';
 
 const MONTH_MS = [Infinity, 14000, 6000, 2000];
 const QUIPS = [
@@ -45,12 +46,21 @@ function titleScreen() {
     el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels & footprints: MassGIS · Places: Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
   );
   t.append(card);
-  const go = (mode, scen) => () => start(mode, status, btns, scen);
+  const go = (mode, scen, year) => () => start(mode, status, btns, scen, year);
+  let year = CFG.START.y;
   const pickTerm = () => {
     btns.innerHTML = '';
-    btns.append(el('div', { class: 'tpick' }, 'Choose your term'));
-    for (const [id, T] of Object.entries(TERMS))
-      btns.append(el('button', { class: `tbtn term${id === 'sandbox' ? '' : ''}`, onclick: go('live', id) }, el('span', { class: 'ticon' }, T.icon), el('span', {}, el('b', {}, T.title), el('small', {}, `${T.years ? T.years + '-year term · ' : ''}${T.blurb}`))));
+    const yr = (y, label, sub) => el('button', { class: `tyear${year === y ? ' on' : ''}`, onclick: () => { year = y; pickTerm(); } }, el('b', {}, label), el('small', {}, sub));
+    btns.append(
+      el('div', { class: 'tpick' }, 'Start in'),
+      el('div', { class: 'tyears' }, yr(CFG.START.y, `${CFG.START.y}`, 'Today, from real data'), ...Object.entries(PAST_STARTS).map(([y, p]) => yr(+y, `${y}`, `${p.label} · reconstructed`))),
+      el('div', { class: 'tpick' }, 'Choose your term')
+    );
+    for (const [id, T] of Object.entries(TERMS)) {
+      if (id !== 'sandbox' && (T.start || CFG.START.y) !== year) continue;
+      btns.append(el('button', { class: 'tbtn term', onclick: go('live', id, year) }, el('span', { class: 'ticon' }, T.icon), el('span', {}, el('b', {}, T.title), el('small', {}, `${T.years ? T.years + '-year term · ' : ''}${T.blurb}`))));
+    }
+    if (year !== CFG.START.y) btns.append(el('p', { class: 'fine' }, `Buildings newer than ${year} are removed using each property’s year built. What stood on those sites before is approximated and marked “reconstructed” when you look it up. Businesses and the street grid are today’s.`));
     btns.append(el('button', { class: 'tbtn', onclick: () => location.reload() }, '← Back'));
   };
   kvGet(CFG.SAVE_KEY).then((sv) => {
@@ -63,10 +73,10 @@ function titleScreen() {
     el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown'),
     el('button', { class: 'tbtn term', onclick: go('live', 'tutorial') }, el('span', { class: 'ticon' }, '🎓'), el('span', {}, el('b', {}, 'Tutorial'), el('small', {}, 'New to Townies? A ten-step guided tour of the real town: looking things up, Main Street, crews, redevelopment and the budget.')))
   );
-  if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox');
+  if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox', +params.get('year') || null);
 }
 
-async function start(mode, status, btns, scen = 'sandbox') {
+async function start(mode, status, btns, scen = 'sandbox', year = null) {
   btns.style.display = 'none';
   const log = (msg) => {
     status.innerHTML = '';
@@ -87,6 +97,11 @@ async function start(mode, status, btns, scen = 'sandbox') {
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);
+      if (year && PAST_STARTS[year]) {
+        log(`Turning the clock back to ${year}…`);
+        await nextFrame();
+        rewindWorld(game.world, year);
+      }
     }
     try {
       const r = await fetch('data/peers.json', { cache: 'no-cache' });
@@ -101,7 +116,7 @@ async function start(mode, status, btns, scen = 'sandbox') {
     status.append(
       el('div', { class: 'terr' }, `Couldn't load the map: ${e.message || e}`),
       el('p', { class: 'fine' }, 'Check your connection and try again in a minute.'),
-      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns, scen) }, 'Try again'))
+      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns, scen, year) }, 'Try again'))
     );
   }
 }
@@ -162,6 +177,7 @@ function frame(now) {
     }
   }
   if (game.renderer && game.renderer.needs) game.renderer.draw(dt);
+  else if (game.renderer) game.renderer.idle();
   requestAnimationFrame(frame);
 }
 

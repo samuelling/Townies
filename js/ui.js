@@ -439,26 +439,27 @@ export class UI {
           row('Zone', `${ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''}${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
           row('Style', lot.style),
           row('Built', lot.year ? String(lot.year) : ''),
-          row('Assessed', `${fmtMoney(v)}${lot.real && s.t < 12 ? ` (FY${lot.fy || ''})` : ''}`),
+          row('Assessed', `${fmtMoney(v)}${lot.real && s.t < 12 ? (w.startYear ? ` (estimated for ${w.startYear})` : ` (FY${lot.fy || ''})`) : ''}`),
           row('  land / bldg', `${fmtMoney(lot.landVal)} / ${fmtMoney(lot.bldgVal + (lot.otherVal || 0))}`),
           row('Lot size', `${fmtInt(lot.area * 10.764)} sq ft`),
           row('Floor area', lot.bldArea > 0 ? `${fmtInt(lot.bldArea * 10.764)} sq ft` : ''),
           row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents` : ''),
           row('Jobs', lot.jobs >= 1 ? `~${Math.round(lot.jobs * lot.occ)}` : ''),
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
-          row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs 2027${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
+          row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs ${s.y0}${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
         if (lot.evClosed) add(row('Note', 'Closed: electric cars took the business. A redevelopment site waiting to happen.'));
         if (lot.evHub) add(row('Note', '⚡ Former gas station, now an EV charging hub'));
-        if (lot.built > 0 && lot.year >= CFG.START.y) add(row('Note', 'Built during your term'));
+        if (lot.reconstructed) add(row('Note', `Reconstructed for ${s.y0}: the real building here dates from ${lot.reconstructed}. What stood here before is approximated${lot.hist === 'mall' ? ' (the Arsenal Mall era)' : lot.hist ? ` (${lot.hist === 'auto' ? 'an auto shop' : lot.hist === 'parking' ? 'a parking lot' : 'light industry'})` : ''}.`));
+        if (lot.built > 0 && lot.year >= (s.y0 ?? CFG.START.y)) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
           row('Walkability', s.walkP ? (() => { const ws = s.walkAt(x + 0.5, y + 0.5); return `${ws} · ${walkLabel(ws)}`; })() : ''),
           row('A neighbor says', s.trafC && lot && !lot.dead ? el('i', { class: 'quote' }, `“${neighborQuote(s, lot, c)}”`) : ''),
-          row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
+          row('Land value', `×${s.lvMod[c].toFixed(2)} vs. ${s.y0 ?? 'start'}`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
           row('Pollution', bar(s.pollC[c] / (s.base.pollN * 1.3))),
           row('Police / Fire', `${Math.round(s.polCov[c] * 100)}% / ${Math.round(s.fireCov[c] * 100)}%`)
@@ -538,7 +539,7 @@ export class UI {
           stat('Vibrancy', `${Math.round(s.vibrancy)}`, `${dv >= 0 ? '+' : ''}${dv.toFixed(1)} since you took office`),
           stat('Storefronts open', `${st.open || 0}`, `${st.vacant || 0} for lease (${total ? Math.round((100 * (st.vacant || 0)) / total) : 0}%)`),
           stat('Independents', `${st.indie || 0}`, `${st.chain || 0} chains · ${st.sig || 0} signature`),
-          stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs 2027 · buzz ${Math.round((s.hype || 0) * 100)}`)
+          stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs ${s.y0} · buzz ${Math.round((s.hype || 0) * 100)}`)
         ),
         el('div', { class: 'kvline' }, el('span', {}, 'Walkability where people live'), el('b', {}, `${Math.round(s.walkIndex || 0)} · ${walkLabel(s.walkIndex || 0)}`)),
         this.peerTable(),

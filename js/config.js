@@ -17,7 +17,7 @@ export const CFG = {
   PARCELS:
     'https://services1.arcgis.com/hGdibHYSPO59RG1h/arcgis/rest/services/Massachusetts_Property_Tax_Parcels/FeatureServer/0/query',
   SQUARE: { lat: 42.3649, lon: -71.1856 }, // Watertown Square, start camera here
-  START: { y: 2027, m: 0 },
+  START: { y: 2026, m: 0 },
   RAW_KEY: 'raw-v1',
   SAVE_KEY: 'save-v1',
   // Approximate starting tax rates ($ per $1,000 of assessed value).

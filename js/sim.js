@@ -66,7 +66,7 @@ export class Sim {
     return this.m;
   }
   get t() {
-    return (this.y - CFG.START.y) * 12 + this.m;
+    return (this.y - (this.y0 ?? 2027)) * 12 + this.m;
   }
   dateStr() {
     return `${MONTHS[this.m]} ${this.y}`;
@@ -75,7 +75,8 @@ export class Sim {
   // ---------------- setup ----------------
   newGame() {
     const w = this.w;
-    this.y = CFG.START.y;
+    this.y = this.w.startYear || CFG.START.y;
+    this.y0 = this.y;
     this.m = CFG.START.m;
     this.lvLocal = new Float32Array(this.Wc * this.Hc).fill(1);
     this.capLocal = new Float32Array(this.N).fill(1);
@@ -893,9 +894,14 @@ export class Sim {
   }
 
   // ---------------- scenario effects ----------------
+  // dollar amounts written in today's money shrink for earlier start years (about 3% a year)
+  priceF() {
+    return Math.min(1, Math.pow(1.03, this.y - 2026));
+  }
   apply(eff = {}) {
     const w = this.w;
-    if (eff.funds) this.funds += eff.funds;
+    const pf = this.priceF();
+    if (eff.funds) this.funds += eff.funds * pf;
     if (eff.approval) for (const [k, v] of Object.entries(eff.approval)) {
       if (k === 'all') FACTIONS.forEach((f) => (this.approvalOff[f] += v));
       else this.approvalOff[k] = (this.approvalOff[k] || 0) + v;
@@ -904,11 +910,11 @@ export class Sim {
     if (eff.recurring) {
       const rc = eff.recurring;
       if (rc.monthly === 0) delete this.recurring[rc.key];
-      else this.recurring[rc.key] = { label: rc.label, monthly: rc.monthly, until: rc.months ? this.t + rc.months : null };
+      else this.recurring[rc.key] = { label: rc.label, monthly: rc.monthly * pf, until: rc.months ? this.t + rc.months : null };
     }
     if (eff.bond) {
       const yrs = eff.bond.years || 20;
-      const annual = (eff.bond.amount * 0.04) / (1 - Math.pow(1.04, -yrs));
+      const annual = (eff.bond.amount * pf * 0.04) / (1 - Math.pow(1.04, -yrs));
       this.recurring['bond:' + eff.bond.label] = { label: `Bond: ${eff.bond.label}`, monthly: annual / 12, until: this.t + yrs * 12 };
     }
     if (eff.flag) Object.assign(this.flags, eff.flag);
@@ -1299,7 +1305,7 @@ export class Sim {
         const li = w.lotOf[i];
         if (li < 0) return null;
         const lot = w.lots[li];
-        if (lot.built > 0 && lot.year >= CFG.START.y) return [255, 120, 220, 220];
+        if (lot.built > 0 && lot.year >= (this.y0 ?? CFG.START.y)) return [255, 120, 220, 220];
         if (lot.occ < 0.3) return [120, 60, 40, 220];
         return null;
       }

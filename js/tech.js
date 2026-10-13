@@ -9,10 +9,32 @@ import { react } from './comments.js';
 import { addShops } from './projects.js';
 import { streetOf } from './sim.js';
 
-// a0: share in 2027 · cap: where it levels off · rate: monthly S-curve growth at "let it happen"
+// hist: known adoption by year (followed exactly until its last year) · cap: where it levels off ·
+// rate: monthly S-curve growth after that, at "let it happen". Techs without hist arrive in `arrive`.
 export const TECH = {
+  ecommerce: {
+    name: 'Online shopping', icon: '📦', hist: [[1999, 0.005], [2005, 0.025], [2010, 0.05], [2015, 0.08], [2019, 0.12], [2020, 0.2], [2026, 0.22]], cap: 0.3, rate: 0.01, unit: 'of retail spending',
+    what: 'People buy more and more of their everyday goods online.',
+    changes: ['Ordinary shops lose sales', 'Restaurants, cafés and services hold up, because you can’t download a haircut'],
+    stances: null,
+  },
+  smartphone: {
+    name: 'Smartphones', icon: '📱', hist: [[2007, 0.02], [2010, 0.3], [2014, 0.65], [2019, 0.85], [2026, 0.92]], cap: 0.95, rate: 0.02, unit: 'of adults',
+    what: 'Everyone carries a map, reviews and photos of every café in their pocket.',
+    changes: ['Distinctive independents get discovered: signature shops gain customers'],
+    stances: null,
+  },
+  ridehail: {
+    name: 'Ride-hailing', icon: '🚕', hist: [[2012, 0.002], [2015, 0.03], [2019, 0.07], [2020, 0.03], [2023, 0.06], [2026, 0.07]], cap: 0.09, rate: 0.01, unit: 'of car trips',
+    what: 'Tap a phone and a car comes. Fewer people need to park, but there are more cars circling.',
+    changes: ['A little more traffic around the Square', 'A little less need for parking'],
+    stances: {
+      embrace: { label: 'Pickup zones + per-ride fee', fx: 'earns fees · Commuters ↑', revenue: 35000, approval: { commuters: 1 } },
+      neutral: { label: 'Let the state regulate it', fx: 'free' },
+    },
+  },
   ebike: {
-    name: 'E-bikes & scooters', icon: '🛴', arrive: 2027, a0: 0.05, cap: 0.35, rate: 0.03, unit: 'of short trips',
+    name: 'E-bikes & scooters', icon: '🛴', hist: [[2017, 0.005], [2022, 0.03], [2026, 0.05]], cap: 0.35, rate: 0.03, unit: 'of short trips',
     what: 'Cheap electric bikes and scooters make a two-mile trip as easy as a short walk.',
     changes: ['Fewer car trips and less traffic', 'Shops get customers from farther away', 'Green bike lanes on the main streets if you build them'],
     stances: {
@@ -22,7 +44,7 @@ export const TECH = {
     },
   },
   ev: {
-    name: 'Electric cars', icon: '🔌', arrive: 2027, a0: 0.05, cap: 0.95, rate: 0.028, unit: 'of cars',
+    name: 'Electric cars', icon: '🔌', hist: [[2011, 0.001], [2018, 0.01], [2022, 0.025], [2026, 0.05]], cap: 0.95, rate: 0.028, unit: 'of cars',
     what: 'Electric cars need no gas and far less servicing: no oil changes, no mufflers, no tune-ups.',
     changes: ['Gas stations and repair shops lose their business and close', 'Some gas stations become charging hubs', 'Cleaner air along busy streets', 'Empty auto lots become redevelopment sites: what replaces them is up to you, or the market'],
     stances: {
@@ -32,7 +54,7 @@ export const TECH = {
     },
   },
   solar: {
-    name: 'Rooftop solar & heat pumps', icon: '☀️', arrive: 2027, a0: 0.06, cap: 0.6, rate: 0.022, unit: 'of roofs',
+    name: 'Rooftop solar & heat pumps', icon: '☀️', hist: [[2008, 0.003], [2014, 0.015], [2020, 0.04], [2026, 0.06]], cap: 0.6, rate: 0.022, unit: 'of roofs',
     what: 'Solar panels, batteries and heat pumps move onto ordinary houses.',
     changes: ['Panels spread across the roofs of Watertown', 'Lower energy bills for owners'],
     stances: {
@@ -42,13 +64,13 @@ export const TECH = {
     },
   },
   remote: {
-    name: 'Hybrid work', icon: '💻', arrive: 2027, a0: 0.3, cap: 0.45, rate: 0.02, unit: 'of workdays at home',
+    name: 'Hybrid work', icon: '💻', hist: [[1999, 0.03], [2019, 0.06], [2020, 0.45], [2022, 0.33], [2026, 0.3]], cap: 0.45, rate: 0.02, unit: 'of workdays at home',
     what: 'Office workers keep spending part of the week at home.',
     changes: ['Less demand for offices', 'Daytime foot traffic moves from office parks into neighborhoods', 'Neighborhood cafés gain; office-district lunch spots lose'],
     stances: null,
   },
   timber: {
-    name: 'Mass timber & modular building', icon: '🪵', arrive: 2029, a0: 0, cap: 1, rate: 0.05, unit: 'of new buildings',
+    name: 'Mass timber & modular building', icon: '🪵', arrive: 2029, cap: 1, rate: 0.05, unit: 'of new buildings',
     what: 'Factory-built wood structures go up faster and cheaper than steel and concrete.',
     changes: ['Construction costs fall by up to 18%', 'Projects finish sooner', 'New buildings look warmer: wood, terraces, planted roofs'],
     stances: {
@@ -57,7 +79,7 @@ export const TECH = {
     },
   },
   delivery: {
-    name: 'Drone & robot delivery', icon: '🛸', arrive: 2031, a0: 0, cap: 0.6, rate: 0.04, unit: 'of deliveries',
+    name: 'Drone & robot delivery', icon: '🛸', arrive: 2031, cap: 0.6, rate: 0.04, unit: 'of deliveries',
     what: 'Drones and sidewalk robots bring packages and takeout in minutes.',
     changes: ['Ordinary shops lose sales; cafés, galleries and bookstores hold up, because people still go out for experiences', 'Fewer delivery vans', 'Drones buzzing overhead'],
     stances: {
@@ -67,7 +89,7 @@ export const TECH = {
     },
   },
   robotaxi: {
-    name: 'Robotaxis', icon: '🚘', arrive: 2033, a0: 0, cap: 0.6, rate: 0.045, unit: 'of car trips',
+    name: 'Robotaxis', icon: '🚘', arrive: 2033, cap: 0.6, rate: 0.045, unit: 'of car trips',
     what: 'Driverless cars you summon instead of own. They never need to park near your destination.',
     changes: ['Parking lots become surplus land and fill in with buildings', 'Empty cars cruising for the next fare add traffic unless the curb is priced', 'Pods replace cars on the streets'],
     stances: {
@@ -77,7 +99,7 @@ export const TECH = {
     },
   },
   green: {
-    name: 'Green roofs & cool streets', icon: '🌿', arrive: 2036, a0: 0, cap: 0.5, rate: 0.04, unit: 'of flat roofs',
+    name: 'Green roofs & cool streets', icon: '🌿', arrive: 2036, cap: 0.5, rate: 0.04, unit: 'of flat roofs',
     what: 'Hotter summers make planted roofs, shade trees and permeable streets standard.',
     changes: ['Flat roofs turn green', 'Cooler, more pleasant blocks raise land values a little'],
     stances: {
@@ -86,7 +108,7 @@ export const TECH = {
     },
   },
   airtaxi: {
-    name: 'Air taxis', icon: '🚁', arrive: 2041, a0: 0, cap: 0.3, rate: 0.05, unit: 'of trips to Logan & downtown',
+    name: 'Air taxis', icon: '🚁', arrive: 2041, cap: 0.3, rate: 0.05, unit: 'of trips to Logan & downtown',
     what: 'Quiet-ish electric aircraft hop from rooftop pads to Logan and the Seaport in minutes.',
     changes: ['Business travelers love it', 'Neighbors hear it', 'Aircraft in the sky over the Square'],
     stances: {
@@ -97,21 +119,49 @@ export const TECH = {
   },
 };
 export const TECH_IDS = Object.keys(TECH);
+for (const d of Object.values(TECH)) if (d.hist) d.arrive = d.hist[0][0];
+
+// adoption at a (fractional) year from the known history
+function histAt(d, yf) {
+  const h = d.hist;
+  if (yf < h[0][0]) return 0;
+  for (let k = 1; k < h.length; k++) if (yf <= h[k][0]) return h[k - 1][1] + ((h[k][1] - h[k - 1][1]) * (yf - h[k - 1][0])) / (h[k][0] - h[k - 1][0]);
+  return h[h.length - 1][1];
+}
+const yearF = (sim) => sim.y + sim.m / 12;
+
+// Things that happened (they only play out if your game starts before them)
+const HISTORY = [
+  { y: 2008, m: 8, run: (s) => { s.apply({ demand: { R: -0.35, C: -0.3, I: -0.3 }, approval: { all: -2 }, news: ['Wall Street meltdown hits Main Street', 'Lending freezes. Projects stall, shops cut hours, and the For Lease signs multiply.', 'big'] }); s.market *= 0.9; s.hype = 0; } },
+  { y: 2014, m: 5, run: (s) => s.apply({ demand: { I: 0.5, R: 0.15 }, news: ['Kendall Square spills over the river', 'Life-science companies priced out of Cambridge are touring Watertown’s old industrial buildings.', 'big'] }) },
+  { y: 2020, m: 2, run: (s) => { s.shock = { until: s.t + 10, f: 0.82 }; s.hype = 0; s.apply({ demand: { C: -0.35 }, approval: { business: -4 }, news: ['Pandemic closes the Square', 'Restaurants switch to takeout, offices empty out, and the sidewalks go quiet. Nobody knows for how long.', 'big'] }); s.apply({ funds: 9e6, news: ['Federal relief money arrives', 'Washington sends the town millions for recovery. Everyone has an idea for it.'] }); } },
+  { y: 2023, m: 3, run: (s) => s.apply({ demand: { I: -0.6 }, news: ['The lab boom cools', 'Venture funding dries up. New lab buildings open with "Available" banners.', 'big'] }) },
+];
 
 export function initTech(sim) {
-  sim.tech = { a: {}, stance: {}, arrived: {}, closures: 0, conversions: 0, hubs: 0, bucket: {} };
-  for (const id of TECH_IDS) {
-    sim.tech.a[id] = TECH[id].arrive <= sim.y ? TECH[id].a0 : 0;
-    sim.tech.stance[id] = 'neutral';
-    if (TECH[id].arrive <= sim.y) sim.tech.arrived[id] = sim.t;
-  }
-  sim.tech.decided = { ebike: 0, ev: 0, solar: 0 }; // the 2027 techs get their agenda items over the first year
+  sim.tech = { a: {}, base: {}, stance: {}, arrived: {}, decided: {}, closures: 0, conversions: 0, hubs: 0, bucket: {}, hist: 0 };
+  fillTech(sim);
   updateEra(sim);
+}
+// also upgrades saves from before the history/base fields existed
+function fillTech(sim) {
+  const T = sim.tech;
+  T.base = T.base || {};
+  T.decided = T.decided || {};
+  for (const id of TECH_IDS) {
+    const d = TECH[id];
+    if (T.a[id] == null) T.a[id] = d.hist ? histAt(d, yearF(sim)) : 0;
+    if (T.base[id] == null) T.base[id] = T.a[id];
+    if (!T.stance[id]) T.stance[id] = 'neutral';
+    if (T.arrived[id] == null && d.arrive <= sim.y && sim.t === 0) T.arrived[id] = 0;
+  }
+  if (T.hist == null) T.hist = HISTORY.findIndex((h) => h.y * 12 + h.m >= sim.y * 12 + sim.m + 1);
+  if (T.hist < 0) T.hist = HISTORY.length;
 }
 
 const A = (sim, id) => (sim.tech ? sim.tech.a[id] || 0 : 0);
-// growth above the 2027 level: everything in the game is calibrated to 2027
-export const techD = (sim, id) => Math.max(0, A(sim, id) - (TECH[id].arrive <= 2027 ? TECH[id].a0 : 0));
+// growth since the game began: everything in the game is calibrated to the starting city
+export const techD = (sim, id) => (sim.tech ? Math.max(0, A(sim, id) - (sim.tech.base[id] || 0)) : 0);
 export const techA = A;
 
 // ---- effects the rest of the sim asks for ----
@@ -119,15 +169,20 @@ export function techTrafficF(sim) {
   if (!sim.tech) return 1;
   const rt = A(sim, 'robotaxi');
   const cruise = sim.tech.stance.robotaxi === 'embrace' ? -0.15 : 0.3;
-  return (1 - 0.4 * techD(sim, 'ebike')) * (1 - 0.3 * techD(sim, 'remote')) * (1 + cruise * rt) * (1 - 0.08 * A(sim, 'delivery'));
+  return (1 - 0.4 * techD(sim, 'ebike')) * (1 - 0.3 * techD(sim, 'remote')) * (1 + cruise * rt) * (1 - 0.08 * A(sim, 'delivery')) * (1 + 0.6 * techD(sim, 'ridehail'));
 }
 export const techPollF = (sim) => 1 - 0.75 * techD(sim, 'ev');
 export function techFootfall(sim, pn, jn) {
   const r = techD(sim, 'remote');
-  return (pn * (1 + 0.8 * r) + 0.6 * jn * (1 - 1.2 * r)) * (1 + 0.35 * techD(sim, 'ebike'));
+  return (pn * (1 + 0.5 * r) + 0.6 * jn * (1 - 0.8 * r)) * (1 + 0.35 * techD(sim, 'ebike'));
 }
 // share of an ordinary (non-experiential) shop's sales lost to delivery
-export const techRetailF = (sim, s) => (s.sig || s.cat === 'food' || s.cat === 'service' ? 1 : 1 - 0.35 * A(sim, 'delivery'));
+export function techRetailF(sim, s) {
+  const shock = sim.shock && sim.t < sim.shock.until ? sim.shock.f : 1;
+  if (s.sig) return shock * (1 + 0.15 * techD(sim, 'smartphone'));
+  if (s.cat === 'food' || s.cat === 'service') return shock;
+  return shock * (1 - 0.35 * A(sim, 'delivery') - 0.8 * techD(sim, 'ecommerce'));
+}
 export const techBuildCostF = (sim) => 1 - 0.18 * A(sim, 'timber');
 export const techBuildTimeF = (sim) => 1 - 0.25 * A(sim, 'timber');
 export function techDemand(sim) {
@@ -153,24 +208,31 @@ export function techApproval(sim) {
 export function techMonthly(sim) {
   if (!sim.tech) initTech(sim);
   const T = sim.tech;
+  if (!T.base) fillTech(sim);
   const events = [];
+  while (T.hist < HISTORY.length && HISTORY[T.hist].y * 12 + HISTORY[T.hist].m <= sim.y * 12 + sim.m) HISTORY[T.hist++].run(sim);
+  const yf = yearF(sim);
   for (const id of TECH_IDS) {
     const d = TECH[id];
     if (sim.y < d.arrive) continue;
     if (T.arrived[id] == null) {
       T.arrived[id] = sim.t;
-      T.a[id] = Math.max(T.a[id], 0.02);
-      const item = sim.news(`${d.icon} ${d.name} arrive in Watertown`, d.what, 'big');
+      T.a[id] = Math.max(T.a[id], d.hist ? histAt(d, yf) : 0.02);
+      const item = sim.news(`${d.icon} ${d.name} arrive${/s$/.test(d.name) ? '' : 's'} in Watertown`, d.what, 'big');
       react(sim, 'tech-arrive', { name: d.name.toLowerCase() }, item, 2);
     }
     const st = d.stances && d.stances[T.stance[id]];
-    const r = d.rate * (st && st.rateF ? st.rateF : 1);
     const a = T.a[id];
-    T.a[id] = clamp(a + r * a * (1 - a / d.cap), 0, d.cap);
+    if (d.hist && yf <= d.hist[d.hist.length - 1][0]) T.a[id] = histAt(d, yf); // the known past
+    else {
+      const r = d.rate * (st && st.rateF ? st.rateF : 1);
+      T.a[id] = clamp(a + r * Math.max(a, 0.002) * (1 - a / d.cap), 0, d.cap);
+    }
     // budget lines for the City's stance
     const key = 'tech:' + id;
-    if (st && st.monthly) sim.recurring[key] = { label: `${d.name}: ${st.label}`, monthly: st.monthly };
-    else if (st && st.revenue) sim.recurring[key] = { label: `${d.name}: curb fees`, monthly: -st.revenue * T.a[id] / d.cap };
+    const pf = sim.priceF ? sim.priceF() : 1;
+    if (st && st.monthly) sim.recurring[key] = { label: `${d.name}: ${st.label}`, monthly: st.monthly * pf };
+    else if (st && st.revenue) sim.recurring[key] = { label: `${d.name}: curb fees`, monthly: (-st.revenue * pf * T.a[id]) / d.cap };
     else delete sim.recurring[key];
   }
   evShakeout(sim, events);
@@ -303,14 +365,14 @@ export function setStance(sim, id, stance) {
   sim.updateApproval();
 }
 
-// Agenda items: one decision per technology when it arrives (the 2027 ones spread over the first year).
-const FIRST_YEAR = { ebike: 8, ev: 4, solar: 11 };
+// Agenda items: one decision per technology when it arrives (ones already here at the start are spread over the first year).
+const FIRST_YEAR = { ebike: 8, ev: 4, solar: 11, ridehail: 14 };
 export const TECH_SCENARIOS = TECH_IDS.filter((id) => TECH[id].stances).map((id) => {
   const d = TECH[id];
   return {
     id: 'tech-' + id,
     priority: true,
-    when: (s) => s.tech && s.tech.arrived[id] != null && !s.tech.decided[id] && s.t >= (FIRST_YEAR[id] != null ? FIRST_YEAR[id] : 0),
+    when: (s) => s.tech && s.tech.arrived[id] != null && !s.tech.decided[id] && s.t >= (s.tech.arrived[id] === 0 && FIRST_YEAR[id] != null ? FIRST_YEAR[id] : s.tech.arrived[id]),
     title: `${d.icon} ${d.name}`,
     text: () => `${d.what} ${d.changes.join('. ')}. How should the City respond? (You can change this later under Windows → Technology.)`,
     choices: Object.entries(d.stances).map(([k, st]) => ({ label: st.label, fx: st.fx, run: (s) => setStance(s, id, k) })),

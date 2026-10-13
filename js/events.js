@@ -4,6 +4,30 @@ import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
+import { addShops } from './projects.js';
+import { classifyLot } from './vibrancy.js';
+
+// Storylines that only make sense from a certain year on (for games that start in the past)
+const MIN_YEAR = { 'by-right-box': 2022, 'lab-next-door': 2014, 'lab-bust': 2023, 'mall-cancel': 2023, bsl3: 2014, str: 2015, pickleball: 2020, 'square-plan': 2019, 'road-diet': 2017, 'post-office': 2018, shuttle: 2015, 'bike-lane': 2012, rats: 2017 };
+const onStreet = (lot, re) => re.test(lot.addr || '');
+const histLots = (s, kind) => s.w.lots.filter((l) => !l.dead && l.inTown && l.hist === kind && !l.project && !l.under && !l.locked);
+// apartments over storefronts on a site (used by the historical forks)
+function mixedUse(s, lot, dens, local, chains) {
+  s.develop(lot, dens, ZONE.R);
+  lot.zone = ZONE.C;
+  lot.mixed = true;
+  lot.bldgZone = ZONE.C;
+  lot.locked = 1;
+  lot.code3 = '';
+  lot.hist = null;
+  lot.biz = [];
+  lot.bizKind = [];
+  lot.bizChain = [];
+  addShops(s, lot, local, chains, local > chains);
+  classifyLot(lot);
+  lot.auto = false;
+  s.walkDirty = true;
+}
 
 const near = (s, lot, at, r) => {
   const [x, y] = s.anchor(at);
@@ -16,6 +40,70 @@ const hasRNear = (s, lot, r) => {
 const labCount = (s) => s.w.lots.filter((l) => !l.dead && l.inTown && l.zone === ZONE.I && l.dens >= 3).length;
 
 export const SCENARIOS = [
+  {
+    id: 'auto-permit',
+    maxYear: 2013,
+    cooldown: 20,
+    when: (s) => s.y < 2014 && s.t >= 2,
+    prep: (s) => s.findLot((l) => l.zone !== ZONE.R && !l.auto && (l.hist === 'industrial' || l.hist === 'parking' || (l.zone === ZONE.C && l.occ < 0.6)) && /Arsenal St|Main St|Pleasant St|Galen St|N(orth)? Beacon St|Mt Auburn St/i.test(l.addr || '')),
+    title: 'Another Body Shop?',
+    text: (s, lot) =>
+      `An auto body shop wants a special permit to open at ${lot.addr || 'a corner lot'}. It's a taxpaying business, the site has been ${lot.hist === 'parking' ? 'a parking lot' : 'half empty'} for years, and the zoning allows it with a permit. Nobody at the hearing is against it. Nobody is excited about it either.`,
+    choices: [
+      { label: 'Grant the permit', fx: 'tax revenue · jobs · one more dead corner', run: (s, lot) => {
+        lot.zone = ZONE.C; lot.code3 = '332'; lot.biz = ['Body shop']; lot.bizKind = ['car_repair']; lot.bizChain = [0]; classifyLot(lot); lot.occ = 0.9; lot.hist = 'auto';
+        s.apply({ funds: 150e3, approval: { business: 2 }, news: ['Body shop gets its permit', 'The corner will be busy. Mostly with tow trucks.'] });
+      } },
+      { label: 'Deny it; hold out for a storefront', fx: 'lot stays empty for now · Business ↓', run: (s) => s.apply({ approval: { business: -2, renters: 1 }, news: ['Board denies body-shop permit', 'Members say they want "something people walk to." The owner asks, reasonably, "like what?"'] }) },
+      { label: 'Rezone the corridor for storefronts', fx: 'no new auto uses on this street · Business ↓ · growth ↑ later', run: (s, lot) => {
+        const st = (lot.addr || '').replace(/^[0-9\-A-Za-z]*[0-9][0-9\-A-Za-z]*\s+/, '');
+        for (const l of s.w.lots) if (!l.dead && l.inTown && l.addr && st && l.addr.endsWith(st) && l.zone !== ZONE.R) { l.zone = ZONE.C; l.dense = true; l.noAuto = 1; }
+        s.flags.autoRezone = (s.flags.autoRezone || 0) + 1;
+        s.apply({ approval: { business: -3, renters: 2, homeowners: 1 }, demand: { C: 0.05 }, news: [`${st || 'Corridor'} rezoned for storefronts`, 'New auto uses now need ground-floor retail. Existing shops are grandfathered.'] });
+      } },
+    ],
+  },
+  {
+    id: 'pleasant-st',
+    maxYear: 2015,
+    when: (s) => s.y >= 2005 && s.y <= 2015 && histLots(s, 'industrial').some((l) => onStreet(l, /Pleasant St/i)),
+    prep: (s) => histLots(s, 'industrial').find((l) => onStreet(l, /Pleasant St/i)) || null,
+    title: 'What Becomes of Pleasant Street?',
+    text: () =>
+      'Pleasant Street runs along the river past old mills, warehouses and machine shops. Owners say industry is leaving and they want to build. The Planning Board has three drafts on the table, and whatever it picks will shape the corridor for decades.',
+    choices: [
+      { label: 'Apartments by right', fx: 'lots of homes · Renters ↑ · little street life', run: (s) => {
+        for (const l of histLots(s, 'industrial')) if (onStreet(l, /Pleasant St/i)) { l.zone = ZONE.R; l.dense = true; }
+        s.apply({ approval: { renters: 3, homeowners: -2 }, demand: { R: 0.1 }, news: ['Pleasant St rezoned for apartments', 'Developers start calling the owners the same afternoon.'] });
+      } },
+      { label: 'Mixed use with ground-floor shops', fx: 'homes + storefronts · slower · Business ↑', run: (s) => {
+        for (const l of histLots(s, 'industrial')) if (onStreet(l, /Pleasant St/i)) { l.zone = ZONE.C; l.dense = true; l.mixed = true; }
+        s.apply({ approval: { renters: 2, business: 2, homeowners: -1 }, demand: { C: 0.05, R: 0.05 }, news: ['Pleasant St gets mixed-use zoning', 'Every new building must have shops on the ground floor and a riverwalk out back.'] });
+      } },
+      { label: 'Keep it industrial', fx: 'jobs stay · nothing changes', run: (s) => s.apply({ approval: { business: 1, renters: -2 }, news: ['Pleasant St stays industrial', 'The machine shops are relieved. The empty ones stay empty.'] }) },
+    ],
+  },
+  {
+    id: 'arsenal-mall',
+    maxYear: 2020,
+    when: (s) => s.y >= 2014 && s.y <= 2020 && histLots(s, 'mall').length > 0,
+    prep: (s) => histLots(s, 'mall').sort((a, b) => b.area - a.area)[0] || null,
+    title: 'The Mall Wants to Be a Neighborhood',
+    text: () =>
+      'The owner of the aging Arsenal Mall proposes tearing most of it down for apartments, a hotel, a parking garage and a new outdoor shopping street, mostly leased to national chains. It would be the biggest project in town in a generation, and it would pay a fortune in taxes.',
+    choices: [
+      { label: 'Approve it as proposed', fx: 'huge tax base · chains · garage traffic · Business ↑', run: (s) => {
+        for (const l of histLots(s, 'mall')) mixedUse(s, l, 4, 1, 4);
+        s.megaprojects = (s.megaprojects || 0) + 1;
+        s.apply({ approval: { business: 5, renters: 2, commuters: -3, homeowners: -1 }, news: ['Mall redevelopment approved', 'Cranes over Arsenal Street for years. Then: a garage, apartments, and a lot of national brands.', 'big'] });
+      } },
+      { label: 'Demand a street grid and local shops', fx: '−$6M incentive · local storefronts · Renters ↑', run: (s) => {
+        for (const l of histLots(s, 'mall')) mixedUse(s, l, 3, 3, 1);
+        s.apply({ funds: -6e6, approval: { renters: 4, business: -1, homeowners: 1 }, news: ['Mall to become a neighborhood, with conditions', 'Smaller blocks, local storefronts and a public square. The developer agrees, for a price.', 'big'] });
+      } },
+      { label: 'Keep the mall', fx: 'nothing changes · Business ↓', run: (s) => s.apply({ approval: { business: -3, seniors: 2 }, news: ['Mall stays a mall', 'The food court celebrates with a two-for-one pretzel.'] }) },
+    ],
+  },
   {
     id: 'square-plan',
     when: (s) => s.t >= 2,
@@ -436,6 +524,8 @@ export function nextScenario(s) {
   if (s.t - (s.lastScenarioT ?? -99) < AGENDA.minGap) return null;
   const eligible = [];
   for (const sc of SCENARIOS) {
+    if (MIN_YEAR[sc.id] && s.y < MIN_YEAR[sc.id]) continue;
+    if (sc.maxYear && s.y > sc.maxYear) continue;
     const last = s.seen[sc.id];
     if (last != null && (!sc.cooldown || s.t - last < sc.cooldown)) continue;
     let ok = false;
