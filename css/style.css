@@ -236,3 +236,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .hud { left: 6px; right: 6px; top: 6px; max-width: none; padding: 3px 6px; }
   .hudg { grid-template-columns: 1fr 50px auto; }
 }
+
+/* Behind the scenes */
+.win.bts { max-width: 560px; width: min(560px, 94vw); }
+.bts .wbody { max-height: min(76vh, 720px); }
+.btsnav { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 8px; }
+.btsnav button { font-size: 11px; padding: 2px 6px; background: var(--chrome); border: 1px solid; border-color: #fff #666 #666 #fff; }
+.btsnav button.on { background: #ffe680; font-weight: bold; border-color: #666 #fff #fff #666; }
+.btsbody p, .btsbody li { line-height: 1.45; font-size: 13px; }
+.btsbody p { margin: 0 0 8px; }
+.btsbody ul { margin: 0 0 8px; padding-left: 18px; }
+.btsbody li { margin-bottom: 4px; }
+.btsbody .lead { font-size: 15px; font-style: italic; }
+.btsbody .peers { margin-bottom: 8px; }
+.btsbody a { color: #1b3f8f; }
+.btsnote { background: #fffbe0; border: 1px solid #c9b45a; padding: 6px 8px; margin: 4px 0 10px; font-size: 12px; line-height: 1.4; }
+.btsfoot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; border-top: 1px solid var(--chrome-lo); padding-top: 8px; }
+
+/* Tutorial coach */
+.coach { position: fixed; right: 12px; bottom: 40px; width: 320px; z-index: 250; background: #fffbe0; border: 2px solid #000; box-shadow: 4px 4px 0 rgba(0,0,0,0.4); padding: 0 10px 10px; font-size: 13px; transition: background 0.3s; }
+.coach.ok { background: #d9f5c9; }
+.coachbar { display: flex; align-items: center; justify-content: space-between; margin: 0 -10px 6px; padding: 2px 4px 2px 10px; background: #2a3a55; color: #fff; font-size: 11px; }
+.coach b { display: block; font-size: 14px; margin-bottom: 4px; }
+.coach p { margin: 0 0 8px; line-height: 1.4; }
+.coachbtns { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.coachbtns small { color: #666; font-style: italic; }
+.btn.primary { background: #ffe680; font-weight: bold; }
+.coach-hl { outline: 3px solid #ff7a00 !important; outline-offset: 1px; animation: coachpulse 1s ease-in-out infinite alternate; position: relative; z-index: 5; }
+@keyframes coachpulse { from { outline-color: #ff7a00; } to { outline-color: #ffd000; } }
+@media (max-width: 700px) {
+  .coach { left: 8px; right: 8px; width: auto; top: 96px; bottom: auto; font-size: 12px; }
+}

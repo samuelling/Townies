@@ -60,7 +60,8 @@ function titleScreen() {
     }
   });
   btns.append(
-    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown')
+    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown'),
+    el('button', { class: 'tbtn term', onclick: go('live', 'tutorial') }, el('span', { class: 'ticon' }, '🎓'), el('span', {}, el('b', {}, 'Tutorial'), el('small', {}, 'New to Townies? A ten-step guided tour of the real town: looking things up, Main Street, crews, redevelopment and the budget.')))
   );
   if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox');
 }
@@ -134,12 +135,14 @@ function boot(state, scen = null) {
     game.renderer.z = state.z || 1;
   } else game.renderer.z = window.innerWidth < 700 ? 0.75 : 1;
   game.ui = new UI(game);
-  if (!state) startScenario(game.sim, scen || 'sandbox', game.peers);
+  const tutorial = scen === 'tutorial';
+  if (!state) startScenario(game.sim, tutorial ? 'sandbox' : scen || 'sandbox', game.peers);
   game.ui.refreshHud();
   game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? state.speed : 1);
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
   game.renderer.resize();
-  if (!state) setTimeout(() => game.ui.newsWindow(), 600);
+  if (tutorial) game.ui.startTutorial();
+  else if (!state) setTimeout(() => game.ui.newsWindow(), 600);
   requestAnimationFrame(frame);
 }
 
@@ -173,6 +176,7 @@ function monthTick() {
   const sev = scenarioMonthly(s);
   game.ui.refreshHud();
   if (sev) return game.ui.scenarioEvent(sev);
+  if (game.tutorial) return;
   const next = nextScenario(s);
   if (next) game.ui.agenda(next.sc, next.ctx);
 }

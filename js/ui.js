@@ -9,6 +9,8 @@ import { walkLabel } from './walkscore.js';
 import { TERMS, goalStatus } from './scenarios.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 import { makeProj } from './geo.js';
+import { behindScenes } from './bts.js';
+import { startTutorial } from './tutorial.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
 const ICON = {
@@ -108,7 +110,8 @@ export class UI {
       });
       return m;
     };
-    const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)], ['About Townies', () => this.aboutWindow()]];
+    const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
+    const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
@@ -120,6 +123,7 @@ export class UI {
       Object.assign(menu('Speed', spItems), { className: 'menu m-speed' }),
       menu('Windows', winItems),
       menu('Overlay', ovItems),
+      menu('Help', helpItems),
       el('div', { class: 'spacer' }),
       this.speedBtn,
       this.musicBtn
@@ -396,7 +400,7 @@ export class UI {
     if (id === 'query') { this.r.selLot = null; this.r.needs = true; }
   }
   refreshWins() {
-    for (const [id, w] of this.wins) if (id !== 'query' && id !== 'about') w.refresh();
+    for (const [id, w] of this.wins) if (id !== 'query' && id !== 'about' && id !== 'bts') w.refresh();
   }
 
   // ---------------- query ----------------
@@ -892,6 +896,14 @@ export class UI {
       }
       body.append(list);
     }, { cls: 'paper' });
+  }
+
+  behindScenes(ch) {
+    behindScenes(this, ch);
+  }
+  startTutorial() {
+    if (this.g.tutorial) return;
+    startTutorial(this);
   }
 
   aboutWindow() {
