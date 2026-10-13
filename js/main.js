@@ -126,6 +126,7 @@ function boot(state, scen = null) {
     invalidateTiles: (t) => game.renderer && game.renderer.invalidateTiles(t),
     invalidateBuilding: (b) => game.renderer && game.renderer.invalidateBuilding(b),
     invalidateAll: () => game.renderer && game.renderer.invalidateAll(),
+    roadsChanged: () => { if (game.renderer) { game.renderer.indexRoadLines(); game.renderer.invalidateAll(); game.renderer.prewarmDone = false; game.renderer.prewarmK = 0; } },
     news: (n) => {
       if (game.ui) game.ui.refreshStatus();
       if (n.size === 'big' && game.ui) game.music.sfx('news');

@@ -550,6 +550,7 @@ function complete(sim, p) {
   }
   p.stage = 'done';
   p.doneAt = sim.t;
+  if (sim.flow && sim.reassign) sim.reassign();
   sim.capNear({ at: [p.cx, p.cy], r: 10, amt: 0.11 });
   for (const li of p.ids) {
     const lot = w.lots[li];

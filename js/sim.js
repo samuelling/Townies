@@ -9,9 +9,16 @@ import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
 import { melodiaMonthly } from './melodia.js';
+import { junctionFactors, squareCtl } from './junctions.js';
+import { buildInput, assignCore, fitToCounts, TP } from './traffic.js';
 import { initTech, techMonthly, techTrafficF, techPollF, techDemand, techApproval } from './tech.js';
 
 const CC = 4;
+// traffic engineering constants: share of daily traffic in the peak hour (K), share in the peak
+// direction (D), and per-lane hourly capacity of a signalized arterial (1,800/h saturation × ~0.5 green)
+const PEAK_K = 0.09, PEAK_D = 0.55, LANE_VPH = 900;
+const DEFAULT_LANES = [0, 2, 2, 4];
+const EPS_T = 1; // so a counted street the model routes nobody onto still carries its count
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 export const FACTION_LABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
 const FW = { homeowners: 0.3, renters: 0.25, seniors: 0.15, business: 0.15, commuters: 0.15 };
@@ -53,6 +60,7 @@ export class Sim {
       this.lvLocal = Float32Array.from(state.lvLocal);
       this.capLocal = Float32Array.from(state.capLocal);
       this.S0 = Float32Array.from(state.S0);
+      if (state.calF) this.calF = Float32Array.from(state.calF);
       this.rand = rng(Date.now() & 0xffffffff);
       if (!this.inc) initIncidents(this);
       refreshBlocks(this);
@@ -131,7 +139,9 @@ export class Sim {
       rateC0: CFG.RATE_CIP,
     };
     this.funds = budget * 0.1;
+    if (this.w.roadLines && this.w.roadLines.length) squareCtl(this);
     this.computeAll(true);
+    this.computeTraffic(true); // second pass: intersections now see real volumes
     initStorefronts(this);
     initIncidents(this);
     initTech(this);
@@ -257,8 +267,15 @@ export class Sim {
     }
     const tf = techTrafficF(this);
     if (tf !== 1) for (let i = 0; i < D.length; i++) D[i] *= tf;
-    T.set(D);
     const rl = this.roadList;
+    if (this.w.roadLines && this.w.roadLines.length) {
+      // routed traffic (see js/traffic.js), scaled month to month by how many trips the town makes
+      if (!this.flow || this.flow.length !== this.N) this.reassign(true);
+      const scale = (this.tripsNow() / (this.flowTrips || 1)) * tf;
+      T.fill(0);
+      for (const i of rl) T[i] = this.flow[i] * scale;
+    } else {
+    T.set(D);
     const tmp = new Float32Array(this.N);
     for (let it = 0; it < 16; it++) {
       tmp.set(T);
@@ -273,21 +290,99 @@ export class Sim {
         T[i] = D[i] + (n ? (0.9 * s) / n : 0);
       }
     }
+    }
     if (init || !this.base.capC1) {
       const v1 = [];
       for (const i of rl) if (road[i] === 1) v1.push(T[i]);
       this.base.capC1 = (percentile(v1, 0.8) || 10) / 0.55;
     }
+    if (!this.calF && this.w.aadt) this.calibrateTraffic(T);
     const capMul = (0.82 + 0.18 * this.roadCond) * (1 + this.capBump);
+    const jf = junctionFactors(this);
     let sum = 0, n = 0;
+    if (!this.vpd || this.vpd.length !== this.N) this.vpd = new Float32Array(this.N);
     for (const i of rl) {
-      const cap = this.base.capC1 * [0, 1, 2.6, 4.2][road[i]] * capMul * this.capLocal[i] * (this.incBlock ? this.incBlock[i] : 1);
-      const c = T[i] / cap;
+      const local = capMul * this.capLocal[i] * (this.incBlock ? this.incBlock[i] : 1) * (jf ? jf[i] : 1);
+      let c;
+      if (this.calF) {
+        // vehicles per day, pivoted on MassDOT counts; peak-hour volume in the peak direction vs signalized capacity
+        const vol = (T[i] + EPS_T) * this.base.kVeh * this.calF[i];
+        this.vpd[i] = vol;
+        const lanes = this.w.lanes[i] || DEFAULT_LANES[road[i]];
+        c = (vol * PEAK_K * PEAK_D) / (Math.max(1, lanes / 2) * LANE_VPH * local);
+      } else c = T[i] / (this.base.capC1 * [0, 1, 2.6, 4.2][road[i]] * local);
       this.congestion[i] = c;
       if (road[i] >= 2 && this.w.inTown[i]) { sum += c; n++; }
     }
     this.congAvg = n ? sum / n : 0;
     if (init || this.base.cong0 == null) this.base.cong0 = this.congAvg || 0.5;
+  }
+  tripsNow() {
+    let p = 0;
+    for (const lot of this.w.lots) if (!lot.dead && lot.inTown && lot.road >= 0) p += (lot.units || 0) * TP.homeTrips * lot.occ * (lot.tripF || 1);
+    return p;
+  }
+  // Re-route all traffic over the current street network. Synchronous on first load (and in tests);
+  // afterwards in a Web Worker so the game keeps running while drivers find their new routes.
+  reassign(sync = false) {
+    const inp = buildInput(this, TP);
+    if (sync || typeof Worker === 'undefined') {
+      this.flow = assignCore(inp);
+      this.flowTrips = inp.trips;
+      return;
+    }
+    try {
+      if (!this.trafficWorker) {
+        this.trafficWorker = new Worker(new URL('./traffic-worker.js', import.meta.url), { type: 'module' });
+        this.trafficWorker.onmessage = (e) => {
+          if (e.data.id !== this.assignId) return;
+          this.flow = e.data.flow;
+          this.flowTrips = this.pendingTrips;
+          this.computeAll();
+          this.hooks.incidents && this.hooks.incidents();
+        };
+      }
+      this.assignId = (this.assignId || 0) + 1;
+      this.pendingTrips = inp.trips;
+      this.trafficWorker.postMessage({ id: this.assignId, inp });
+    } catch (e) {
+      this.flow = assignCore(inp);
+      this.flowTrips = inp.trips;
+    }
+  }
+  // Fit the trip model to MassDOT traffic counts: one scale factor for the whole town, then a local
+  // correction on each counted street that fades along the network into uncounted ones. The model then
+  // moves volumes up and down from the real counts as the town changes (the "pivot-point" method).
+  calibrateTraffic(T) {
+    const w = this.w, { W, road } = w;
+    const rl = this.roadList;
+    const counted = rl.filter((i) => w.aadt[i] > 0 && w.inTown[i]);
+    if (counted.length < 20) { this.calF = null; return; }
+    const ratios = counted.filter((i) => T[i] > 0).map((i) => w.aadt[i] / T[i]).sort((a, b) => a - b);
+    const k = ratios[Math.floor(ratios.length / 2)];
+    // how well does the raw trip model explain the counts? (R² of log volumes, before correction)
+    const routed = counted.filter((i) => T[i] > 0);
+    const xs = routed.map((i) => Math.log(T[i] * k)), ys = routed.map((i) => Math.log(w.aadt[i]));
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let j = 0; j < xs.length; j++) { sxy += (xs[j] - mx) * (ys[j] - my); sxx += (xs[j] - mx) ** 2; syy += (ys[j] - my) ** 2; }
+    const F = new Float32Array(this.N), fixed = new Uint8Array(this.N);
+    for (const i of counted) { F[i] = Math.log(w.aadt[i] / ((T[i] + EPS_T) * k)); fixed[i] = 1; }
+    const tmp = new Float32Array(this.N);
+    for (let it = 0; it < 40; it++) {
+      tmp.set(F);
+      for (const i of rl) {
+        if (fixed[i]) continue;
+        const x = i % W;
+        let s = 0, m = 0;
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < this.N && road[j]) { s += tmp[j]; m++; }
+        F[i] = m ? (0.93 * s) / m : 0;
+      }
+    }
+    this.calF = new Float32Array(this.N);
+    for (let i = 0; i < this.N; i++) this.calF[i] = Math.exp(F[i]);
+    this.base.kVeh = k;
+    this.base.trafFit = { n: routed.length, r2: sxx && syy ? (sxy * sxy) / (sxx * syy) : 0, routed: !!this.flow };
   }
   computeMaps(init = false) {
     const w = this.w;
@@ -702,6 +797,7 @@ export class Sim {
   }
 
   newYear() {
+    if (this.flow) this.reassign(); // a year of growth: drivers settle into new routes
     // annual revaluation and Prop 2½ levy limit
     const r0 = this.rates();
     let added = 0;
@@ -1034,9 +1130,20 @@ export class Sim {
     const { W, H, inTown, road, terrain, svcAt, lotOf } = w;
     if (a < 0) return null;
     if (b < 0) b = a;
-    let tiles = [], cost = 0, ok = true, msg = '';
+    let tiles = [], cost = 0, ok = true, msg = '', p0line = null;
     if (tool === 'road') {
-      tiles = this.lineTiles(a, b);
+      // any angle, optionally bent through a control point (quadratic curve); drawn as a smooth line
+      const ax = (a % W) + 0.5, ay = ((a / W) | 0) + 0.5, bx = (b % W) + 0.5, by = ((b / W) | 0) + 0.5;
+      const ctrl = opts.ctrl;
+      const line = [];
+      const steps = ctrl ? Math.max(8, Math.ceil(Math.hypot(bx - ax, by - ay) * 1.5)) : 1;
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        if (ctrl) line.push((1 - t) ** 2 * ax + 2 * (1 - t) * t * ctrl[0] + t * t * bx, (1 - t) ** 2 * ay + 2 * (1 - t) * t * ctrl[1] + t * t * by);
+        else line.push(ax + (bx - ax) * t, ay + (by - ay) * t);
+      }
+      tiles = a === b ? [a] : this.polyTiles(line);
+      p0line = line;
       for (const i of tiles) {
         if (!inTown[i]) { ok = false; msg = 'Outside city limits'; }
         else if (this.bAlive(i)) { ok = false; msg = 'A building is in the way — bulldoze first'; }
@@ -1096,7 +1203,25 @@ export class Sim {
       ok = false;
       msg = 'That is a project site — wait until it opens';
     }
-    return { tool, tiles, cost, ok, msg };
+    return { tool, tiles, cost, ok, msg, line: p0line, cls: opts.avenue ? 2 : 1 };
+  }
+  // tiles under a polyline, 4-connected so traffic can flow along it
+  polyTiles(line) {
+    const { W, H } = this.w;
+    const out = [], seen = new Set();
+    const add = (x, y) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = y * W + x; if (!seen.has(i)) { seen.add(i); out.push(i); } };
+    let px = null, py = null;
+    for (let k = 0; k + 3 < line.length; k += 2) {
+      const ax = line[k], ay = line[k + 1], bx = line[k + 2], by = line[k + 3];
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 4));
+      for (let j = 0; j <= n; j++) {
+        const x = Math.floor(ax + ((bx - ax) * j) / n), y = Math.floor(ay + ((by - ay) * j) / n);
+        if (px !== null && x !== px && y !== py) add(x, py); // no diagonal-only steps
+        add(x, y);
+        px = x; py = y;
+      }
+    }
+    return out;
   }
 
   execute(p, opts = {}) {
@@ -1105,9 +1230,12 @@ export class Sim {
     const { W, road, lotOf, svcAt, bldgs } = w;
     const touched = [];
     if (p.tool === 'road') {
+      const cls = p.cls || 1;
+      if (p.line && p.tiles.length > 1) w.roadLines.push({ cls, pts: Float32Array.from(p.line), bridge: p.tiles.some((i) => w.terrain[i] === 1), player: 1 });
       for (const i of p.tiles) {
-        if (road[i]) continue;
-        road[i] = 1;
+        if (p.line) { w.osmRoad[i] = 1; w.roadCut[i] = 0; }
+        if (road[i] >= cls) continue;
+        road[i] = cls;
         const li = lotOf[i];
         if (li >= 0) this.removeTileFromLot(li, i);
         w.tree[i] = 0;
@@ -1115,6 +1243,8 @@ export class Sim {
       }
       this.rebuildRoadList();
       this.refreshRoadAccess(p.tiles);
+      if (p.line) this.hooks.roadsChanged && this.hooks.roadsChanged(p.tiles);
+      if (this.flow) this.reassign();
     } else if (p.tool === 'bulldoze') {
       const done = new Set();
       for (const i of p.tiles) {
@@ -1137,6 +1267,7 @@ export class Sim {
           } else if (li < 0) touched.push(...demolish(w, bldgs[w.bAt[i]]));
         } else if (road[i]) {
           road[i] = 0;
+          this.roadsCut = true;
           if (w.roadCut) w.roadCut[i] = 1;
           touched.push(i);
         } else if (w.tree[i]) {
@@ -1146,6 +1277,7 @@ export class Sim {
       }
       this.rebuildRoadList();
       this.refreshRoadAccess(p.tiles);
+      if (this.roadsCut && this.flow) { this.roadsCut = false; this.reassign(); }
     } else if (p.tool.startsWith('zone') || p.tool === 'dezone') {
       const zone = p.tool === 'zoneR' ? ZONE.R : p.tool === 'zoneC' ? ZONE.C : p.tool === 'zoneI' ? ZONE.I : ZONE.NONE;
       const dense = !!opts.dense;
@@ -1311,10 +1443,10 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['calF', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
-    return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0) };
+    return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), calF: this.calF ? Array.from(this.calF) : null };
   }
 }
 

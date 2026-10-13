@@ -5,6 +5,7 @@ import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
 import { MELODIA_SCENARIOS, melodiaRecords } from './melodia.js';
+import { DESIGNS, planDesign, squareCtl } from './junctions.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
 
@@ -112,8 +113,13 @@ export const SCENARIOS = [
     text: () =>
       'Engineers have finished drawing the Square redesign that pulls one road out of the five-way intersection, turns acres of asphalt into lawn and plaza, and adds protected bike lanes. There is no construction money yet. Commuters are convinced it will choke Main Street at rush hour (a third of the cars just want the Pike). Supporters say wider roads only fill up, and a downtown people want to linger in is the point.',
     choices: [
-      { label: 'Build Four Corners', fx: '$30M bond · 2 yrs of construction · Square land value ↑ · Commuters ↓', run: (s) => s.apply({ bond: { amount: 30e6, label: 'Square redesign' }, capNear: { at: 'square', r: 14, amt: -0.2 }, approval: { business: -4, commuters: -6, renters: 4 }, later: { months: 24, id: 'square-done' }, flag: { squarePlan: 'build' }, news: ['Square redesign breaks ground', 'Orange barrels bloom across downtown. Detours expected through 2029.', 'big'] }) },
-      { label: 'Just retime the signals', fx: '−$1.2M · small traffic gain', run: (s) => s.apply({ funds: -1.2e6, capNear: { at: 'square', r: 14, amt: 0.06 }, approval: { commuters: 3, renters: -2 }, news: ['Square gets new signal timing', 'Drivers report it feels about 4% better. Pedestrians report the walk signal is still short.'] }) },
+      { label: 'Build Four Corners', fx: '$30M bond · 2 yrs of construction · Square land value ↑ · Commuters ↓', run: (s) => {
+        const r = planDesign(s, squareCtl(s), 'fourcorners', true);
+        s.funds += r.cost; // paid with a bond instead
+        s.pending = s.pending.filter((p) => !(p.id === 'junction-done' && p.data && p.data.id === 'square'));
+        s.apply({ bond: { amount: 30e6, label: 'Square redesign' }, approval: { business: -4, commuters: -6, renters: 4 }, later: { months: 24, id: 'square-done' }, flag: { squarePlan: 'build' }, news: ['Square redesign breaks ground', 'Orange barrels bloom across downtown. Detours expected through 2029.', 'big'] });
+      } },
+      { label: 'Just retime the signals', fx: '−$1.2M · small traffic gain', run: (s) => { planDesign(s, squareCtl(s), 'adaptive', true); s.apply({ approval: { commuters: 3, renters: -2 }, news: ['Square gets new signal timing', 'Detectors and adaptive timing. Pedestrians report the walk signal is still short.'] }); } },
       { label: 'Shelve it for now', fx: 'free · "study fatigue"', run: (s) => s.apply({ approval: { renters: -4, business: -2 }, flag: { studyFatigue: 1 }, news: ['Square plan heads back to the shelf', 'Residents note it is the third plan to visit that shelf.'] }) },
     ],
   },
@@ -488,7 +494,7 @@ export const SCENARIOS = [
 ];
 
 export const FOLLOWUPS = {
-  'square-done': (s) => s.apply({ flag: { squareDone: 1 }, capNear: { at: 'square', r: 14, amt: 0.1 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
+  'square-done': (s) => s.apply({ flag: { squareDone: 1 }, capNear: { at: 'square', r: 8, amt: 1 / 3 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
   'construction-biz': (s) => s.apply({ approval: { business: -4 }, news: ['Bakery remains open, accessible by gravel path and determination', 'Business owners along the construction zone ask for help.'] }),
   'cap-lobby': (s) => {
     if (s.rand() < 0.75) s.apply({ capShare: 0.05, approval: { homeowners: 6, seniors: 3 }, news: ['Governor signs Watertown tax relief bill', 'The House vote was unanimous. Homeowners are spared; commercial property takes one for the team.', 'big'] });
@@ -498,6 +504,11 @@ export const FOLLOWUPS = {
   'po-maybe': (s) => (s.rand() < 0.4 ? s.apply({ approval: { seniors: 6 }, news: ['Post office returns to the Square', 'There was a line on opening day. Of course there was.'] }) : s.apply({ news: ['Postal Service "still evaluating" Square location', ''] })),
   ada: (s) => s.apply({ funds: -12e6, approval: { homeowners: -3 }, news: ['Repairs trigger accessibility upgrades', 'The cheap fix turns out to require $12M in accessibility work.', 'big'] }),
   'melodia-records': (s) => melodiaRecords(s),
+  'junction-done': (s, d) => {
+    s.capNear({ at: [d.x, d.y], r: d.r, amt: 1 / 3 });
+    const c = (s.w.ctl || []).find((k) => k.id === d.id);
+    s.apply({ news: [`${c && c.name !== 'Intersection' ? c.name : 'The intersection'} reopens as a ${DESIGNS[d.design].label.toLowerCase()}`, d.design === 'rotary' ? 'Drivers circle with confidence. Pedestrians wait for a gap, and wait.' : d.design.startsWith('rb') ? 'The first week: confusion. The second week: nobody remembers the signal.' : 'Construction barrels retreat. Traffic engineers watch the queues closely.', 'big'] });
+  },
   'build-lot': (s, d) => {
     const lot = s.w.lots[d.lot];
     if (lot && !lot.dead && !lot.project && !lot.under) {

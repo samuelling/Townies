@@ -14,6 +14,7 @@ import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { melodiaStatus } from './melodia.js';
+import { DESIGNS, DESIGN_ORDER, evaluate as evalJunction, legVolumes, planDesign, ctlAt, adoptCtl, squareCtl } from './junctions.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
 const ICON = {
@@ -22,6 +23,8 @@ const ICON = {
   bulldoze: '<svg viewBox="0 0 24 24"><rect x="7" y="9" width="10" height="7" fill="#f1c232" stroke="#000"/><rect x="10" y="5" width="5" height="5" fill="#f1c232" stroke="#000"/><path d="M2 12h4v6H2z" fill="#888" stroke="#000"/><rect x="6" y="16" width="13" height="4" rx="2" fill="#333"/></svg>',
   develop: '<svg viewBox="0 0 24 24"><path d="M5 22V4h2v18" fill="#e3a21a" stroke="#000" stroke-width="0.8"/><path d="M4 4h17v2H4z" fill="#e3a21a" stroke="#000" stroke-width="0.8"/><path d="M18 6v6" stroke="#000" stroke-width="1"/><rect x="16" y="12" width="4" height="3" fill="#777" stroke="#000" stroke-width="0.8"/><rect x="9" y="15" width="10" height="7" fill="#b5654a" stroke="#000" stroke-width="0.8"/><path d="M11 17h2M15 17h2M11 19.5h2M15 19.5h2" stroke="#2a3a55" stroke-width="1.2"/></svg>',
   road: '<svg viewBox="0 0 24 24"><path d="M8 2h8l4 20H4z" fill="#555"/><path d="M12 4v3M12 10v3M12 16v4" stroke="#f1c232" stroke-width="1.6"/></svg>',
+  curve: '<svg viewBox="0 0 24 24"><path d="M3 22C3 10 10 4 22 4" fill="none" stroke="#555" stroke-width="6"/><path d="M3 22C3 10 10 4 22 4" fill="none" stroke="#f1c232" stroke-width="1.4" stroke-dasharray="2.5 2.5"/></svg>',
+  junction: '<svg viewBox="0 0 24 24"><path d="M12 1v22M1 12h22" stroke="#555" stroke-width="5"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#555" stroke-width="4"/><circle cx="12" cy="12" r="3.6" fill="#3a8a2c" stroke="#000" stroke-width="0.8"/></svg>',
   zoneR: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5fd35f" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">R</text></svg>',
   zoneC: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5f9fff" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">C</text></svg>',
   zoneI: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#f0c840" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">I</text></svg>',
@@ -45,7 +48,9 @@ const TOOLS = [
   { id: 'query', label: 'Query', key: 'q', tip: 'Tap a building, parcel or street to see its real data.' },
   { id: 'pan', label: 'Pan', key: 'h', tip: 'Drag to move around. Two fingers pinch to zoom.' },
   { id: 'bulldoze', label: 'Bulldoze', key: 'b', tip: 'Drag a box to demolish buildings, roads or trees.' },
-  { id: 'road', label: 'Road', key: 'd', tip: 'Drag to build a road. Bridges over water cost more.' },
+  { id: 'road', label: 'Road', key: 'd', tip: 'Drag to build a straight road at any angle. Bridges over water cost more.' },
+  { id: 'curve', label: 'Curved road', key: 'c', tip: 'Drag from start to end, then move the pointer to bend it and click (or tap) to build.' },
+  { id: 'junction', label: 'Intersection', key: 'j', tip: 'Tap an intersection to compare signals, roundabouts and rotaries with real traffic counts.' },
   { id: 'develop', label: 'Redevelop', key: 'v', tip: 'Drag a box over parcels to plan a redevelopment project.' },
   { id: 'zoneR', label: 'Residential', key: '1', tip: 'Drag to zone residential. Tap again to switch light/dense.' },
   { id: 'zoneC', label: 'Commercial', key: '2', tip: 'Drag to zone commercial. Tap again to switch light/dense.' },
@@ -64,10 +69,12 @@ const TOOLS = [
 ];
 // SC2000-style grouped tools: one toolbar button opens a flyout of its members.
 const GROUPS = [
+  { id: 'roads', label: 'Roads', members: ['road', 'curve', 'junction'] },
   { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneI', 'dezone'] },
   { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'firehouse', 'school', 'library', 'clinic', 'hospital', 'museum', 'stadium', 'park'] },
 ];
 const TOOL_NOTE = {
+  road: 'Straight, any angle · tap again for avenue', curve: 'Drag, bend, click · tap again for avenue', junction: 'Signals, roundabouts, rotaries',
   zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', dezone: 'Remove zoning',
   police: '$12M · 3×3 · cuts crime', fire: '$9M · 3×3 · fewer fires', school: '$45M · 5×5 · raises land value', park: '$25K per tile',
   firehouse: '$7M · 2×2 · fire cover + charm', library: '$18M · 3×3 · land value, approval', clinic: '$14M · 3×3 · seniors & renters',
@@ -115,7 +122,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -137,7 +144,7 @@ export class UI {
     tb.innerHTML = '';
     this.toolBtns = {};
     this.groupBtns = {};
-    this.groupCur = { zone: 'zoneR', civic: 'police' };
+    this.groupCur = { zone: 'zoneR', civic: 'police', roads: 'road' };
     for (const t of TOOLS) {
       if (GROUPS.some((g) => g.members.includes(t.id))) continue;
       const b = el('button', { class: 'tool', title: `${t.label}${t.key ? ' (' + t.key + ')' : ''}`, onclick: () => this.setTool(t.id) });
@@ -190,7 +197,7 @@ export class UI {
       const b = this.groupBtns[g.id];
       const active = g.members.includes(this.tool);
       if (active) this.groupCur[g.id] = this.tool;
-      b.innerHTML = ICON[this.groupCur[g.id]] + '<i class="tri"></i><b class="glabel">' + (g.id === 'zone' ? 'Zone' : 'Civic') + '</b>';
+      b.innerHTML = ICON[this.groupCur[g.id]] + '<i class="tri"></i><b class="glabel">' + (g.id === 'zone' ? 'Zone' : g.id === 'roads' ? 'Roads' : 'Civic') + '</b>';
       b.classList.toggle('on', active);
     }
   }
@@ -232,6 +239,8 @@ export class UI {
   setTool(id) {
     if (this.tool === id && id.startsWith('zone')) this.dense = !this.dense;
     else if (this.tool !== id && id.startsWith('zone')) this.dense = false;
+    if (this.tool === id && (id === 'road' || id === 'curve')) this.avenue = !this.avenue;
+    this.curveSt = null;
     this.tool = id;
     for (const [k, b] of Object.entries(this.toolBtns)) b.classList.toggle('on', k === id);
     if (this.groupBtns) this.paintGroups();
@@ -242,10 +251,12 @@ export class UI {
   updateHint(extra) {
     const t = TOOLS.find((x) => x.id === this.tool);
     if (!t) return;
-    const dens = this.tool.startsWith('zone') ? ` <b class="chip" id="densechip">${this.dense ? 'DENSE' : 'LIGHT'}</b>` : '';
+    const dens = this.tool.startsWith('zone') ? ` <b class="chip" id="densechip">${this.dense ? 'DENSE' : 'LIGHT'}</b>` : this.tool === 'road' || this.tool === 'curve' ? ` <b class="chip" id="avechip">${this.avenue ? 'AVENUE' : 'STREET'}</b>` : '';
     this.hint.innerHTML = `<b>${t.label}</b>${dens} <span>${extra || t.tip}</span>`;
     const chip = document.getElementById('densechip');
     if (chip) chip.onclick = () => { this.dense = !this.dense; this.updateHint(); };
+    const ac = document.getElementById('avechip');
+    if (ac) ac.onclick = () => { this.avenue = !this.avenue; this.updateHint(extra); };
   }
   setOverlay(k) {
     this.r.setOverlay(k);
@@ -451,7 +462,14 @@ export class UI {
       else if (w.terrain[i] === 1) head = w.road[i] ? `Bridge — ${w.names[w.roadName[i]] || 'unnamed'}` : 'Water';
       else if (w.road[i]) {
         head = w.names[w.roadName[i]] || 'Unnamed street';
-        add(row('Type', ROAD_NAME[w.road[i]]), row('Traffic', `${Math.round(s.congestion[i] * 100)}% of capacity`), row('Condition', `${Math.round(s.roadCond * 100)}%`));
+        const lanes = (w.lanes && w.lanes[i]) || (w.road[i] >= 3 ? 4 : 2);
+        add(row('Type', `${ROAD_NAME[w.road[i]]} · ${lanes} lane${lanes > 1 ? 's' : ''}`),
+          s.vpd && s.vpd[i] > 0 ? row('Traffic', `≈ ${fmtInt(Math.round(s.vpd[i] / 100) * 100)} vehicles a day`) : null,
+          w.aadt && w.aadt[i] > 0 ? row('MassDOT count', `${fmtInt(w.aadt[i])} a day (${w.aadtYear[i] || 'n/a'})`) : null,
+          row('Rush hour', `${Math.round(s.congestion[i] * 100)}% of capacity${s.congestion[i] > 1 ? ' — queues' : s.congestion[i] > 0.85 ? ' — slow' : ''}`),
+          row('Condition', `${Math.round(s.roadCond * 100)}%`));
+        const jc = (w.ctl || []).find((c) => Math.hypot(c.x - (i % w.W), c.y - ((i / w.W) | 0)) < (c.r || 0) + 3);
+        if (jc && jc.last) add(row('Intersection', `${DESIGNS[jc.design].label}: ${Math.round(jc.last.delay)} s average delay (LOS ${jc.last.los})`));
       } else if (w.svcAt[i] >= 0) {
         const sv = w.services[w.svcAt[i]];
         head = sv.name;
@@ -964,6 +982,55 @@ export class UI {
     }, { cls: 'wide' });
   }
 
+  // Compare intersection designs at one junction, using the calibrated traffic volumes
+  junctionWindow(c) {
+    const sim = this.sim, w = this.w;
+    if (!c.legs || !c.legs.length) { this.toast('No main streets meet here. Try a busier intersection.'); return; }
+    this.r.centerOn(c.x, c.y);
+    this.jc = c;
+    this.win('junction', c.name === 'Intersection' ? 'Intersection' : c.name, (body) => {
+      const c2 = this.jc;
+      const vols = legVolumes(sim, c2.legs);
+      if (c2.calib == null && !c2.temp) c2.calib = 1;
+      const calib = c2.calib || (() => { const e0 = evalJunction('signal', c2.legs, vols, 1); return clamp(e0.X / 0.97, 1, 5); })();
+      const legName = (L) => w.names[w.roadName[L.tile]] || 'unnamed street';
+      body.append(
+        el('p', { class: 'fine' }, `${c2.legs.length} main streets meet here. Rush-hour traffic arriving on each, from the model calibrated to MassDOT counts:`),
+        el('div', { class: 'jlegs' }, ...c2.legs.map((L, k) => el('span', {}, el('b', {}, legName(L)), ` ${fmtInt(Math.round(vols[k] / 10) * 10)}/h`)))
+      );
+      const t = el('table', { class: 'peers jtab' }, el('tr', {}, el('th', {}, 'Design'), el('th', { title: 'average delay per vehicle at rush hour' }, 'Delay'), el('th', { title: 'level of service, A (free) to F (failing)' }, 'LOS'), el('th', { title: 'worst approach: traffic ÷ capacity' }, 'v/c'), el('th', { title: 'average queue on the worst approach, in cars' }, 'Queue'), el('th', { title: 'injury crashes compared with a signal' }, 'Crashes'), el('th', {}, '')));
+      for (const d of DESIGN_ORDER) {
+        if (d === 'fourcorners' && c2.legs.length < 4) continue;
+        const D = DESIGNS[d];
+        const ev = evalJunction(d, c2.legs, vols, calib);
+        const cur = c2.design === d;
+        const pv = cur ? null : planDesign(sim, c2, d, false);
+        const btn = cur ? el('b', {}, 'Now') : d === 'signal' ? '' : el('button', { class: 'btn', title: pv && !pv.ok ? pv.msg : `${fmtMoney(pv.cost)}${pv.lots.length ? ` · takes ${pv.lots.length} propert${pv.lots.length > 1 ? 'ies' : 'y'}` : ''}${D.months ? ` · ${D.months} months of construction` : ''}`, disabled: !(pv && pv.ok) || sim.funds < pv.cost, onclick: () => this.buildJunction(c2, d) }, `Build ${fmtMoney(pv.cost)}`);
+        t.append(el('tr', { class: cur ? 'home' : '' }, el('td', { title: D.blurb }, D.short), el('td', {}, `${Math.round(ev.delay)} s`), el('td', { class: `los los${ev.los}` }, ev.los), el('td', {}, ev.X.toFixed(2)), el('td', {}, ev.queue >= 100 ? '100+' : String(Math.round(ev.queue))), el('td', {}, ev.crash === 1 ? '—' : `${ev.crash < 1 ? '−' : '+'}${Math.round(Math.abs(1 - ev.crash) * 100)}%`), el('td', {}, btn)));
+      }
+      body.append(t);
+      const notes = el('div', { class: 'jnotes' });
+      for (const d of DESIGN_ORDER) {
+        if (d === 'signal' || (d === 'fourcorners' && c2.legs.length < 4)) continue;
+        const ev = evalJunction(d, c2.legs, vols, calib);
+        notes.append(el('p', {}, el('b', {}, DESIGNS[d].label), ' — ', DESIGNS[d].blurb, ` Pedestrians cross ${ev.ped}.${DESIGNS[d].r ? ` About ${Math.round(DESIGNS[d].r * 2 * 16)} m across.` : ''}`));
+      }
+      body.append(el('h4', {}, 'The options'), notes, el('p', { class: 'fine' }, `Capacity and delay follow the Highway Capacity Manual: signals lose time to every extra phase; a roundabout's entries can only use gaps in the traffic already circulating. Today's signal is calibrated so it carries today's counted traffic. Once something is built, drivers re-route over the following months, so a slower intersection sheds traffic to side streets and a faster one attracts it. Crash changes are FHWA/IIHS averages for conversions.`));
+    }, { cls: 'wide' });
+  }
+  buildJunction(c, d) {
+    const sim = this.sim;
+    if (!confirm(`Build a ${DESIGNS[d].label.toLowerCase()} here? This can't be undone.`)) return;
+    adoptCtl(sim, c);
+    if (c.calib == null) { const vols = legVolumes(sim, c.legs); const e0 = evalJunction('signal', c.legs, vols, 1); c.calib = clamp(e0.X / 0.97, 1, 5); }
+    const r = planDesign(sim, c, d, true);
+    if (!r.ok) return this.toast(r.msg || "Can't build that here");
+    this.g.music.sfx('build');
+    sim.news(`${c.name === 'Intersection' ? 'Intersection' : c.name} to become a ${DESIGNS[d].label.toLowerCase()}`, `${fmtMoney(r.cost)}${r.lots.length ? `, including ${r.lots.length} propert${r.lots.length > 1 ? 'ies' : 'y'} taken by eminent domain` : ''}. ${DESIGNS[d].months ? `Construction takes about ${DESIGNS[d].months} months; expect detours.` : 'Done in weeks.'}`, 'big');
+    this.refreshStatus();
+    this.wins.get('junction') && this.wins.get('junction').refresh();
+  }
+
   behindScenes(ch) {
     behindScenes(this, ch);
   }
@@ -1044,7 +1111,8 @@ export class UI {
       const r = cv.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    const dragTools = new Set(['bulldoze', 'road', 'zoneR', 'zoneC', 'zoneI', 'dezone', 'park', 'develop']);
+    const dragTools = new Set(['bulldoze', 'road', 'curve', 'zoneR', 'zoneC', 'zoneI', 'dezone', 'park', 'develop']);
+    const gridAt = (p) => this.r.screenToGrid(p[0], p[1]);
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('pointerdown', (e) => {
       if (!this.r) return;
@@ -1064,7 +1132,8 @@ export class UI {
       else mode = 'tool';
       if (e.button === 2 || e.button === 1) mode = 'pan';
       startTile = this.r.tileAt(start[0], start[1]);
-      if (mode === 'tool') this.updatePlan(startTile, startTile);
+      if (mode === 'tool' && this.tool === 'curve' && this.curveSt) { this.curveSt.ctrl = gridAt(start); this.updatePlan(this.curveSt.a, this.curveSt.b); }
+      else if (mode === 'tool' && this.tool !== 'junction') this.updatePlan(startTile, startTile);
       void isTouch;
     });
     cv.addEventListener('pointermove', (e) => {
@@ -1078,6 +1147,7 @@ export class UI {
             this.r.needs = true;
             if (SERVICES[this.tool]) this.updatePlan(t, t);
           }
+          if (this.tool === 'curve' && this.curveSt) { this.curveSt.ctrl = gridAt(p); this.updatePlan(this.curveSt.a, this.curveSt.b); }
         }
         return;
       }
@@ -1094,6 +1164,7 @@ export class UI {
       }
       if (Math.hypot(p[0] - start[0], p[1] - start[1]) > 6) moved = true;
       if (mode === 'pan') this.r.panBy(p[0] - prev[0], p[1] - prev[1]);
+      else if (mode === 'tool' && this.tool === 'curve' && this.curveSt) { this.curveSt.ctrl = gridAt(p); this.updatePlan(this.curveSt.a, this.curveSt.b); }
       else if (mode === 'tool' && dragTools.has(this.tool)) this.updatePlan(startTile, this.r.tileAt(p[0], p[1]));
     });
     const end = (e) => {
@@ -1108,7 +1179,24 @@ export class UI {
       const hitInc = !moved && (this.tool === 'query' || this.tool === 'pan') ? this.r.incidentAt(p[0], p[1]) : null;
       if (hitInc != null) this.sendCrew(hitInc);
       else if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.tileAt(p[0], p[1]));
-      else if (mode === 'tool') {
+      else if (mode === 'tool' && this.tool === 'junction') {
+        const g = gridAt(p);
+        this.junctionWindow(ctlAt(this.sim, g[0], g[1]));
+      } else if (mode === 'tool' && this.tool === 'curve') {
+        if (!this.curveSt) {
+          const endT = this.r.tileAt(p[0], p[1]);
+          if (endT >= 0 && endT !== startTile && startTile >= 0) {
+            const W = this.w.W;
+            this.curveSt = { a: startTile, b: endT, ctrl: [((startTile % W) + (endT % W)) / 2 + 0.5, (((startTile / W) | 0) + ((endT / W) | 0)) / 2 + 0.5] };
+            this.updatePlan(startTile, endT);
+            this.updateHint(`Move ${e.pointerType === 'mouse' ? 'the pointer' : 'your finger'} to bend the road, then ${e.pointerType === 'mouse' ? 'click' : 'tap'} to build · Esc cancels · ${this.plan && this.plan.cost ? fmtMoney(this.plan.cost) : ''}`);
+          } else { this.r.preview = null; this.r.needs = true; }
+        } else if (!moved) {
+          this.updatePlan(this.curveSt.a, this.curveSt.b);
+          this.commit();
+          this.curveSt = null;
+        }
+      } else if (mode === 'tool') {
         const endT = dragTools.has(this.tool) ? this.r.tileAt(p[0], p[1]) : startTile;
         this.updatePlan(startTile, endT);
         this.commit();
@@ -1138,7 +1226,7 @@ export class UI {
       else if (k === 'ArrowRight') this.r.panBy(-120, 0);
       else if (k === 'ArrowUp') this.r.panBy(0, 120);
       else if (k === 'ArrowDown') this.r.panBy(0, -120);
-      else if (k === 'Escape') { this.r.preview = null; this.setTool('query'); }
+      else if (k === 'Escape') { this.r.preview = null; if (this.curveSt) { this.curveSt = null; this.r.needs = true; this.updateHint(); } else this.setTool('query'); }
     });
     window.addEventListener('resize', () => this.r && this.r.resize());
   }
@@ -1153,11 +1241,12 @@ export class UI {
       this.updateHint(this.plan.msg);
       return;
     }
-    const p = this.sim.plan(this.tool, a, b, { dense: this.dense });
+    const tool = this.tool === 'curve' ? 'road' : this.tool;
+    const p = this.sim.plan(tool, a, b, { dense: this.dense, avenue: this.avenue, ctrl: this.tool === 'curve' && this.curveSt ? this.curveSt.ctrl : null });
     this.plan = p;
     if (!p) { this.r.preview = null; return; }
     const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneC: 'rgba(95,159,255,0.45)', zoneI: 'rgba(240,200,64,0.5)' }[this.tool] : null;
-    this.r.preview = { tiles: p.tiles, ok: p.ok, color };
+    this.r.preview = { tiles: p.tiles, ok: p.ok, color, line: p.line && p.tiles.length > 1 ? p.line : null };
     this.r.needs = true;
     this.updateHint(`${p.msg}${p.cost ? ' · ' + fmtMoney(p.cost) : ''}`);
   }

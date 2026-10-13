@@ -140,6 +140,25 @@ export const CHAPTERS = [
     },
   },
   {
+    id: 'traffic', title: 'Traffic & intersections',
+    build: (g) => {
+      const s = g.sim, w = g.world, tc = w.trafficCounts, fit = s.base && s.base.trafFit;
+      return [
+        P('Traffic starts from real counts. MassDOT’s Road Inventory publishes an average daily traffic count (AADT) and the number of lanes for most streets in town' + (tc ? `: ${fmtInt(tc.segments)} segments here, mostly counted or estimated around ${tc.yearMedian}.` : '.')),
+        H('Who drives where'),
+        P('On top of the counts sits a small version of the model regional planners use. Homes produce trips and jobs and shops attract them. The arterials at the town line bring in commuters and through traffic, because Watertown sits between Boston, Cambridge, Newton and Waltham. Each trip takes the fastest route over the real street grid, slowed by congestion and by intersection delay. The routing is re-run a few times so traffic spreads out instead of piling onto one street.'),
+        P('Its knobs (how much through traffic, travel speeds by street type, how far people go) were tuned to match the MassDOT counts.' + (fit && fit.r2 ? ` Before any correction, the routed model explains about ${Math.round(fit.r2 * 100)}% of the street-to-street variation in counted traffic (on a log scale, across ${fmtInt(fit.n)} counted street tiles). The original smoothing model explained almost none.` : '')),
+        P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). Streets without counts inherit corrections from counted neighbours.'),
+        H('From volumes to jams'),
+        P('Rush-hour volume is taken as 9% of daily traffic, 55% of it in the peak direction. That is compared with about 900 cars per lane per hour, a typical signalized arterial. Over 100% means queues. Mount Auburn, Main, North Beacon and Watertown Streets all come out near or over capacity, which matches anyone’s commute.'),
+        H('Intersections'),
+        P('Signals, roundabouts and rotaries use simplified Highway Capacity Manual formulas. A signal gives each approach a share of green, minus a few seconds lost at every change, so a six-way square like Watertown’s wastes a lot of green. A roundabout’s entry can only use gaps in the traffic already circling, so its capacity drops steeply as the circle fills. Today’s signal at the Square is calibrated to carry today’s counted traffic at capacity. Crash changes are the FHWA and IIHS averages for converting a signal.'),
+        P('When you rebuild an intersection, drivers re-route over the following months: a slower junction sheds traffic to side streets, and a faster one attracts more. A big roundabout that fails on today’s volumes can work once some traffic finds other routes, or once e-bikes and robotaxis change the numbers.'),
+        NOTE(B('Limits: '), 'the counts are from the mid-2010s; there is no transit or bus model; trips are daily averages, not real turning-movement counts; and roundabout flows assume trips spread evenly to the other streets. Good for comparing options, not for designing a real intersection.'),
+      ];
+    },
+  },
+  {
     id: 'peers', title: 'Peer towns',
     build: (g) => {
       const c = (g.peers && g.peers.centers) || [];
@@ -253,6 +272,7 @@ export const CHAPTERS = [
         [A('https://www.openstreetmap.org/copyright', 'OpenStreetMap'), ' contributors (ODbL), via ', A('https://download.geofabrik.de/north-america/us/massachusetts.html', 'Geofabrik')],
         [A('https://www.mass.gov/info-details/massgis-data-property-tax-parcels', 'MassGIS property tax parcels'), ' and ', A('https://www.mass.gov/info-details/massgis-data-building-structures-2-d', 'building structures'), ', Commonwealth of Massachusetts'],
         [A('https://docs.overturemaps.org/guides/places/', 'Overture Maps places'), ' (CDLA-Permissive-2.0)'],
+        [A('https://geo-massdot.opendata.arcgis.com/', 'MassDOT Road Inventory'), ' (traffic counts, lanes); ', A('https://highways.dot.gov/safety/proven-safety-countermeasures/roundabouts', 'FHWA on roundabouts'), ' (crash effects); Highway Capacity Manual, 6th ed. (signal and roundabout capacity and delay)'],
         [A('https://www.walkscore.com/methodology.shtml', 'Walk Score methodology'), ', the structure of the walkability index (no Walk Score data is used)'],
         [A('https://www.mass.gov/info-details/levy-limits-a-primer-on-proposition-2-12', 'Levy Limits: A Primer on Proposition 2½'), ', MA Division of Local Services'],
         [A('https://www.watertownmanews.com', 'Watertown News'), ', inspiration for the agenda']

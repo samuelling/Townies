@@ -659,6 +659,34 @@ export function buildWorld(raw, progress = () => {}) {
   }
   // real street intersections (from OSM node topology), in grid coordinates
   world.junctions = (raw.junctions || []).map(([lat, lon]) => proj.toGrid(lat, lon)).filter(([x, y]) => x >= 0 && y >= 0 && x < W && y < H);
+  // MassDOT traffic counts (AADT) and lane counts, snapped onto the road tiles they describe
+  world.aadt = new Float32Array(W * H);
+  world.lanes = new Uint8Array(W * H);
+  world.aadtYear = new Uint16Array(W * H);
+  world.ctl = [];
+  let nSeg = 0;
+  const years = [];
+  for (const seg of raw.traffic || []) {
+    const p = seg.pts.map(([lat, lon]) => G(lat, lon));
+    // NUM_LANES counts both directions on an undivided road; OPP_LANES is only set for divided ones
+    const lanes = Math.min(8, Math.max(1, (seg.lanes || 1) + (seg.opp || 0)));
+    let hit = 0;
+    const put = (i) => {
+      if (seg.aadt > world.aadt[i]) { world.aadt[i] = seg.aadt; world.aadtYear[i] = seg.year || 0; }
+      world.lanes[i] = Math.max(world.lanes[i], lanes);
+      hit++;
+    };
+    for (let k = 0; k + 1 < p.length; k++)
+      traverse(p[k][0], p[k][1], p[k + 1][0], p[k + 1][1], (x, y) => {
+        if (!inB(x, y)) return;
+        const i = y * W + x;
+        if (road[i]) return put(i);
+        // MassDOT and OpenStreetMap centerlines differ by a few metres: snap to the next road tile
+        for (const j of [i - 1, i + 1, i - W, i + W]) if (j >= 0 && j < W * H && road[j] >= 2) return put(j);
+      });
+    if (hit) { nSeg++; if (seg.year) years.push(seg.year); }
+  }
+  world.trafficCounts = nSeg ? { segments: nSeg, yearMin: Math.min(...years), yearMax: Math.max(...years), yearMedian: median(years) } : null;
   return world;
 }
 

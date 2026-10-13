@@ -245,7 +245,7 @@ export class Renderer {
       return e;
     }
     if (!allowRender) return e || null; // stale is better than nothing
-    if (e) this.cachePx -= e.c.width * e.c.height;
+    if (e && e.c) this.cachePx -= e.c.width * e.c.height;
     e = layer === 'g' ? this.renderGround(cx, cy, L) : this.renderObjects(cx, cy, L);
     e.ver = this.ver[ci];
     this.cache.set(key, e);
@@ -1546,6 +1546,16 @@ export class Renderer {
       const ok = this.preview.ok;
       const col = this.preview.color || (ok ? 'rgba(120,255,140,0.35)' : 'rgba(255,80,80,0.4)');
       for (const i of this.preview.tiles) dia(i, col, null);
+      const ln = this.preview.line;
+      if (ln && ln.length >= 4) {
+        ctx.strokeStyle = ok ? 'rgba(255,255,255,0.9)' : 'rgba(255,120,120,0.9)';
+        ctx.lineWidth = Math.max(2, 3 * s);
+        ctx.setLineDash([6 * s, 4 * s]);
+        ctx.beginPath();
+        for (let k = 0; k + 1 < ln.length; k += 2) { const q = P(ln[k], ln[k + 1]); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
     if (this.hover >= 0) dia(this.hover, null, 'rgba(255,255,255,0.85)');
     if (this.selLot != null) {
