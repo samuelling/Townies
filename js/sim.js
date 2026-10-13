@@ -222,7 +222,7 @@ export class Sim {
     const interest = this.funds < 0 ? -this.funds * 0.07 : 0;
     const infl2 = Math.pow(1.025, this.t / 12);
     let upkeep = 0;
-    for (const { eff } of this.specialList()) upkeep += (eff.upkeep || 0) * infl2;
+    for (const { eff } of this.specialList(true)) upkeep += (eff.upkeep || 0) * infl2;
     const expenses = Object.values(exp).reduce((a, b) => a + b, 0) + rec + interest + upkeep;
     return { r, exp, rec, recLines, other, income, expenses, interest, upkeep, net: income - expenses };
   }
@@ -367,10 +367,11 @@ export class Sim {
     return clamp(Math.floor(y / CC), 0, this.Hc - 1) * this.Wc + clamp(Math.floor(x / CC), 0, this.Wc - 1);
   }
   // all alive special-structure instances, with their config effect
-  specialList() {
+  // onlyNew: skip facilities that were already in the real city (their effects are in the calibrated baseline)
+  specialList(onlyNew = false) {
     const out = [];
     for (const s of this.w.services) {
-      if (!s.alive) continue;
+      if (!s.alive || (onlyNew && s.real)) continue;
       const cfg = SERVICES[s.type];
       if (cfg && cfg.effect) out.push({ s, cfg, eff: cfg.effect });
     }
@@ -395,7 +396,7 @@ export class Sim {
   // standing approval offsets contributed by special structures
   specialApproval() {
     const out = {};
-    for (const { eff } of this.specialList()) {
+    for (const { eff } of this.specialList(true)) {
       if (!eff.approval) continue;
       for (const [k, v] of Object.entries(eff.approval)) out[k] = (out[k] || 0) + v;
     }
