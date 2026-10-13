@@ -10,6 +10,7 @@ import { TERMS, goalStatus } from './scenarios.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 import { makeProj } from './geo.js';
 import { behindScenes } from './bts.js';
+import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
@@ -172,6 +173,8 @@ export class UI {
     this.tickerTimer = setInterval(() => this.rotateTicker(), 7000);
     sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.sInc, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
+    this.legendEl = el('div', { class: 'legend', style: 'display:none' });
+    this.hint.parentNode.append(this.legendEl);
     this.hud = el('button', { class: 'hud', onclick: () => this.termWindow() });
     document.getElementById('viewport').append(this.hud);
     this.setTool('query');
@@ -246,7 +249,8 @@ export class UI {
   setOverlay(k) {
     this.r.setOverlay(k);
     this.overlay = k;
-    this.toast(k === 'none' ? 'Overlay off' : `Overlay: ${OVERLAYS.find((o) => o[0] === k)[1]}`);
+    if (k === 'none') this.toast('Overlay off'); // otherwise the legend names it
+    this.refreshLegend();
     const mw = this.wins.get('map');
     if (mw) mw.refresh();
   }
@@ -400,7 +404,30 @@ export class UI {
     if (w) { w.el.remove(); this.wins.delete(id); }
     if (id === 'query') { this.r.selLot = null; this.r.needs = true; }
   }
+  refreshLegend() {
+    const L = this.legendEl;
+    const mode = this.r.overlayMode;
+    const lg = mode && mode !== 'none' ? legendFor(this.sim, mode) : null;
+    if (!lg) { L.style.display = 'none'; return; }
+    L.style.display = '';
+    L.innerHTML = '';
+    L.append(el('div', { class: 'lgtitle' }, el('b', {}, lg.title), lg.unit ? el('span', {}, ` · ${lg.unit}`) : null, el('button', { class: 'lgx', title: 'Turn overlay off', onclick: () => this.setOverlay('none') }, '×')));
+    if (lg.stops) {
+      L.append(el('div', { class: 'lgbar', style: `background:${legendCss(lg.stops)}, #6f7378` }));
+      const ticks = el('div', { class: 'lgticks' });
+      for (const t of lg.ticks) ticks.append(el('span', { style: `left:${(t.at * 100).toFixed(1)}%` }, t.label));
+      L.append(ticks);
+      if (lg.bands) {
+        const bands = el('div', { class: 'lgbands' });
+        lg.bands.forEach((b, k) => bands.append(el('span', { style: `left:${(lg.bandAt[k] * 100).toFixed(1)}%;width:${(((lg.bandAt[k + 1] ?? 1) - lg.bandAt[k]) * 100).toFixed(1)}%` }, b)));
+        L.append(bands);
+      }
+    }
+    if (lg.items) for (const it of lg.items) L.append(el('div', { class: 'lgitem' }, el('i', { style: `background:${it.color}` }), it.label));
+    if (lg.note) L.append(el('div', { class: 'lgnote' }, lg.note));
+  }
   refreshWins() {
+    if (this.legendEl && this.legendEl.style.display !== 'none') this.refreshLegend();
     for (const [id, w] of this.wins) if (id !== 'query' && id !== 'about' && id !== 'bts') w.refresh();
   }
 

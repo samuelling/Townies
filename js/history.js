@@ -116,6 +116,8 @@ export function rewindWorld(world, year) {
     lot.baseLand = lot.landVal;
     lot.baseBldg = lot.bldgVal + lot.otherVal;
   }
+  for (let i = 0; i < world.lvBase.length; i++) world.lvBase[i] *= cfg.land;
+  world.lvMedian *= cfg.land;
   world.startYear = year;
   world.rewound = touched.n;
   void W;

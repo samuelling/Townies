@@ -287,3 +287,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tyear small { display: block; font-size: 11px; color: #333; }
 .tyear.on { background: #ffe680; border-color: #555 #fff #fff #555; }
 .tbtns > .fine { color: #c9d3e0; font-size: 11px; margin: 0; }
+
+/* overlay legend */
+.legend { position: absolute; left: 8px; bottom: 30px; width: 280px; z-index: 25; background: rgba(250,248,238,0.95); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); box-shadow: 3px 3px 0 rgba(0,0,0,0.3); padding: 5px 8px 6px; font-size: 11px; }
+.lgtitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-bottom: 4px; padding-right: 16px; position: relative; }
+.lgtitle b { font-size: 12px; }
+.lgtitle span { color: #444; }
+.lgx { position: absolute; right: -4px; top: -2px; background: none; border: 0; font-size: 14px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.lgbar { height: 12px; border: 1px solid #333; }
+.lgticks, .lgbands { position: relative; height: 14px; }
+.lgticks span:first-child { transform: none; }
+.lgticks span:first-child::before { left: 0; }
+.lgticks span:last-child { transform: translateX(-100%); }
+.lgticks span:last-child::before { left: auto; right: 0; }
+.lgticks span { position: absolute; transform: translateX(-50%); top: 1px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lgticks span::before { content: ''; position: absolute; left: 50%; top: -4px; height: 4px; border-left: 1px solid #333; }
+.lgbands { height: 13px; }
+.lgbands span { position: absolute; top: 0; text-align: center; font-size: 9px; color: #555; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lgitem { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.lgitem i { width: 14px; height: 10px; border: 1px solid #333; flex: none; }
+.lgnote { color: #444; margin-top: 4px; line-height: 1.35; }
+@media (max-width: 700px) {
+  .legend { left: 6px; right: 6px; width: auto; bottom: 22px; padding: 4px 6px; }
+  .lgnote { display: none; }
+}

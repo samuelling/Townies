@@ -1257,17 +1257,14 @@ export class Sim {
     const x = i % W, y = (i / W) | 0;
     if (!w.inTown[i]) return null;
     const c = this.cellOf(x, y);
-    const ramp = (v) => {
-      v = clamp(v, 0, 1);
-      return [Math.round(40 + 215 * v), Math.round(200 - 150 * Math.abs(v - 0.3)), Math.round(220 * (1 - v)), 200];
-    };
+    const ramp = rampColor;
     switch (mode) {
       case 'zones': {
         if (w.road[i]) return [80, 80, 80, 160];
         const li = w.lotOf[i];
         if (li < 0) return null;
         const z = w.lots[li].zone;
-        const col = [null, [60, 220, 60], [70, 140, 255], [250, 200, 40], [200, 120, 255], [40, 150, 70]][z];
+        const col = ZONE_RGB[z];
         if (!col) return null;
         return [...col, w.lots[li].dense ? 230 : 140];
       }
@@ -1292,21 +1289,18 @@ export class Sim {
         if (w.terrain[i] === 1 || !this.walkS) return null;
         const v = this.walkS[c] / 100;
         if (!v) return null;
-        return [Math.round(255 * (1 - v)), Math.round(90 + 150 * v), Math.round(70 + 120 * v), 150];
+        return walkColor(v);
       }
       case 'vibrancy': {
         if (w.terrain[i] === 1) return null;
-        const v = this.vibSat[c];
-        if (v < 0) return [70, 40, 34, Math.round(170 + 80 * Math.min(1, -v / 0.6))];
-        if (v < 0.04) return [40, 40, 60, 90];
-        return [255, Math.round(220 - 170 * v), Math.round(70 + 120 * v), Math.round(110 + 140 * v)];
+        return vibColor(this.vibSat[c]);
       }
       case 'growth': {
         const li = w.lotOf[i];
         if (li < 0) return null;
         const lot = w.lots[li];
-        if (lot.built > 0 && lot.year >= (this.y0 ?? CFG.START.y)) return [255, 120, 220, 220];
-        if (lot.occ < 0.3) return [120, 60, 40, 220];
+        if (lot.built > 0 && lot.year >= (this.y0 ?? CFG.START.y)) return GROWTH_RGB.built;
+        if (lot.occ < 0.3) return GROWTH_RGB.aband;
         return null;
       }
     }
@@ -1321,6 +1315,20 @@ export class Sim {
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0) };
   }
 }
+
+// Overlay colour scales (shared with the legend in js/legend.js)
+export function rampColor(v) {
+  v = clamp(v, 0, 1);
+  return [Math.round(40 + 215 * v), Math.round(200 - 150 * Math.abs(v - 0.3)), Math.round(220 * (1 - v)), 200];
+}
+export const walkColor = (v) => [Math.round(255 * (1 - v)), Math.round(90 + 150 * v), Math.round(70 + 120 * v), 150];
+export function vibColor(v) {
+  if (v < 0) return [70, 40, 34, Math.round(170 + 80 * Math.min(1, -v / 0.6))];
+  if (v < 0.04) return [40, 40, 60, 90];
+  return [255, Math.round(220 - 170 * v), Math.round(70 + 120 * v), Math.round(110 + 140 * v)];
+}
+export const ZONE_RGB = [null, [60, 220, 60], [70, 140, 255], [250, 200, 40], [200, 120, 255], [40, 150, 70]];
+export const GROWTH_RGB = { built: [255, 120, 220, 220], aband: [120, 60, 40, 220] };
 
 export function streetOf(lot) {
   if (lot.addr) {
