@@ -7,7 +7,9 @@
 //   Businesses: Overture Maps places (pre-downloaded GeoJSON), merged with OSM points of interest.
 // Flags: --opl <file>  --places <file>  --out <path>  --no-massgis
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, createGunzip } from 'node:zlib';
+import { Readable } from 'node:stream';
+import readline from 'node:readline';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CFG } from '../js/config.js';
@@ -180,6 +182,77 @@ async function arcgis(url, params) {
   }
   throw new Error('MassGIS unavailable');
 }
+// ---- Census LEHD LODES: where Watertown's workers live, and where its residents work ----
+const LODES = 'https://lehd.ces.census.gov/data/lodes/LODES8/ma/';
+const LODES_YEAR = 2023;
+async function* gzLines(url) {
+  const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(600000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  const rl = readline.createInterface({ input: Readable.fromWeb(r.body).pipe(createGunzip()), crlfDelay: Infinity });
+  for await (const line of rl) yield line;
+}
+function csvSplit(line) {
+  const out = [];
+  let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+async function fetchCommute() {
+  // blocks -> location and town (county subdivision)
+  const blk = new Map();
+  const towns = [];
+  const townIx = new Map();
+  let hdr = null, cB, cT, cTn, cLa, cLo;
+  for await (const line of gzLines(LODES + 'ma_xwalk.csv.gz')) {
+    const f = csvSplit(line);
+    if (!hdr) { hdr = f; cB = f.indexOf('tabblk2020'); cT = f.indexOf('ctycsub'); cTn = f.indexOf('ctycsubname'); cLa = f.indexOf('blklatdd'); cLo = f.indexOf('blklondd'); continue; }
+    const t = f[cT];
+    let ti = townIx.get(t);
+    if (ti == null) { ti = towns.length; townIx.set(t, ti); towns.push({ name: (f[cTn] || '').replace(/,\s*MA$/, '').replace(/ (Town|city|town)( city)?$/i, ''), lat: 0, lon: 0, n: 0, wt: /^Watertown\b/i.test(f[cTn] || '') && /^25017/.test(t) }); }
+    const la = +f[cLa], lo = +f[cLo];
+    blk.set(f[cB], [la, lo, ti]);
+    const T = towns[ti]; T.lat += la; T.lon += lo; T.n++;
+  }
+  for (const T of towns) if (T.n) { T.lat /= T.n; T.lon /= T.n; }
+  const wtTown = towns.findIndex((T) => T.wt);
+  if (wtTown < 0) throw new Error('Watertown not found in LODES crosswalk');
+  log(`LODES crosswalk: ${blk.size} blocks, ${towns.length} towns`);
+  const internal = new Map(), inTowns = new Map(), outTowns = new Map(), inBlk = new Map(), outBlk = new Map();
+  let nIn = 0, nOut = 0, nInt = 0;
+  hdr = null;
+  let cW, cH, cS;
+  for await (const line of gzLines(`${LODES}od/ma_od_main_JT00_${LODES_YEAR}.csv.gz`)) {
+    const f = line.split(',');
+    if (!hdr) { hdr = f; cW = f.indexOf('w_geocode'); cH = f.indexOf('h_geocode'); cS = f.indexOf('S000'); continue; }
+    const w = blk.get(f[cW]), h = blk.get(f[cH]);
+    if (!w || !h) continue;
+    const wIn = w[2] === wtTown, hIn = h[2] === wtTown;
+    if (!wIn && !hIn) continue;
+    const n = +f[cS];
+    if (wIn && hIn) { const k = f[cH] + '>' + f[cW]; internal.set(k, (internal.get(k) || 0) + n); nInt += n; }
+    else if (wIn) { inTowns.set(h[2], (inTowns.get(h[2]) || 0) + n); inBlk.set(f[cW], (inBlk.get(f[cW]) || 0) + n); nIn += n; }
+    else { outTowns.set(w[2], (outTowns.get(w[2]) || 0) + n); outBlk.set(f[cH], (outBlk.get(f[cH]) || 0) + n); nOut += n; }
+  }
+  const r5 = (v) => Math.round(v * 1e5) / 1e5;
+  const pts = (m) => [...m].map(([g, n]) => { const b = blk.get(g); return [r5(b[0]), r5(b[1]), n]; });
+  const tl = (m) => [...m].sort((a, b) => b[1] - a[1]).map(([ti, n]) => [towns[ti].name, r5(towns[ti].lat), r5(towns[ti].lon), n]);
+  const commute = {
+    source: `US Census LEHD LODES ${LODES_YEAR} (primary jobs, all workers)`, year: LODES_YEAR,
+    totals: { internal: nInt, inbound: nIn, outbound: nOut },
+    internal: [...internal].map(([k, n]) => { const [hg, wg] = k.split('>'); const h = blk.get(hg), w = blk.get(wg); return [r5(h[0]), r5(h[1]), r5(w[0]), r5(w[1]), n]; }),
+    inTowns: tl(inTowns), outTowns: tl(outTowns), inBlocks: pts(inBlk), outBlocks: pts(outBlk),
+  };
+  log(`LODES ${LODES_YEAR}: ${nInt} live & work in Watertown, ${nIn} commute in, ${nOut} commute out. Top origins: ${commute.inTowns.slice(0, 5).map((t) => `${t[0]} ${t[3]}`).join(', ')}. Top destinations: ${commute.outTowns.slice(0, 5).map((t) => `${t[0]} ${t[3]}`).join(', ')}`);
+  return commute;
+}
+
 async function fetchTraffic() {
   return arcgisAll(MASSDOT_ROADS, ['CITY=314 AND AADT>0', "MGIS_TOWN='WATERTOWN' AND AADT>0"], ['STREET_NAME', 'AADT', 'AADT_YEAR', 'AADT_DERIV', 'NUM_LANES', 'OPP_LANES', 'SPEED_LIM', 'F_F_CLASS', 'OPERATION'], 'MassDOT traffic counts');
 }
@@ -528,7 +601,14 @@ async function main() {
     } catch (e) {
       log(`Traffic counts skipped: ${e.message}`);
     }
-    raw = { osm, parcels, parcelError, fetched: new Date().toISOString(), junctions: osm.junctions || null, traffic };
+    let commute = null;
+    try {
+      commute = await fetchCommute();
+      sources.commute = commute.totals;
+    } catch (e) {
+      log(`Commute flows skipped: ${e.message}`);
+    }
+    raw = { osm, parcels, parcelError, fetched: new Date().toISOString(), junctions: osm.junctions || null, traffic, commute };
     if (REGION_OPL && existsSync(REGION_OPL)) {
       try {
         const reg = parseOPL(REGION_OPL);

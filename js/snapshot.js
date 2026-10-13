@@ -137,6 +137,7 @@ export function compactRaw(raw, crop = null) {
     parcelError: raw.parcelError || null,
     sources: raw.sources || null,
     traffic: compactTraffic(raw.traffic, inC),
+    commute: raw.commute || null,
     junctions: raw.junctions ? enc(raw.junctions.filter(([lat, lon]) => !crop || (lat >= crop.s && lat <= crop.n && lon >= crop.w && lon <= crop.e))) : null,
     crop,
     nodes,
@@ -176,5 +177,5 @@ export function expandSnapshot(s) {
     geometry: { type: 'Polygon', coordinates: rings.map((r) => dec(r).map(([lat, lon]) => [lon, lat])) },
   }));
   const traffic = s.traffic ? s.traffic.map(([aadt, year, deriv, lanes, opp, speed, fclass, op, flat]) => ({ aadt, year, deriv, lanes, opp, speed, fclass, oneway: op === 1, pts: dec(flat) })) : null;
-  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, junctions: s.junctions ? dec(s.junctions) : null, traffic, source: 'snapshot' };
+  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, junctions: s.junctions ? dec(s.junctions) : null, traffic, commute: s.commute || null, source: 'snapshot' };
 }
