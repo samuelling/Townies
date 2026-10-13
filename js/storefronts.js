@@ -122,7 +122,7 @@ function refreshStats(sim) {
   sim.sfStats = { ...sim.sfStats, ...st };
 }
 
-function syncBiz(lot) {
+export function syncBiz(lot) {
   // rebuild the lot's business list: live storefronts first, then the lot's non-storefront businesses
   const others = [];
   (lot.biz || []).forEach((n, k) => {
@@ -173,7 +173,12 @@ export function storefrontsMonthly(sim) {
     if (lot.rentCap && sim.t < (lot.rentCapUntil || 0)) target = Math.min(target, lot.rentCap); // deed-restricted storefronts
     const vacantNow = lot.vacant > 0;
     if (target > lot.ask) lot.ask += (target - lot.ask) * 0.05;
-    else lot.ask -= (lot.ask - target) * (vacantNow ? (P.vacancyFee ? 0.06 : greed > 1.15 ? 0.003 : 0.012) : 0.01);
+    else {
+      // owners hold out, but a year or two of empty windows wears anyone down
+      const months = vacantNow ? sim.t - (lot.vacantSince ?? sim.t) : 0;
+      const holdRate = greed > 1.15 ? (months > 24 ? 0.025 : months > 12 ? 0.012 : 0.003) : 0.012;
+      lot.ask -= (lot.ask - target) * (vacantNow ? (P.vacancyFee ? 0.06 : holdRate) : 0.01);
+    }
     // even with no better offer, a prospector waits; a vacancy fee makes waiting expensive
     if (vacantNow && P.vacancyFee && sim.t - (lot.vacantSince ?? sim.t) >= 6) lot.ask *= 0.985;
     const protectedD = P.formulaRetail && inProtectedDistrict(sim, lot);
@@ -217,7 +222,7 @@ export function storefrontsMonthly(sim) {
       }
     }
     // fill vacancies
-    if (lot.vacant > 0) {
+    if (lot.vacant > 0 && lot.bldgs.length) {
       const months = sim.t - (lot.vacantSince ?? sim.t);
       if (months >= 6) vacantOld += lot.vacant;
       const rev = Math.pow(Math.max(0.2, ff), 0.6) * (1 + 0.25 * vibD);
@@ -229,7 +234,8 @@ export function storefrontsMonthly(sim) {
         const indieOk = lot.ask <= indieCap;
         const chainOk = !protectedD && lot.ask <= chainCap;
         let shop = null;
-        if (indieOk && (!chainOk || rand() < 0.45)) {
+        // in a calm market far more independents than chains want the space; speculation tilts it to credit tenants
+        if (indieOk && (!chainOk || rand() > Math.min(0.55, 0.22 + 0.5 * hype))) {
           const nm = indieName(rand);
           shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: nm.sig, orig: 0, lease: 60, rent: lot.ask, cushion: indieCap - lot.ask > 0 ? Math.min(0.3, 0.45 * (indieCap - lot.ask)) : 0.02, since: sim.t };
         } else if (chainOk) {
@@ -253,6 +259,7 @@ export function storefrontsMonthly(sim) {
       }
     }
     if (changed) {
+      sim.walkDirty = true;
       syncBiz(lot);
       sim.hooks.invalidateBuilding && lot.bldgs.forEach((id) => sim.hooks.invalidateBuilding(w.bldgs[id]));
     }

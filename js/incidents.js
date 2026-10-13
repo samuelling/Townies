@@ -6,6 +6,7 @@ import { ZONE, SERVICES } from './config.js';
 import { clamp } from './util.js';
 import { demolish, computeLotMetrics } from './world.js';
 import { react } from './comments.js';
+import { syncBiz } from './storefronts.js';
 
 export const INC = {
   pothole: { dept: 'pw', icon: '🚧', label: 'Pothole', work: 3, grace: 45, cost: 2500, pen: { commuters: 0.5, homeowners: 0.2 } },
@@ -45,7 +46,8 @@ export function syncCrews(sim) {
     const have = I.crews.filter((c) => c.dept === dept);
     for (let k = have.length; k < want[dept]; k++) {
       const [x, y] = depot(dept, k);
-      I.crews.push({ id: `${dept}${k}`, dept, x, y, hx: x, hy: y, state: 'idle', inc: null, t0: 0, t1: 0, fx: x, fy: y });
+      I.crewSeq = (I.crewSeq || 100) + 1;
+      I.crews.push({ id: `${dept}${I.crewSeq}`, dept, x, y, hx: x, hy: y, state: 'idle', inc: null, t0: 0, t1: 0, fx: x, fy: y });
     }
     // remove extra idle crews when budgets are cut
     let extra = have.length - want[dept];
@@ -112,7 +114,8 @@ export function refreshBlocks(sim) {
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export function dispatch(sim, incId, manual = true) {
   const it = sim.inc.list.find((x) => x.id === incId);
-  if (!it || it.crew) return manual ? 'A crew is already on the way.' : null;
+  if (!it) return manual ? 'Already taken care of.' : null;
+  if (it.crew) return manual ? 'A crew is already on the way.' : null;
   const dept = INC[it.type].dept;
   let best = null, bd = Infinity;
   for (const c of sim.inc.crews) {
@@ -142,8 +145,8 @@ function finish(sim, it, how = 'crew') {
   const late = sim.inc.day - it.born - d.grace;
   // a quick, hands-on fix earns a little goodwill
   if (how === 'crew' && it.manual && late <= 0) {
-    for (const f of Object.keys(d.pen)) sim.approvalOff[f] += 0.25;
     sim.inc.quick = (sim.inc.quick || 0) + 1;
+    (sim.inc.quickLog = sim.inc.quickLog || []).push(sim.inc.day);
   }
   if (it.type === 'fire') {
     sim.news(`Firefighters save building${it.street ? ' on ' + it.street : ''}`, 'Crews knocked the fire down quickly. Neighbors brought coffee.');
@@ -164,7 +167,7 @@ function burnDown(sim, it) {
     lot.bldgs = [];
     lot.baseBldg = 0;
     lot.bldgVal = 0;
-    if (lot.sf) { lot.vacant = (lot.vacant || 0) + lot.sf.length; lot.sf = []; }
+    if (lot.sf) { lot.vacant = (lot.vacant || 0) + lot.sf.length; lot.sf = []; syncBiz(lot); }
     computeLotMetrics(w, lot, false);
     sim.hooks.invalidateTiles && sim.hooks.invalidateTiles(touched);
     const item = sim.news(`Multi-alarm fire destroys building${it.street ? ' on ' + it.street : ''}`, 'Nobody was hurt, but the building is a total loss. Residents ask how long the engines took to arrive.', 'big');
@@ -316,6 +319,13 @@ export function incidentPenalty(sim) {
     for (const [f, v] of Object.entries(def.pen)) out[f] = (out[f] || 0) + v;
   }
   for (const f of Object.keys(out)) out[f] = Math.min(14, out[f]);
+  // goodwill from quick, hands-on fixes in the last six months (bounded)
+  if (I.quickLog) {
+    I.quickLog = I.quickLog.filter((d) => I.day - d < 180);
+    const g = Math.min(4, 0.15 * I.quickLog.length);
+    out.commuters = (out.commuters || 0) - g;
+    out.homeowners = (out.homeowners || 0) - g * 0.6;
+  }
   return out;
 }
 

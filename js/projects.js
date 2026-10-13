@@ -247,8 +247,9 @@ export const hearingOdds = (score) => 1 / (1 + Math.exp(-(score - 0.47) * 9));
 // ---------- lifecycle ----------
 export function submit(sim, siteIds, prog, t, name) {
   const site = analyze(sim, siteIds, new Set(t.exclude || []));
+  if (!site.ids.length) return { error: 'Pick at least one parcel for the site.' };
   const o = evaluate(sim, site, prog, t);
-  if (o.devFeas != null && o.devFeas < -0.02 && !(prog === 'housing' && t.nonprofit)) return { error: 'The developer walked away: the numbers do not work. Allow more floors or ask for less.' };
+  if (o.devFeas != null && !(o.devFeas >= -0.02) && !(prog === 'housing' && t.nonprofit)) return { error: 'The developer walked away: the numbers do not work. Allow more floors or ask for less.' };
   if (o.cityCost > 0 && sim.funds - o.cityCost < -0.15 * sim.budgetLines().expenses) return { error: `The City can't cover ${fmtMoney(o.cityCost)} right now, even with borrowing.` };
   sim.projects = sim.projects || [];
   const p = { id: (sim.projId = (sim.projId || 0) + 1), name, prog, t, ids: site.ids, stage: 'hearing', at: sim.t + 2, cx: site.cx, cy: site.cy, o, site: { homes: site.homes, indie: site.indie, auto: site.auto, sig: site.sig, residents: site.residents, nearHomes: site.nearHomes, legacy: site.legacy, value: site.value, acq: site.acq } };
@@ -285,6 +286,13 @@ function hearing(sim, p) {
   } else if (roll < pr + 0.18 && p.t.floors > 3 && !p.continued) {
     p.t.floors -= 1;
     p.o = evaluate(sim, { ...analyze(sim, p.ids), cx: p.cx, cy: p.cy }, p.prog, p.t);
+    if (p.o.devFeas != null && !(p.o.devFeas >= -0.02) && !(p.prog === 'housing' && p.t.nonprofit)) {
+      p.stage = 'denied';
+      for (const li of p.ids) sim.w.lots[li].project = null;
+      const item = sim.news(`Developer pulls out of ${p.name}`, 'The Board approved it one story shorter, and the developer says the numbers no longer work.', 'big');
+      react(sim, 'project-denied', { name: p.name }, item, 2);
+      return;
+    }
     startBuild(sim, p, true);
   } else if (!p.continued && roll < pr + 0.35) {
     p.continued = 1;
@@ -306,7 +314,7 @@ function startBuild(sim, p, conditions) {
   p.at = sim.t + p.o.months;
   if (p.o.cityCost > 0) {
     if (sim.funds >= p.o.cityCost) sim.funds -= p.o.cityCost;
-    else sim.apply({ bond: { amount: p.o.cityCost, label: p.name, years: 20 } });
+    else sim.apply({ bond: { amount: p.o.cityCost, label: `${p.name} (#${p.id})`, years: 20 } });
   }
   sim.apply({ flag: {} });
   // acquisition & demolition (Main Street infill demolishes as each parcel is rebuilt)
@@ -453,8 +461,15 @@ function complete(sim, p) {
     }
   } else {
     // merge the site into one lot
-    const main = w.lots[p.ids[0]];
-    for (const li of p.ids.slice(1)) {
+    // the first parcel that still exists becomes the merged site
+    const alive = p.ids.filter((li) => w.lots[li] && !w.lots[li].dead);
+    if (!alive.length) {
+      p.stage = 'done';
+      p.doneAt = sim.t;
+      return;
+    }
+    const main = w.lots[alive[0]];
+    for (const li of alive.slice(1)) {
       const lot = w.lots[li];
       for (const i of lot.tiles) {
         w.lotOf[i] = main.id;
@@ -472,6 +487,7 @@ function complete(sim, p) {
     main.cx = cx / main.tiles.length;
     main.cy = cy / main.tiles.length;
     main.under = null;
+    main.locked = 1;
     main.year = sim.y;
     main.built = sim.t;
     main.occ = 0.85;
@@ -537,6 +553,8 @@ function complete(sim, p) {
   if (p.prog === 'mega') { ap.business = 3; ap.commuters = -2; }
   sim.apply({ approval: ap });
   sim.hooks.invalidateTiles && sim.hooks.invalidateTiles(touched);
+  sim.walkDirty = true;
+  sim.parkPts = null;
   sim.recalc();
   sim.computeAll();
   const item = sim.news(`Ribbon cut at ${p.name}`, ribbonText(p), 'big');

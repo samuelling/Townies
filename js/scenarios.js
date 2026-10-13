@@ -72,13 +72,13 @@ export const TERMS = {
   },
   rents: {
     title: "The Rent's Too High", years: 5, icon: '🏷',
-    blurb: 'Word is out that Watertown is "the next Somerville." Landlords on Main St and Mt Auburn St are already asking 30% more. Do not lose a single independent storefront, net, over the next five years.',
+    blurb: 'Word is out that Watertown is "the next Somerville." Landlords on Main St and Mt Auburn St are already asking 30% more. Keep at least 95% of the independent storefronts open over the next five years, and keep the Square as lively as it is today.',
     setup: (s) => {
       s.hype = 0.35;
       for (const l of s.w.lots) if (l.storefronts && !l.dead) l.ask = (l.ask || 1) * 1.3;
     },
     goals: [
-      { id: 'indie', label: 'Independent storefronts', target: (s) => s.scenario.start.indie || 330, measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}` },
+      { id: 'indie', label: 'Independent storefronts', target: (s) => Math.ceil(0.95 * (s.scenario.start.indie || 330)), measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}`, keep: true },
       { id: 'vibkeep', label: 'Vibrancy change', target: 0, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
     ],
     floor: { approval: 40 },

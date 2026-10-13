@@ -220,7 +220,8 @@ export class Sim {
     };
     const exp = {};
     for (const d of DEPTS) exp[d] = this.base.dept[d] * this.fund[d] * scale[d] * infl;
-    exp.other = this.base.dept.other * Math.pow(1.02, this.t / 12);
+    // benefits, pensions and health insurance grow faster than Prop 2½ allows the levy to
+    exp.other = this.base.dept.other * Math.pow(1.045, this.t / 12);
     let rec = 0;
     const recLines = [];
     for (const [k, v] of Object.entries(this.recurring)) {
@@ -358,7 +359,10 @@ export class Sim {
     }
     // halo from special civic structures (hospital, library, museum, …)
     this.computeSpecial();
-    if (init || !this.walkS || this.walkDirty || this.t % 12 === 0) this.computeWalk();
+    if (init || !this.walkS || ((this.walkDirty || this.t % 12 === 0) && this.walkT !== this.t)) {
+      this.computeWalk();
+      this.walkT = this.t;
+    }
     this.computeVibrancy(init);
     // land value modifier relative to the starting city
     const S = new Float32Array(Nc);
@@ -726,7 +730,7 @@ export class Sim {
     const slow = this.flags.treeOrdinance ? 0.85 : 1;
     for (let k = 0; k < K; k++) {
       const lot = w.lots[this.zLots[Math.floor(this.rand() * n)]];
-      if (!lot || lot.dead || !lot.inTown || lot.locked || lot.under || lot.project) continue;
+      if (!lot || lot.dead || !lot.inTown || lot.under || lot.project) continue;
       const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
       const d = this.demand[key];
       const c = this.cellOf(lot.cx, lot.cy);
@@ -737,6 +741,7 @@ export class Sim {
       const was = lot.occ;
       lot.occ += (target - lot.occ) * 0.12;
       if ((was < 0.3) !== (lot.occ < 0.3)) for (const id of lot.bldgs) this.hooks.invalidateBuilding && this.hooks.invalidateBuilding(w.bldgs[id]);
+      if (lot.locked) continue; // finished projects keep their buildings; occupancy still responds
       const hasB = lot.bldgs.some((id) => w.bldgs[id].alive);
       const cap = lot.dense ? 4 : 2;
       let target2 = 0;
@@ -955,7 +960,7 @@ export class Sim {
     const a = at ? this.anchor(at) : null;
     let best = null, bd = Infinity;
     for (const lot of this.w.lots) {
-      if (lot.dead || !lot.inTown || !lot.tiles.length || !pred(lot)) continue;
+      if (lot.dead || !lot.inTown || !lot.tiles.length || lot.project || lot.under || lot.locked || !pred(lot)) continue;
       const d = a ? Math.hypot(lot.cx - a[0], lot.cy - a[1]) + this.rand() * 4 : this.rand();
       if (d < bd && d <= maxD) { bd = d; best = lot; }
     }
@@ -1069,6 +1074,10 @@ export class Sim {
       ok = false;
       msg = 'Not enough funds';
     }
+    if (tool !== 'develop' && tiles.some((i) => lotOf[i] >= 0 && (w.lots[lotOf[i]].project || w.lots[lotOf[i]].under))) {
+      ok = false;
+      msg = 'That is a project site — wait until it opens';
+    }
     return { tool, tiles, cost, ok, msg };
   }
 
@@ -1150,6 +1159,8 @@ export class Sim {
         touched.push(...tiles);
       }
     } else if (p.tool === 'park') {
+      this.parkPts = null;
+      this.walkDirty = true;
       for (const i of p.tiles) {
         w.cover[i] = COVER.PARK;
         if (lotOf[i] >= 0) this.removeTileFromLot(lotOf[i], i);

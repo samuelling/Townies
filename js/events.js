@@ -407,7 +407,7 @@ export const FOLLOWUPS = {
   ada: (s) => s.apply({ funds: -12e6, approval: { homeowners: -3 }, news: ['Repairs trigger accessibility upgrades', 'The cheap fix turns out to require $12M in accessibility work.', 'big'] }),
   'build-lot': (s, d) => {
     const lot = s.w.lots[d.lot];
-    if (lot && !lot.dead) {
+    if (lot && !lot.dead && !lot.project && !lot.under) {
       lot.dense = true;
       s.develop(lot, d.dens, d.zone);
       s.news(`New building opens${lot.addr ? ' at ' + lot.addr : ''}`, 'Move-in day traffic briefly rivals the Square.');

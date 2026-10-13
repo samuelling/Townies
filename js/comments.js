@@ -266,6 +266,7 @@ export function ambient(sim) {
 
 // What a neighbor on this block would say (deterministic per lot and season).
 export function neighborQuote(sim, lot, c) {
+  if (!lot) return '';
   const lines = [];
   const vib = sim.vibSat ? sim.vibSat[c] : 0;
   const traf = sim.trafC[c] / (sim.base.trafN || 1);

@@ -450,7 +450,7 @@ export class UI {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
           row('Walkability', s.walkP ? (() => { const ws = s.walkAt(x + 0.5, y + 0.5); return `${ws} · ${walkLabel(ws)}`; })() : ''),
-          row('A neighbor says', s.trafC ? el('i', { class: 'quote' }, `“${neighborQuote(s, lot, c)}”`) : ''),
+          row('A neighbor says', s.trafC && lot && !lot.dead ? el('i', { class: 'quote' }, `“${neighborQuote(s, lot, c)}”`) : ''),
           row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
           row('Pollution', bar(s.pollC[c] / (s.base.pollN * 1.3))),
