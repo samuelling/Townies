@@ -50,11 +50,13 @@ const TOOLS = [
 // SC2000-style grouped tools: one toolbar button opens a flyout of its members.
 const GROUPS = [
   { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneI', 'dezone'] },
-  { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'school', 'park'] },
+  { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'firehouse', 'school', 'library', 'clinic', 'hospital', 'museum', 'stadium', 'park'] },
 ];
 const TOOL_NOTE = {
   zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', dezone: 'Remove zoning',
   police: '$12M · 3×3 · cuts crime', fire: '$9M · 3×3 · fewer fires', school: '$45M · 5×5 · raises land value', park: '$25K per tile',
+  firehouse: '$7M · 2×2 · fire cover + charm', library: '$18M · 3×3 · land value, approval', clinic: '$14M · 3×3 · seniors & renters',
+  hospital: '$60M · 5×5 · big boost, high upkeep', museum: '$30M · 4×4 · land value, business', stadium: '$120M · 7×7 · pride, but traffic',
 };
 const OVERLAYS = [
   ['none', 'None'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
