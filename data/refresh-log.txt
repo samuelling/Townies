@@ -1,24 +1,26 @@
 OK
-[2026-10-13T14:33:49.361Z] OPL work/watertown.opl: 10556 tagged nodes, 54426 ways, 233 relations -> 56105 elements kept, 2775 street intersections
-[2026-10-13T14:33:49.712Z] MassGIS parcels: 10912 ids for TOWN_ID=314
-[2026-10-13T14:34:03.341Z] MassGIS parcels: 10912 records (TOWN_ID=314)
-[2026-10-13T14:34:03.526Z] MassGIS footprints: 9983 ids for TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y')
-[2026-10-13T14:34:18.985Z] MassGIS footprints: 9983 records (TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y'))
-[2026-10-13T14:34:19.098Z] MassGIS footprints: 33387 OSM buildings checked, 267 missing buildings added
-[2026-10-13T14:34:19.279Z] Overture places: 6695 in file, 4986 added, 752 already in OSM, 957 closed/low-confidence skipped
-[2026-10-13T14:34:20.673Z] OPL work/region.opl: 53689 tagged nodes, 96540 ways, 292 relations -> 109302 elements kept, 13794 street intersections
-[2026-10-13T14:34:21.528Z] Benchmarks: 37970 places, 1214 parks, 13794 intersections in the region
-[2026-10-13T14:34:21.566Z]   Watertown Square   walk 100 (272 int/mi²) · 172 storefronts in 600 m · 28 signature · 26 chains · 27 auto
-[2026-10-13T14:34:21.585Z]   Coolidge Square    walk 95 (272 int/mi²) · 135 storefronts in 600 m · 21 signature · 14 chains · 11 auto
-[2026-10-13T14:34:21.602Z]   Arsenal Yards      walk 97 (162 int/mi²) · 169 storefronts in 600 m · 27 signature · 64 chains · 16 auto
-[2026-10-13T14:34:21.614Z]   Pleasant St        walk 96 (191 int/mi²) · 128 storefronts in 600 m · 19 signature · 16 chains · 5 auto
-[2026-10-13T14:34:21.640Z]   Davis Square       walk 100 (387 int/mi²) · 328 storefronts in 600 m · 51 signature · 48 chains · 4 auto
-[2026-10-13T14:34:21.661Z]   Coolidge Corner    walk 100 (225 int/mi²) · 337 storefronts in 600 m · 50 signature · 61 chains · 8 auto
-[2026-10-13T14:34:21.676Z]   Moody Street       walk 100 (256 int/mi²) · 292 storefronts in 600 m · 51 signature · 32 chains · 33 auto
-[2026-10-13T14:34:21.691Z]   Arlington Center   walk 100 (210 int/mi²) · 189 storefronts in 600 m · 40 signature · 30 chains · 8 auto
-[2026-10-13T14:34:21.705Z]   Belmont Center     walk 97 (152 int/mi²) · 102 storefronts in 600 m · 30 signature · 13 chains · 5 auto
-[2026-10-13T14:34:21.720Z]   Newton Centre      walk 99 (183 int/mi²) · 201 storefronts in 600 m · 47 signature · 37 chains · 9 auto
-[2026-10-13T14:34:21.856Z] Kept 5661 nodes (4278 named places), 41248 ways (25938 buildings, 13742 streets/paths), 84 relations, 10912 parcels
-[2026-10-13T14:34:22.329Z] Wrote data/watertown.json.gz: 10.5 MB JSON, 2.19 MB gzipped. Sources: {"osm":"geofabrik","parcels":10912,"footprintsAdded":267,"places":4986,"junctions":2775}
+[2026-10-13T16:38:30.244Z] OPL work/watertown.opl: 10556 tagged nodes, 54426 ways, 233 relations -> 56105 elements kept, 2775 street intersections
+[2026-10-13T16:38:30.451Z] MassGIS parcels: 10912 ids for TOWN_ID=314
+[2026-10-13T16:38:51.117Z] MassGIS parcels: 10912 records (TOWN_ID=314)
+[2026-10-13T16:38:51.237Z] MassGIS footprints: 9983 ids for TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y')
+[2026-10-13T16:39:11.461Z] MassGIS footprints: 9983 records (TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y'))
+[2026-10-13T16:39:11.639Z] MassGIS footprints: 33387 OSM buildings checked, 267 missing buildings added
+[2026-10-13T16:39:11.723Z] Overture places: 6695 in file, 4986 added, 752 already in OSM, 957 closed/low-confidence skipped
+[2026-10-13T16:39:11.950Z] MassDOT traffic counts: 1057 ids for CITY=314 AND AADT>0
+[2026-10-13T16:39:13.734Z] MassDOT traffic counts: 1057 records (CITY=314 AND AADT>0)
+[2026-10-13T16:39:14.662Z] OPL work/region.opl: 53689 tagged nodes, 96540 ways, 292 relations -> 109302 elements kept, 13794 street intersections
+[2026-10-13T16:39:15.039Z] Benchmarks: 37970 places, 1214 parks, 13794 intersections in the region
+[2026-10-13T16:39:15.062Z]   Watertown Square   walk 100 (272 int/mi²) · 172 storefronts in 600 m · 28 signature · 26 chains · 27 auto
+[2026-10-13T16:39:15.071Z]   Coolidge Square    walk 95 (272 int/mi²) · 135 storefronts in 600 m · 21 signature · 14 chains · 11 auto
+[2026-10-13T16:39:15.081Z]   Arsenal Yards      walk 97 (162 int/mi²) · 169 storefronts in 600 m · 27 signature · 64 chains · 16 auto
+[2026-10-13T16:39:15.088Z]   Pleasant St        walk 96 (191 int/mi²) · 128 storefronts in 600 m · 19 signature · 16 chains · 5 auto
+[2026-10-13T16:39:15.100Z]   Davis Square       walk 100 (387 int/mi²) · 328 storefronts in 600 m · 51 signature · 48 chains · 4 auto
+[2026-10-13T16:39:15.112Z]   Coolidge Corner    walk 100 (225 int/mi²) · 337 storefronts in 600 m · 50 signature · 61 chains · 8 auto
+[2026-10-13T16:39:15.122Z]   Moody Street       walk 100 (256 int/mi²) · 292 storefronts in 600 m · 51 signature · 32 chains · 33 auto
+[2026-10-13T16:39:15.130Z]   Arlington Center   walk 100 (210 int/mi²) · 189 storefronts in 600 m · 40 signature · 30 chains · 8 auto
+[2026-10-13T16:39:15.139Z]   Belmont Center     walk 97 (152 int/mi²) · 102 storefronts in 600 m · 30 signature · 13 chains · 5 auto
+[2026-10-13T16:39:15.148Z]   Newton Centre      walk 99 (183 int/mi²) · 201 storefronts in 600 m · 47 signature · 37 chains · 9 auto
+[2026-10-13T16:39:15.250Z] Kept 5661 nodes (4278 named places), 41248 ways (25938 buildings, 13742 streets/paths), 84 relations, 10912 parcels
+[2026-10-13T16:39:15.594Z] Wrote data/watertown.json.gz: 10.6 MB JSON, 2.20 MB gzipped. Sources: {"osm":"geofabrik","parcels":10912,"footprintsAdded":267,"places":4986,"junctions":2775,"traffic":1057}
 
 steps: geofabrik=success overture=success build=success
