@@ -4,6 +4,7 @@ import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
+import { MELODIA_SCENARIOS, melodiaRecords } from './melodia.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
 
@@ -446,7 +447,7 @@ export const SCENARIOS = [
     text: () =>
       'Uphill bike lanes on a street leading to the schools and Victory Field would cost about 22 on-street parking spaces, including a few in front of an optometrist. "Nobody uses bike lanes," say some. "That’s because there aren’t any," say others.',
     choices: [
-      { label: 'Paint the bike lanes', fx: '−$80K · Renters ↑ · Business ↓', run: (s) => s.apply({ funds: -80e3, approval: { renters: 3, homeowners: 1, business: -2 } }) },
+      { label: 'Paint the bike lanes', fx: '−$80K · Renters ↑ · Business ↓', run: (s) => s.apply({ funds: -80e3, approval: { renters: 3, homeowners: 1, business: -2 }, flag: { bikeLane: 1 } }) },
       { label: 'Shared-lane arrows only', fx: '−$30K', run: (s) => s.apply({ funds: -30e3, approval: { renters: -1 } }) },
     ],
   },
@@ -483,6 +484,7 @@ export const SCENARIOS = [
     ],
   },
   ...TECH_SCENARIOS,
+  ...MELODIA_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
@@ -495,6 +497,7 @@ export const FOLLOWUPS = {
   'dam-out': (s) => s.apply({ lvNear: { at: 'river', r: 50, amt: 0.05 }, approval: { all: 2 }, news: ['Dam comes out; herring rush upstream', '300,000 fish thank the Council by swimming past it.', 'big'] }),
   'po-maybe': (s) => (s.rand() < 0.4 ? s.apply({ approval: { seniors: 6 }, news: ['Post office returns to the Square', 'There was a line on opening day. Of course there was.'] }) : s.apply({ news: ['Postal Service "still evaluating" Square location', ''] })),
   ada: (s) => s.apply({ funds: -12e6, approval: { homeowners: -3 }, news: ['Repairs trigger accessibility upgrades', 'The cheap fix turns out to require $12M in accessibility work.', 'big'] }),
+  'melodia-records': (s) => melodiaRecords(s),
   'build-lot': (s, d) => {
     const lot = s.w.lots[d.lot];
     if (lot && !lot.dead && !lot.project && !lot.under) {

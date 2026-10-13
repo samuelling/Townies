@@ -311,3 +311,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .legend { left: 6px; right: 6px; width: auto; bottom: 22px; padding: 4px 6px; }
   .lgnote { display: none; }
 }
+.melcard { display: flex; gap: 8px; align-items: flex-start; background: #fbeef3; border: 1px solid #b0306a; padding: 6px 8px; margin: 6px 0; }
+.melcard .meter { height: 7px; background: #eee; border: 1px solid #777; margin: 3px 0; width: 160px; }
+.melcard .meter i { display: block; height: 100%; background: linear-gradient(90deg, #e8b04a, #b0306a); }
+.melcard small { color: #444; }
