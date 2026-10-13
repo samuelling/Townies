@@ -1,5 +1,5 @@
 // Builds the playable tile world from raw OpenStreetMap + MassGIS parcel data.
-import { CFG, ZONE, COVER } from './config.js';
+import { CFG, ZONE, COVER, SERVICES } from './config.js';
 import { makeProj, fillSegs, traverse, signedArea, centroid, simplify, obb, maxRect } from './geo.js';
 import { hash2, median, percentile, titleCase } from './util.js';
 
@@ -174,6 +174,12 @@ export function styleBuilding(b, lot) {
     if (k === 'shop' && arch !== 'bigbox') b.awning = pick(['#c0392b', '#2e7d32', '#1f5fa8', '#d68910', '#7b3f99'], r2);
     if (k === 'police') { b.col = '#c9ccd4'; b.roofCol = '#3a5fbf'; arch = 'precast'; }
     if (k === 'fire') { b.col = '#b5523e'; b.roofCol = '#c8352b'; }
+    // special civic structures: tint from SERVICES config
+    if (b.svcType && SERVICES[b.svcType] && SERVICES[b.svcType].effect) {
+      const sc = cssHex(SERVICES[b.svcType].color);
+      if (sc) b.col = sc;
+      arch = b.svcType === 'stadium' ? 'precast' : 'brick';
+    }
   }
   const oc = cssHex(b.osmColour), orc = cssHex(b.osmRoofColour);
   if (oc) b.col = oc;
@@ -855,7 +861,11 @@ export function developLot(world, lot, dens, seed = 0) {
 }
 
 export function addServiceBuilding(world, type, x, y, size) {
-  const kind = type === 'school' ? 'school' : type;
+  const cfg = SERVICES[type] || null;
+  // police / fire / school have bespoke kinds; everything else is a generic civic block,
+  // tinted and glyphed from its SERVICES config via b.svcType.
+  const kind = type === 'police' || type === 'fire' || type === 'school' ? type : 'civic';
+  const lv = cfg && cfg.levels ? cfg.levels : type === 'school' ? 3 : 2;
   const pts = [[x + 0.15, y + 0.15], [x + size - 0.15, y + 0.15], [x + size - 0.15, y + size - 0.15], [x + 0.15, y + size - 0.15]];
-  return addBuilding(world, { pts, kind, levels: type === 'school' ? 3 : 2, lot: -1 });
+  return addBuilding(world, { pts, kind, levels: lv, lot: -1, svcType: type });
 }

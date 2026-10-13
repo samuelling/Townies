@@ -1,5 +1,5 @@
 // SimCity-2000-style isometric renderer with chunk caching.
-import { CFG, ZONE, COVER, ZONE_COLOR } from './config.js';
+import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
@@ -687,12 +687,25 @@ export class Renderer {
       this.fillPoly(g, [k1, k2, ap], shade([230, 230, 225], 0.95, mix, mixAmt));
       this.fillPoly(g, [k2, k3, ap], shade([230, 230, 225], 0.75, mix, mixAmt));
     }
-    if (b.kind === 'police' || b.kind === 'fire' || b.kind === 'school') {
+    const glyph = b.svcType && SERVICES[b.svcType] ? SERVICES[b.svcType].glyph
+      : b.kind === 'police' ? '★' : b.kind === 'fire' ? '✚' : b.kind === 'school' ? '✎' : null;
+    if (glyph && L >= 0.5) {
+      const big = b.svcType && SERVICES[b.svcType] && SERVICES[b.svcType].effect;
       const p = P(b.cx, b.cy, h + 3);
-      g.fillStyle = '#fff';
-      g.font = `bold ${Math.round(9 * L)}px sans-serif`;
+      g.font = `bold ${Math.round((big ? 12 : 9) * L)}px sans-serif`;
       g.textAlign = 'center';
-      g.fillText(b.kind === 'police' ? '★' : b.kind === 'fire' ? '✚' : '✎', p[0], p[1]);
+      g.textBaseline = 'middle';
+      // plate behind the glyph so emoji/symbols read on any roof colour
+      if (big) {
+        const rr = Math.round(10 * L);
+        g.fillStyle = 'rgba(20,22,26,0.55)';
+        g.beginPath();
+        g.arc(p[0], p[1], rr, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = '#fff';
+      g.fillText(glyph, p[0], p[1]);
+      g.textBaseline = 'alphabetic';
     }
   }
 

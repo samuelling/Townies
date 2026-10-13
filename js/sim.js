@@ -1,5 +1,5 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
-import { CFG, ZONE, COVER, SERVICES } from './config.js';
+import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
 import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
 
@@ -34,6 +34,7 @@ export class Sim {
     this.fireCov = new Float32Array(Nc);
     this.schoolCov = new Float32Array(Nc);
     this.parkC = new Float32Array(Nc);
+    this.specialC = new Float32Array(Nc);
     this.lvMod = new Float32Array(Nc).fill(1);
     this.paused = false;
     this.speed = 1;
@@ -219,8 +220,11 @@ export class Sim {
     const other = this.base.other * Math.pow(1.025, this.t / 12) * Math.sqrt(this.pop / this.base.pop0) * (this.flags.grantsLost ? 0.9 : 1);
     const income = r.levy + other;
     const interest = this.funds < 0 ? -this.funds * 0.07 : 0;
-    const expenses = Object.values(exp).reduce((a, b) => a + b, 0) + rec + interest;
-    return { r, exp, rec, recLines, other, income, expenses, interest, net: income - expenses };
+    const infl2 = Math.pow(1.025, this.t / 12);
+    let upkeep = 0;
+    for (const { eff } of this.specialList()) upkeep += (eff.upkeep || 0) * infl2;
+    const expenses = Object.values(exp).reduce((a, b) => a + b, 0) + rec + interest + upkeep;
+    return { r, exp, rec, recLines, other, income, expenses, interest, upkeep, net: income - expenses };
   }
 
   // ---------------- maps ----------------
@@ -305,11 +309,15 @@ export class Sim {
           }
       }
     };
-    // coverage
-    const cover2 = (arr, type, R, fund) => {
+    // coverage — any alive service with a radius that feeds this department contributes
+    const cover2 = (arr, dept, fund) => {
       arr.fill(0);
-      const Rc = R / CC;
-      for (const s of this.services(type)) {
+      for (const s of this.w.services) {
+        if (!s.alive) continue;
+        const cfg = SERVICES[s.type];
+        if (!cfg || !cfg.radius) continue;
+        if ((cfg.fund || s.type) !== dept) continue;
+        const Rc = cfg.radius / CC;
         const sx = s.x / CC, sy = s.y / CC;
         for (let y = Math.max(0, Math.floor(sy - Rc)); y <= Math.min(Hc - 1, Math.ceil(sy + Rc)); y++)
           for (let x = Math.max(0, Math.floor(sx - Rc)); x <= Math.min(Wc - 1, Math.ceil(sx + Rc)); x++) {
@@ -320,9 +328,9 @@ export class Sim {
       }
       for (let i = 0; i < Nc; i++) arr[i] = Math.min(1, arr[i] * 1.4) * clamp(fund, 0, 1.2);
     };
-    cover2(this.polCov, 'police', SERVICES.police.radius, this.fund.police);
-    cover2(this.fireCov, 'fire', SERVICES.fire.radius, this.fund.fire);
-    cover2(this.schoolCov, 'school', SERVICES.school.radius, this.fund.schools);
+    cover2(this.polCov, 'police', this.fund.police);
+    cover2(this.fireCov, 'fire', this.fund.fire);
+    cover2(this.schoolCov, 'school', this.fund.schools);
     blur(this.parkC, 2);
     const poll = this.pollC, crime = this.crimeC;
     for (let i = 0; i < Nc; i++) {
@@ -338,12 +346,14 @@ export class Sim {
       this.base.parkN = percentile(this.parkC.filter((v) => v > 0), 0.9) || 1;
       this.base.trafN = percentile(this.trafC.filter((v) => v > 0), 0.9) || 1;
     }
+    // halo from special civic structures (hospital, library, museum, …)
+    this.computeSpecial();
     // land value modifier relative to the starting city
     const S = new Float32Array(Nc);
     let crimeSum = 0, cn = 0;
     for (let i = 0; i < Nc; i++) {
       const cr = crime[i] / this.base.crimeN, po = poll[i] / this.base.pollN, pk = Math.min(1.5, this.parkC[i] / this.base.parkN), tr = this.trafC[i] / this.base.trafN;
-      S[i] = 0.18 * pk - 0.3 * cr - 0.22 * po - 0.06 * tr + 0.08 * this.polCov[i] + 0.06 * this.fireCov[i];
+      S[i] = 0.18 * pk - 0.3 * cr - 0.22 * po - 0.06 * tr + 0.08 * this.polCov[i] + 0.06 * this.fireCov[i] + this.specialC[i];
       if (this.popC[i] > 0) { crimeSum += cr; cn++; }
     }
     if (init || !this.S0) this.S0 = S.slice();
@@ -355,6 +365,41 @@ export class Sim {
   }
   cellOf(x, y) {
     return clamp(Math.floor(y / CC), 0, this.Hc - 1) * this.Wc + clamp(Math.floor(x / CC), 0, this.Wc - 1);
+  }
+  // all alive special-structure instances, with their config effect
+  specialList() {
+    const out = [];
+    for (const s of this.w.services) {
+      if (!s.alive) continue;
+      const cfg = SERVICES[s.type];
+      if (cfg && cfg.effect) out.push({ s, cfg, eff: cfg.effect });
+    }
+    return out;
+  }
+  // land-value halo field (chunk resolution) from special structures
+  computeSpecial() {
+    const { Wc, Hc } = this;
+    this.specialC.fill(0);
+    for (const { s, eff } of this.specialList()) {
+      if (!(eff.lvAmt > 0) || !(eff.lvRadius > 0)) continue;
+      const rc = eff.lvRadius / CC;
+      const sx = s.x / CC, sy = s.y / CC;
+      for (let y = Math.max(0, Math.floor(sy - rc)); y <= Math.min(Hc - 1, Math.ceil(sy + rc)); y++)
+        for (let x = Math.max(0, Math.floor(sx - rc)); x <= Math.min(Wc - 1, Math.ceil(sx + rc)); x++) {
+          const d = Math.hypot(x + 0.5 - sx, y + 0.5 - sy);
+          if (d >= rc) continue;
+          this.specialC[y * Wc + x] += eff.lvAmt * (1 - d / rc);
+        }
+    }
+  }
+  // standing approval offsets contributed by special structures
+  specialApproval() {
+    const out = {};
+    for (const { eff } of this.specialList()) {
+      if (!eff.approval) continue;
+      for (const [k, v] of Object.entries(eff.approval)) out[k] = (out[k] || 0) + v;
+    }
+    return out;
   }
 
   // ---------------- monthly tick ----------------
@@ -505,6 +550,11 @@ export class Sim {
       commuters: 56 - 90 * cong + 15 * (this.roadCond - 1),
     };
     if (this.funds < 0) for (const k of FACTIONS) f[k] -= 6;
+    const sp = this.specialApproval();
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === 'all') for (const g of FACTIONS) f[g] += v;
+      else if (f[k] != null) f[k] += v;
+    }
     this.factions = {};
     let a = 0;
     for (const k of FACTIONS) {
@@ -988,7 +1038,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0']);
+    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0) };

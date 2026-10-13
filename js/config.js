@@ -33,8 +33,44 @@ export const COVER = { GRASS: 0, PARK: 1, WOOD: 2, PAVED: 3, CEMETERY: 4, SPORT:
 
 export const ROAD_NAME = ['', 'Street', 'Collector', 'Arterial'];
 
+// Civic facilities you can place.
+//  - `radius` + `fund` key  -> emergency coverage (police / fire / school), handled in sim.computeMaps.
+//  - `effect` -> a "special structure": a one-off civic amenity (SimCity rewards). Fields:
+//      lvRadius / lvAmt   land-value halo (grid tiles, strength) around the building
+//      approval { faction|all: points }   standing approval offset while it stands & is funded
+//      upkeep             annual operating cost added to the budget as a recurring line
+//      glyph              rooftop marker drawn by the renderer
+//      levels             storeys (height) for the footprint
 export const SERVICES = {
-  police: { label: 'Police station', size: 3, cost: 12e6, radius: 130, color: '#3a5fbf' },
-  fire: { label: 'Fire station', size: 3, cost: 9e6, radius: 95, color: '#c8352b' },
-  school: { label: 'School', size: 5, cost: 45e6, radius: 60, color: '#b8643f' },
+  police: { label: 'Police station', size: 3, cost: 12e6, radius: 130, color: '#3a5fbf', glyph: '★', levels: 2 },
+  fire: { label: 'Fire station', size: 3, cost: 9e6, radius: 95, color: '#c8352b', glyph: '✚', levels: 2 },
+  school: { label: 'School', size: 5, cost: 45e6, radius: 60, color: '#b8643f', glyph: '✎', levels: 3 },
+  hospital: {
+    label: 'Hospital', size: 5, cost: 60e6, color: '#d6e2ea', glyph: '✚', levels: 6,
+    effect: { lvRadius: 48, lvAmt: 0.1, approval: { all: 5, seniors: 10 }, upkeep: 4.5e6 },
+  },
+  clinic: {
+    label: 'Community clinic', size: 3, cost: 14e6, color: '#cfe0d8', glyph: '✚', levels: 2,
+    effect: { lvRadius: 26, lvAmt: 0.06, approval: { seniors: 6, renters: 3 }, upkeep: 1.1e6 },
+  },
+  library: {
+    label: 'Library', size: 3, cost: 18e6, color: '#c8a86a', glyph: '📖', levels: 2,
+    effect: { lvRadius: 34, lvAmt: 0.09, approval: { all: 4, homeowners: 5 }, upkeep: 0.9e6 },
+  },
+  firehouse: {
+    label: 'Firehouse (historic)', size: 2, cost: 7e6, color: '#a6402f', glyph: '✚', levels: 2,
+    radius: 70, fund: 'fire',
+    effect: { lvRadius: 18, lvAmt: 0.05, approval: { all: 2 }, upkeep: 0.5e6 },
+  },
+  museum: {
+    label: 'Museum', size: 4, cost: 30e6, color: '#b9a9c9', glyph: '🏛', levels: 3,
+    effect: { lvRadius: 40, lvAmt: 0.12, approval: { all: 4, business: 6 }, upkeep: 1.6e6 },
+  },
+  stadium: {
+    label: 'Stadium', size: 7, cost: 120e6, color: '#7f8a93', glyph: '◉', levels: 5,
+    effect: { lvRadius: 60, lvAmt: 0.08, approval: { all: 6, business: 10, commuters: -4 }, upkeep: 6e6 },
+  },
 };
+
+// Types that are "special structures" (civic amenities) rather than plain coverage services.
+export const SPECIAL = Object.keys(SERVICES).filter((k) => SERVICES[k].effect);

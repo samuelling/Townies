@@ -16,6 +16,12 @@ const ICON = {
   police: '<svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" fill="#3a5fbf" stroke="#000"/><path d="M12 7l1.4 3 3.2.3-2.4 2 .8 3.2L12 14l-3 1.5.8-3.2-2.4-2 3.2-.3z" fill="#f1c232"/></svg>',
   fire: '<svg viewBox="0 0 24 24"><path d="M12 2c2 4 6 6 6 11a6 6 0 01-12 0c0-3 2-4 2-7 2 1 3 3 3 5 1-3 1-6 1-9z" fill="#e24a2b" stroke="#000"/><path d="M12 13c1 2 3 3 3 5a3 3 0 01-6 0c0-1 1-2 1-3 1 1 2 1 2-2z" fill="#f1c232"/></svg>',
   school: '<svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5z" fill="#b8643f" stroke="#000"/><path d="M6 11v5c3 2 9 2 12 0v-5l-6 3z" fill="#d68a5f" stroke="#000"/></svg>',
+  hospital: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5" fill="#dfe8ee" stroke="#000"/><path d="M12 7v10M7 12h10" stroke="#c8352b" stroke-width="3"/></svg>',
+  clinic: '<svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="13" rx="1.5" fill="#d2e4dc" stroke="#000"/><path d="M12 9v7M8.5 12.5h7" stroke="#2e8a5f" stroke-width="2.4"/></svg>',
+  library: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1" fill="#c8a86a" stroke="#000"/><path d="M12 6v12" stroke="#000" stroke-width="1.4"/><path d="M5 8h5M5 11h5M14 8h5M14 11h5" stroke="#6b4a2b" stroke-width="1.2"/></svg>',
+  firehouse: '<svg viewBox="0 0 24 24"><path d="M4 10l8-5 8 5v9H4z" fill="#a6402f" stroke="#000"/><rect x="9" y="12" width="6" height="7" fill="#f1c232" stroke="#000"/></svg>',
+  museum: '<svg viewBox="0 0 24 24"><path d="M3 9l9-5 9 5z" fill="#cdbcdd" stroke="#000"/><path d="M5 10v7M9 10v7M15 10v7M19 10v7" stroke="#6d4f6b" stroke-width="1.8"/><rect x="3" y="18" width="18" height="2.5" fill="#b9a9c9" stroke="#000"/></svg>',
+  stadium: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="7" fill="#9aa3ab" stroke="#000"/><ellipse cx="12" cy="12" rx="5" ry="3.4" fill="#5f8a4a" stroke="#000"/></svg>',
   rotl: '<svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2-5" fill="none" stroke="#000" stroke-width="2.4"/><path d="M3 3v6h6" fill="none" stroke="#000" stroke-width="2.4"/></svg>',
   rotr: '<svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2-5" fill="none" stroke="#000" stroke-width="2.4"/><path d="M21 3v6h-6" fill="none" stroke="#000" stroke-width="2.4"/></svg>',
   zin: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="7" fill="#fff" stroke="#000" stroke-width="2"/><path d="M15 15l6 6" stroke="#000" stroke-width="3"/><path d="M6.5 10h7M10 6.5v7" stroke="#000" stroke-width="2"/></svg>',
@@ -34,6 +40,12 @@ const TOOLS = [
   { id: 'police', label: 'Police station', key: '', tip: 'Tap to place a 3×3 police station ($12M).' },
   { id: 'fire', label: 'Fire station', key: '', tip: 'Tap to place a 3×3 fire station ($9M).' },
   { id: 'school', label: 'School', key: '', tip: 'Tap to place a 5×5 school ($45M).' },
+  { id: 'clinic', label: 'Community clinic', key: '', tip: 'Tap to place a 3×3 clinic ($14M). Lifts nearby land value; seniors & renters approve.' },
+  { id: 'library', label: 'Library', key: '', tip: 'Tap to place a 3×3 library ($18M). Raises land value and overall approval.' },
+  { id: 'firehouse', label: 'Firehouse (historic)', key: '', tip: 'Tap to place a 2×2 firehouse ($7M). Adds fire coverage with small-town charm.' },
+  { id: 'museum', label: 'Museum', key: '', tip: 'Tap to place a 4×4 museum ($30M). Strong land-value halo; business approves.' },
+  { id: 'hospital', label: 'Hospital', key: '', tip: 'Tap to place a 5×5 hospital ($60M). Big land-value & approval boost; high upkeep.' },
+  { id: 'stadium', label: 'Stadium', key: '', tip: 'Tap to place a 7×7 stadium ($120M). Civic pride & business — commuters grumble about traffic.' },
 ];
 const OVERLAYS = [
   ['none', 'None'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
@@ -334,6 +346,7 @@ export class UI {
         body.append(slider(DEPT_LABEL[d], s.fund[d], 0.5, 1.2, 0.05, (v) => `${Math.round(v * 100)}% · ${fmtMoney((bl.exp[d] / s.fund[d]) * v)}`, (v) => (s.fund[d] = v)));
       body.append(el('div', { class: 'kvline' }, el('span', {}, DEPT_LABEL.other), el('b', {}, fmtMoney(bl.exp.other))));
       for (const l of bl.recLines) body.append(el('div', { class: 'kvline' }, el('span', {}, l.label), el('b', { class: l.annual < 0 ? 'pos' : '' }, l.annual < 0 ? '+' + fmtMoney(-l.annual) : fmtMoney(l.annual))));
+      if (bl.upkeep) body.append(el('div', { class: 'kvline' }, el('span', {}, 'Civic facilities (operating)'), el('b', {}, fmtMoney(bl.upkeep))));
       if (bl.interest) body.append(el('div', { class: 'kvline' }, el('span', {}, 'Short-term borrowing interest'), el('b', {}, fmtMoney(bl.interest))));
       body.append(
         el('div', { class: 'kvline tot' }, el('span', {}, 'Expenses / yr'), el('b', {}, fmtMoney(bl.expenses))),
