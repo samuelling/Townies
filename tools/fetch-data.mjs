@@ -254,7 +254,9 @@ async function fetchCommute() {
 }
 
 async function fetchTraffic() {
-  return arcgisAll(MASSDOT_ROADS, ['CITY=314 AND AADT>0', "MGIS_TOWN='WATERTOWN' AND AADT>0"], ['STREET_NAME', 'AADT', 'AADT_YEAR', 'AADT_DERIV', 'NUM_LANES', 'OPP_LANES', 'SPEED_LIM', 'F_F_CLASS', 'OPERATION'], 'MassDOT traffic counts');
+  // Watertown plus the towns along its border (Belmont, Boston, Cambridge, Newton, Waltham): border streets
+  // like Belmont St and parts of Arsenal St are inventoried under the neighbour; the snapshot crops to the map
+  return arcgisAll(MASSDOT_ROADS, ['CITY IN (26,35,49,207,308,314) AND AADT>0', "MGIS_TOWN IN ('WATERTOWN','BELMONT','BOSTON','CAMBRIDGE','NEWTON','WALTHAM') AND AADT>0", 'CITY=314 AND AADT>0'], ['STREET_NAME', 'AADT', 'AADT_YEAR', 'AADT_DERIV', 'NUM_LANES', 'OPP_LANES', 'SPEED_LIM', 'F_F_CLASS', 'OPERATION'], 'MassDOT traffic counts');
 }
 
 async function arcgisAll(url, wheres, outFields, label) {
