@@ -81,6 +81,10 @@ async function start(mode, status, btns) {
       await nextFrame();
       game.world = buildWorld(raw, log);
     }
+    try {
+      const r = await fetch('data/peers.json', { cache: 'no-cache' });
+      if (r.ok) game.peers = await r.json();
+    } catch (e) {}
     log('Waking up the City Council…');
     await nextFrame();
     boot(state);

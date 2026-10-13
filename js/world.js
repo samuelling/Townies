@@ -650,6 +650,15 @@ export function buildWorld(raw, progress = () => {}) {
   const [sx, sy] = proj.toGrid(CFG.SQUARE.lat, CFG.SQUARE.lon);
   world.start = inB(sx, sy) ? [sx, sy] : [W / 2, H / 2];
   world.stats = { buildings: bldgs.length, lots: lots.length, roads: roads.length, pois: pois.length };
+  // points of interest outside the town line still count for walkability near the border
+  world.extPois = [];
+  for (const p of pois) {
+    const x = Math.floor(p.pt[0]), y = Math.floor(p.pt[1]);
+    if (x < 0 || y < 0 || x >= W || y >= H || inTown[y * W + x]) continue;
+    if (p.name) world.extPois.push([p.pt[0], p.pt[1], p.kind || '', p.name]);
+  }
+  // real street intersections (from OSM node topology), in grid coordinates
+  world.junctions = (raw.junctions || []).map(([lat, lon]) => proj.toGrid(lat, lon)).filter(([x, y]) => x >= 0 && y >= 0 && x < W && y < H);
   return world;
 }
 

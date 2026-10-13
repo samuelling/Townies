@@ -3,6 +3,7 @@ import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
 import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
 import { frontage, classifyLot } from './vibrancy.js';
+import { walkScore, walkCat } from './walkscore.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
@@ -357,6 +358,7 @@ export class Sim {
     }
     // halo from special civic structures (hospital, library, museum, …)
     this.computeSpecial();
+    if (init || !this.walkS || this.walkDirty || this.t % 12 === 0) this.computeWalk();
     this.computeVibrancy(init);
     // land value modifier relative to the starting city
     const S = new Float32Array(Nc);
@@ -412,6 +414,116 @@ export class Sim {
       if (item || this.rand() < 0.15) react(this, rt, ctx, item);
     }
     if (this.sfLog.length > 40) this.sfLog.length = 40;
+  }
+  // Walk Score–style walkability per cell, from the game's own businesses, parks, schools and real intersections.
+  computeWalk() {
+    const w = this.w;
+    const { Wc, Hc } = this;
+    const Nc = Wc * Hc;
+    const TM = 16; // metres per tile
+    const pts = [];
+    const add = (x, y, cat) => cat && pts.push(x, y, cat);
+    const catIdx = { grocery: 0, restaurants: 1, shopping: 2, coffee: 3, banks: 4, parks: 5, schools: 6, books: 7, entertainment: 8 };
+    const P = [];
+    for (const lot of w.lots) {
+      if (lot.dead || !lot.biz || !lot.biz.length) continue;
+      lot.biz.forEach((n, k) => { const c = walkCat(lot.bizKind ? lot.bizKind[k] : '', n); if (c) P.push([lot.cx, lot.cy, catIdx[c]]); });
+      if (/school/i.test(lot.useDesc || '')) P.push([lot.cx, lot.cy, catIdx.schools]);
+    }
+    for (const [x, y, k, n] of w.extPois || []) { const c = walkCat(k, n); if (c) P.push([x, y, catIdx[c]]); }
+    for (const s of w.services) if (s.alive && (s.type === 'school' || s.type === 'library')) P.push([s.x, s.y, catIdx[s.type === 'school' ? 'schools' : 'books']]);
+    // parks: one point per cell that is mostly green
+    if (!this.parkPts) {
+      this.parkPts = [];
+      for (let cy = 0; cy < Hc; cy++)
+        for (let cx = 0; cx < Wc; cx++) if (this.parkC[cy * Wc + cx] > 0) {
+          let n = 0;
+          for (let y = cy * 4; y < cy * 4 + 4 && y < w.H; y++) for (let x = cx * 4; x < cx * 4 + 4 && x < w.W; x++) if (w.cover[y * w.W + x] === COVER.PARK) n++;
+          if (n >= 6) this.parkPts.push([cx * 4 + 2, cy * 4 + 2]);
+        }
+    }
+    for (const [x, y] of this.parkPts) P.push([x, y, catIdx.parks]);
+    void add;
+    void pts;
+    // intersection density within half a mile
+    if (!this.interC) {
+      const J = new Float32Array(Nc);
+      for (const [x, y] of w.junctions || []) J[this.cellOf(x, y)]++;
+      this.interC = new Float32Array(Nc);
+      const R = 12; // cells ≈ 0.5 mi
+      for (let y = 0; y < Hc; y++)
+        for (let x = 0; x < Wc; x++) {
+          const v = J[y * Wc + x];
+          if (!v) continue;
+          for (let dy = -R; dy <= R; dy++)
+            for (let dx = -R; dx <= R; dx++) {
+              if (dx * dx + dy * dy > R * R) continue;
+              const xx = x + dx, yy = y + dy;
+              if (xx >= 0 && yy >= 0 && xx < Wc && yy < Hc) this.interC[yy * Wc + xx] += v;
+            }
+        }
+      this.hasJunctions = (w.junctions || []).length > 0;
+    }
+    this.walkP = P;
+    // score on 2×2-cell blocks (128 m), every block inside town
+    if (!this.walkS || this.walkS.length !== Nc) this.walkS = new Uint8Array(Nc);
+    let s = 0, p = 0;
+    for (let by = 0; by < Hc; by += 2)
+      for (let bx = 0; bx < Wc; bx += 2) {
+        const x = bx * 4 + 4, y = by * 4 + 4;
+        const ti = Math.min(w.H - 1, y) * w.W + Math.min(w.W - 1, x);
+        let any = w.inTown[ti];
+        for (let dy = 0; dy < 2 && !any; dy++) for (let dx = 0; dx < 2 && !any; dx++) { const ci = (by + dy) * Wc + bx + dx; if (bx + dx < Wc && by + dy < Hc && (this.popC[ci] > 0 || this.jobsC[ci] > 0)) any = 1; }
+        const ws = any ? this.walkAt(x, y) : 0;
+        for (let dy = 0; dy < 2; dy++)
+          for (let dx = 0; dx < 2; dx++) {
+            if (bx + dx >= Wc || by + dy >= Hc) continue;
+            const ci = (by + dy) * Wc + bx + dx;
+            this.walkS[ci] = ws;
+            if (this.popC[ci] > 0) { s += ws * this.popC[ci]; p += this.popC[ci]; }
+          }
+      }
+    this.walkIndex = p ? s / p : 0;
+    if (this.base && this.base.walk0 == null) this.base.walk0 = this.walkIndex;
+    if (!this.walkC || this.walkC.length !== Nc) this.walkC = new Float32Array(Nc);
+    for (let i = 0; i < Nc; i++) this.walkC[i] = 0.5 + 0.5 * (this.walkS[i] / 100);
+    this.walkDirty = false;
+  }
+  // storefront mix within r tiles of a point (same counting as the peer benchmarks)
+  mixAt(x, y, r) {
+    const m = { storefronts: 0, sig: 0, chains: 0, auto: 0 };
+    for (const lot of this.w.lots) {
+      if (lot.dead || !lot.biz || !lot.biz.length) continue;
+      if (Math.hypot(lot.cx - x, lot.cy - y) > r) continue;
+      if (!lot.bizCat) classifyLot(lot);
+      lot.biz.forEach((n, k) => {
+        const c = lot.bizCat[k];
+        if (c === 'auto') m.auto++;
+        if (c === 'food' || c === 'retail' || c === 'service') {
+          m.storefronts++;
+          if (lot.bizChainF[k]) m.chains++;
+          else if (lot.bizSig && lot.bizSig[k]) m.sig++;
+        }
+      });
+    }
+    return m;
+  }
+  // walkability at any point (grid coordinates); distances use a 1.25 route-detour factor
+  walkAt(x, y) {
+    const TM = 16, DET = 1, MAXD = 2414 / TM / 1.25;
+    const lists = [[], [], [], [], [], [], [], [], []];
+    for (const [px, py, k] of this.walkP || []) {
+      const dx = px - x, dy = py - y;
+      if (dx > MAXD || dx < -MAXD || dy > MAXD || dy < -MAXD) continue;
+      const d = Math.hypot(dx, dy);
+      if (d <= MAXD) lists[k].push(d * TM * DET);
+    }
+    const names = ['grocery', 'restaurants', 'shopping', 'coffee', 'banks', 'parks', 'schools', 'books', 'entertainment'];
+    const obj = {};
+    names.forEach((c, k) => (obj[c] = lists[k]));
+    const ci = this.cellOf(x, y);
+    const perSqMi = this.hasJunctions ? this.interC[ci] / (Math.PI * 0.25) : 200;
+    return walkScore(obj, perSqMi);
   }
   // Street-life field: frontage of each lot spread over walking distance, scaled by nearby residents.
   computeVibrancy(init = false) {
@@ -1149,6 +1261,12 @@ export class Sim {
         return ramp(1 - this.polCov[c]);
       case 'fire':
         return ramp(1 - this.fireCov[c]);
+      case 'walk': {
+        if (w.terrain[i] === 1 || !this.walkS) return null;
+        const v = this.walkS[c] / 100;
+        if (!v) return null;
+        return [Math.round(255 * (1 - v)), Math.round(90 + 150 * v), Math.round(70 + 120 * v), 150];
+      }
       case 'vibrancy': {
         if (w.terrain[i] === 1) return null;
         const v = this.vibSat[c];
@@ -1170,7 +1288,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel']);
+    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0) };

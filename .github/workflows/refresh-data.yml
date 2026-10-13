@@ -16,6 +16,7 @@ on:
       - 'js/snapshot.js'
       - 'js/walkscore.js'
       - 'js/peers.js'
+      - 'js/vibrancy.js'
       - '.github/workflows/refresh-data.yml'
 
 permissions:

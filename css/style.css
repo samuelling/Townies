@@ -60,6 +60,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pname { width: 100%; font: inherit; padding: 2px 4px; }
 .projrow { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px dotted #999; }
 .projrow.denied { opacity: 0.6; }
+.peers { width: 100%; border-collapse: collapse; font-size: 11px; margin: 2px 0; }
+.peers th { text-align: right; font-weight: normal; color: #555; border-bottom: 1px solid #999; padding: 1px 3px; }
+.peers th:first-child, .peers td:first-child { text-align: left; }
+.peers td { text-align: right; padding: 1px 3px; border-bottom: 1px dotted #ccc; }
+.peers tr.home td { font-weight: bold; background: #fffbe0; }
 .mstats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
 .mstat { background: #fff; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); padding: 4px 6px; }
 .mstat small { display: block; font-size: 10px; color: #555; text-transform: uppercase; }

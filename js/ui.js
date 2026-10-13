@@ -5,6 +5,9 @@ import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
+import { walkLabel } from './walkscore.js';
+import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
+import { makeProj } from './geo.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
 const ICON = {
@@ -65,7 +68,7 @@ const TOOL_NOTE = {
   hospital: '$60M · 5×5 · big boost, high upkeep', museum: '$30M · 4×4 · land value, business', stadium: '$120M · 7×7 · pride, but traffic',
 };
 const OVERLAYS = [
-  ['none', 'None'], ['vibrancy', 'Vibrancy (street life)'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
+  ['none', 'None'], ['vibrancy', 'Vibrancy (street life)'], ['walk', 'Walkability'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
 ];
 const SPEEDS = [['Pause', 0], ['Turtle', 1], ['Llama', 2], ['Cheetah', 3]];
 
@@ -443,6 +446,7 @@ export class UI {
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
+          row('Walkability', s.walkP ? (() => { const ws = s.walkAt(x + 0.5, y + 0.5); return `${ws} · ${walkLabel(ws)}`; })() : ''),
           row('A neighbor says', s.trafC ? el('i', { class: 'quote' }, `“${neighborQuote(s, lot, c)}”`) : ''),
           row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
@@ -526,6 +530,8 @@ export class UI {
           stat('Independents', `${st.indie || 0}`, `${st.chain || 0} chains · ${st.sig || 0} signature`),
           stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs 2027 · buzz ${Math.round((s.hype || 0) * 100)}`)
         ),
+        el('div', { class: 'kvline' }, el('span', {}, 'Walkability where people live'), el('b', {}, `${Math.round(s.walkIndex || 0)} · ${walkLabel(s.walkIndex || 0)}`)),
+        this.peerTable(),
         el('p', { class: 'fine' }, 'Signature independents (coffee, books, boutiques, galleries, bakeries) make a street feel alive and are the first to go when landlords chase the "Watertown is on the rise" rents. Chains and bank branches can pay more, and add less.'),
         el('button', { class: 'btn', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') }, this.overlay === 'vibrancy' ? 'Hide vibrancy map' : 'Show vibrancy map'),
         el('h4', {}, 'Policies')
@@ -717,6 +723,28 @@ export class UI {
         body.append(el('div', { class: `projrow ${p.stage}` }, el('span', { class: 'pi' }, PROGRAMS[p.prog].icon), el('button', { class: 'link', onclick: () => this.r.centerOn(p.cx, p.cy) }, p.name), el('small', {}, stage)));
       }
     });
+  }
+
+  peerTable() {
+    const s = this.sim;
+    const peers = (this.g.peers && this.g.peers.centers) || [];
+    if (!peers.length) return '';
+    const proj = makeProj(this.w.bbox);
+    const area = Math.PI * (MIX_RADIUS_M / 1000) ** 2;
+    const rows = peers.map((p) => {
+      if (!p.home || this.w.demo) return { ...p, live: false };
+      const [x, y] = proj.toGrid(p.lat, p.lon);
+      const m = s.mixAt(x, y, MIX_RADIUS_M / 16);
+      return { ...p, walk: s.walkAt(x, y), perKm2: Math.round(m.storefronts / area), sigPerKm2: Math.round(m.sig / area), chainShare: m.storefronts ? m.chains / m.storefronts : 0, auto: m.auto, live: true, x, y };
+    });
+    rows.sort((a, b) => b.walk - a.walk || b.sigPerKm2 - a.sigPerKm2);
+    const t = el('table', { class: 'peers' }, el('tr', {}, el('th', {}, 'Center'), el('th', {}, 'Walk'), el('th', { title: 'storefronts per km² within a 7-minute walk' }, 'Shops'), el('th', { title: 'signature independents per km²' }, '★'), el('th', {}, 'Chains'), el('th', { title: 'auto-oriented businesses within 600 m' }, '🚗')));
+    for (const r of rows) {
+      t.append(el('tr', { class: r.home ? 'home' : '' },
+        el('td', {}, r.live ? el('button', { class: 'link', onclick: () => this.r.centerOn(r.x, r.y) }, r.name) : `${r.name}, ${r.town}`),
+        el('td', {}, String(r.walk)), el('td', {}, String(r.perKm2)), el('td', {}, String(r.sigPerKm2)), el('td', {}, `${Math.round(r.chainShare * 100)}%`), el('td', {}, String(r.auto))));
+    }
+    return el('div', {}, el('h4', {}, 'How we compare'), t, el('p', { class: 'fine' }, `Walkability is a Walk Score–style index rebuilt from open data (not Walk Score's own scores). Peer figures from the ${this.g.peers.generated ? new Date(this.g.peers.generated).toLocaleDateString() : ''} data snapshot; Watertown rows are live.`));
   }
 
   councilWindow() {

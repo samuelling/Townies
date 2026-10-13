@@ -18,6 +18,8 @@ export const WALK_WEIGHTS = {
 export const WALK_TOTAL = Object.values(WALK_WEIGHTS).reduce((s, a) => s + a.reduce((x, y) => x + y, 0), 0);
 
 const MILE = 1609.34;
+// straight-line distances are stretched to approximate walking-route distance
+export const ROUTE_DETOUR = 1.25;
 export function decay(m) {
   const mi = m / MILE;
   if (mi <= 0.25) return 1;
@@ -55,7 +57,7 @@ export function walkScore(cats, intersPerSqMi = 200) {
   let pts = 0;
   for (const [c, ws] of Object.entries(WALK_WEIGHTS)) {
     const ds = (cats[c] || []).slice().sort((a, b) => a - b);
-    for (let k = 0; k < ws.length && k < ds.length; k++) pts += ws[k] * decay(ds[k]);
+    for (let k = 0; k < ws.length && k < ds.length; k++) pts += ws[k] * decay(ds[k] * ROUTE_DETOUR);
   }
   const raw = (100 * pts) / WALK_TOTAL;
   return Math.round(Math.max(0, Math.min(100, raw * (1 - pedPenalty(intersPerSqMi)))));
