@@ -573,11 +573,15 @@ export class Sim {
       if (withBiz.length) {
         const lot = withBiz[0];
         const name = lot.biz[Math.floor(this.rand() * lot.biz.length)];
-        this.news(pick(BIZ_HEADLINES, this.rand()).replace('{b}', name), '');
+        const title = pick(BIZ_HEADLINES, this.rand()).replace('{b}', name);
+        if (this.newsLog.slice(0, 25).some((n) => n.title === title)) return;
+        this.news(title, '');
         return;
       }
     }
-    this.news(pick(TICKER, this.rand()), '');
+    const recent = new Set(this.newsLog.slice(0, 25).map((n) => n.title));
+    const fresh = TICKER.filter((t) => !recent.has(t));
+    this.news(pick(fresh.length ? fresh : TICKER, this.rand()), '');
   }
 
   news(title, body = '', size = 'small') {
