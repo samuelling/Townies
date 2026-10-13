@@ -41,6 +41,7 @@ export class Renderer {
     this.anchors = Array.from({ length: this.ncx * this.ncy }, () => []);
     this.knownB = 0;
     this.registerBuildings();
+    this.indexRoadLines();
     this.overlayMode = 'none';
     this.overlayCanvas = null;
     this.preview = null;
@@ -155,6 +156,29 @@ export class Renderer {
     }
     this.knownB = bldgs.length;
   }
+  indexRoadLines() {
+    const lines = this.world.roadLines;
+    this.lineIdx = null;
+    if (!lines || !lines.length) return;
+    const idx = Array.from({ length: this.ncx * this.ncy }, () => []);
+    lines.forEach((ln, li) => {
+      const p = ln.pts;
+      const seen = new Set();
+      for (let k = 0; k + 3 < p.length; k += 2) {
+        const x0 = Math.min(p[k], p[k + 2]) - 1.2, x1 = Math.max(p[k], p[k + 2]) + 1.2;
+        const y0 = Math.min(p[k + 1], p[k + 3]) - 1.2, y1 = Math.max(p[k + 1], p[k + 3]) + 1.2;
+        for (let cy = Math.max(0, Math.floor(y0 / CH)); cy <= Math.min(this.ncy - 1, Math.floor(y1 / CH)); cy++)
+          for (let cx = Math.max(0, Math.floor(x0 / CH)); cx <= Math.min(this.ncx - 1, Math.floor(x1 / CH)); cx++) {
+            const c = cy * this.ncx + cx;
+            if (!seen.has(c)) {
+              seen.add(c);
+              idx[c].push(li);
+            }
+          }
+      }
+    });
+    this.lineIdx = idx;
+  }
   invalidateTiles(list) {
     const { W } = this.world;
     const seen = new Set();
@@ -262,6 +286,8 @@ export class Renderer {
       }
     };
     const { terrain, road, cover, lotOf, inTown, svcAt, path } = w;
+    const osmRoad = this.lineIdx ? w.osmRoad : null, roadCut = w.roadCut;
+    const tileRoads = [], cutTiles = [];
     const lots = w.lots;
     const detail = L >= 0.5;
     for (let y = cc.y0; y < cc.y1; y++)
@@ -284,10 +310,11 @@ export class Renderer {
           else if (cv === COVER.WETLAND) { col = C.wetland; kind = 6; }
           else if (lot) {
             const developed = lot.bldgs.length > 0;
-            if (!developed && (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I)) {
+            if (cv === COVER.PAVED) col = C.paved;
+            else if (!developed && (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I)) {
               col = C.grass;
               kind = 10 + lot.zone;
-            } else if (cv === COVER.PAVED) col = C.paved;
+            }
             else if (lot.zone === ZONE.C) col = C.plaza;
             else if (lot.zone === ZONE.I) col = C.yard;
             else if (lot.zone === ZONE.CIVIC) col = C.civic;
@@ -295,7 +322,9 @@ export class Renderer {
           } else if (cv === COVER.PAVED) col = C.paved;
           else col = C.grass;
         }
-        diamond(x, y, shade(col, v), true);
+        const fill = shade(col, v);
+        diamond(x, y, fill, true);
+        if (roadCut && roadCut[i] && osmRoad && osmRoad[i]) cutTiles.push([x, y, fill]);
         if (detail) {
           if (kind === 1) {
             if (hash2(x, y, 4) < 0.35) {
@@ -355,8 +384,12 @@ export class Renderer {
             if (any) g.stroke();
           }
         }
-        if (road[i]) this.drawRoad(g, P, poly, x, y, road[i], terrain[i] === 1, L);
+        if (road[i] && !(osmRoad && osmRoad[i] && !roadCut[i])) tileRoads.push(i);
       }
+    // real streets as smooth lines at their true angles
+    if (osmRoad) this.drawRoadLines(g, P, cc, cx, cy, L);
+    for (const [x, y, fill] of cutTiles) diamond(x, y, fill, true);
+    for (const i of tileRoads) this.drawRoad(g, P, poly, i % W, (i / W) | 0, road[i], terrain[i] === 1, L);
     // town line + neighbour shading
     for (let y = cc.y0; y < cc.y1; y++)
       for (let x = cc.x0; x < cc.x1; x++) {
@@ -381,6 +414,58 @@ export class Renderer {
       g.setLineDash([]);
     }
     return { c, ox, oy, L };
+  }
+
+  drawRoadLines(g, P, cc, cx, cy, L) {
+    const ids = this.lineIdx[cy * this.ncx + cx];
+    if (!ids.length) return;
+    const lines = this.world.roadLines;
+    const RW = [0, 0.55, 0.75, 0.95];
+    g.save();
+    const c0 = P(cc.x0, cc.y0), c1 = P(cc.x1, cc.y0), c2 = P(cc.x1, cc.y1), c3 = P(cc.x0, cc.y1);
+    g.beginPath();
+    g.moveTo(c0[0], c0[1]); g.lineTo(c1[0], c1[1]); g.lineTo(c2[0], c2[1]); g.lineTo(c3[0], c3[1]);
+    g.closePath();
+    g.clip();
+    const o = P(0, 0), ax = P(1, 0), ay = P(0, 1);
+    g.setTransform(ax[0] - o[0], ax[1] - o[1], ay[0] - o[0], ay[1] - o[1], o[0], o[1]);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    const trace = (ln) => {
+      const p = ln.pts;
+      g.beginPath();
+      g.moveTo(p[0], p[1]);
+      for (let k = 2; k < p.length; k += 2) g.lineTo(p[k], p[k + 1]);
+    };
+    const byCls = [[], [], [], []];
+    for (const li of ids) byCls[lines[li].cls].push(lines[li]);
+    for (let c = 1; c <= 3; c++)
+      for (const ln of byCls[c]) {
+        trace(ln);
+        g.strokeStyle = ln.bridge ? '#d9d7cd' : '#b9b7ab';
+        g.lineWidth = RW[c] + (ln.bridge ? 0.16 : 0.22);
+        g.stroke();
+      }
+    for (let c = 1; c <= 3; c++)
+      for (const ln of byCls[c]) {
+        trace(ln);
+        g.strokeStyle = c === 3 ? '#3e4045' : '#4b4d53';
+        g.lineWidth = RW[c];
+        g.stroke();
+      }
+    if (L >= 1) {
+      g.lineCap = 'butt';
+      for (let c = 2; c <= 3; c++)
+        for (const ln of byCls[c]) {
+          trace(ln);
+          g.strokeStyle = '#e8c547';
+          g.lineWidth = 0.045;
+          g.setLineDash(c === 3 ? [] : [0.45, 0.35]);
+          g.stroke();
+        }
+      g.setLineDash([]);
+    }
+    g.restore();
   }
 
   drawRoad(g, P, poly, x, y, cls, bridge, L) {
@@ -967,7 +1052,11 @@ export class Renderer {
       ctx.drawImage(this.overlayCanvas, 0, 0);
       ctx.restore();
     }
-    const carsDrawn = this.carsOn && s >= 0.9 && this.sim ? this.drawCars(ctx, s, offX, offY) : false;
+    let carsDrawn = false;
+    if (this.carsOn && s >= 0.9 && this.sim) {
+      carsDrawn = this.drawCars(ctx, s, offX, offY);
+      if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
+    }
     for (const v of vis) blit(fetch(v, 'o'));
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn;
@@ -999,6 +1088,7 @@ export class Renderer {
         const i = y * W + x;
         const cls = road[i];
         if (!cls) continue;
+        if (this.lineIdx && this.world.osmRoad[i] && !this.world.roadCut[i]) continue;
         const E = x + 1 < W && road[i + 1], Wn = x > 0 && road[i - 1], S = y + 1 < H && road[i + W], N = y > 0 && road[i - W];
         const ew = (E || Wn) && !N && !S, ns = (N || S) && !E && !Wn;
         if (!ew && !ns) continue;
@@ -1028,6 +1118,67 @@ export class Renderer {
             ctx.closePath(); ctx.fill();
             drew = true;
           }
+        }
+      }
+    return drew && !this.sim.paused;
+  }
+
+  drawLineCars(ctx, s, offX, offY, vis) {
+    const w = this.world;
+    const cong = this.sim.congestion;
+    const { W, H } = w;
+    const [vx0, vy0, vx1, vy1] = this.visibleRect();
+    if ((vx1 - vx0) * (vy1 - vy0) > 40000) return false;
+    const t = this.sim.paused ? this.frozenT2 || (this.frozenT2 = this.time) : ((this.frozenT2 = 0), this.time);
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
+    };
+    const RW = [0, 0.55, 0.75, 0.95];
+    const colors = ['#d23c3c', '#e8e8e8', '#2b5fb8', '#222', '#e3b63c', '#6a6a6a', '#3b8a4a'];
+    const seen = new Set();
+    const sp = 1.3;
+    let drew = false;
+    for (const v of vis)
+      for (const li of this.lineIdx[v.cy * this.ncx + v.cx]) {
+        if (seen.has(li)) continue;
+        seen.add(li);
+        const ln = w.roadLines[li];
+        const p = ln.pts;
+        const speed = 0.0011 * (ln.cls === 3 ? 1.3 : 1);
+        let acc = 0;
+        for (let k = 0; k + 3 < p.length; k += 2) {
+          const ax = p[k], ay = p[k + 1], bx = p[k + 2], by = p[k + 3];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (len < 1e-4) continue;
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          if (mx < vx0 - 2 || mx > vx1 + 2 || my < vy0 - 2 || my > vy1 + 2) { acc += len; continue; }
+          const ux = (bx - ax) / len, uy = (by - ay) / len, nx = -uy, ny = ux;
+          for (const dir of [1, -1]) {
+            const off = RW[ln.cls] * 0.24 * dir;
+            const phase = (((t * speed * dir) % sp) + sp) % sp;
+            const j0 = Math.ceil((acc - phase) / sp), j1 = Math.floor((acc + len - phase) / sp);
+            for (let j = j0; j <= j1; j++) {
+              const u = j * sp + phase - acc;
+              const cxp = ax + ux * u + nx * off, cyp = ay + uy * u + ny * off;
+              const ti = Math.floor(cyp) * W + Math.floor(cxp);
+              if (cxp < 0 || cyp < 0 || cxp >= W || cyp >= H) continue;
+              const dens = clamp((cong[ti] || 0) * 0.8 + 0.06, 0, 0.9);
+              if (hash2(li * 7 + j, k, dir + 5) > dens) continue;
+              const fx = ux * 0.14, fy = uy * 0.14, sx = nx * 0.07, sy = ny * 0.07;
+              const q = [[cxp - fx - sx, cyp - fy - sy], [cxp + fx - sx, cyp + fy - sy], [cxp + fx + sx, cyp + fy + sy], [cxp - fx + sx, cyp - fy + sy]];
+              ctx.fillStyle = 'rgba(0,0,0,0.35)';
+              ctx.beginPath();
+              q.forEach((c, n) => { const pp = P(c[0], c[1], 0); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); });
+              ctx.closePath(); ctx.fill();
+              ctx.fillStyle = colors[Math.floor(hash2(li, j, dir) * colors.length)];
+              ctx.beginPath();
+              q.forEach((c, n) => { const pp = P(c[0], c[1], 1.4); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); });
+              ctx.closePath(); ctx.fill();
+              drew = true;
+            }
+          }
+          acc += len;
         }
       }
     return drew && !this.sim.paused;

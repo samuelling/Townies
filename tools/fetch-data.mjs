@@ -337,6 +337,10 @@ function mergePlaces(osm, file) {
     const tax = parseMaybe(p.taxonomy) || {};
     const cats = parseMaybe(p.categories) || {};
     const cat = p.basic_category || tax.primary || cats.primary || '';
+    if (/bridge|landmark|monument|structure|geograph|river|lake|pond|neighbo|^city$|street|road|highway|residential|apartment|condo|^park$|playground|trail|^home$/i.test(cat)) {
+      low++;
+      continue;
+    }
     const n = norm(name);
     let isDup = false;
     for (let dx = -1; dx <= 1 && !isDup; dx++)

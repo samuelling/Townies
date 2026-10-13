@@ -45,7 +45,7 @@ export const PARCEL_FIELDS = [
 const KEEP_TAGS = new Set([
   'name', 'building', 'building:levels', 'height', 'roof:levels', 'building:colour', 'roof:colour', 'roof:shape', 'building:material',
   'highway', 'area', 'tunnel', 'service', 'waterway', 'natural', 'water', 'landuse', 'leisure', 'parking',
-  'amenity', 'shop', 'office', 'craft', 'tourism', 'healthcare', 'boundary', 'admin_level', 'type', 'place_cat', 'src',
+  'amenity', 'shop', 'office', 'craft', 'tourism', 'healthcare', 'boundary', 'admin_level', 'type', 'place_cat', 'src', 'bridge', 'footway',
 ]);
 
 const Q = 1e6;

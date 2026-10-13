@@ -255,22 +255,23 @@ export class UI {
     const row = (k, v) => (v === '' || v == null ? null : el('tr', {}, el('th', {}, k), el('td', {}, v)));
     this.win('query', 'Query', (body) => {
       const t = el('table', { class: 'kv' });
+      const add = (...rs) => rs.forEach((r) => r && t.append(r));
       let head = '';
       if (!w.inTown[i]) head = `Outside ${w.demo ? 'Demoville' : 'Watertown'} — neighbouring town`;
       else if (w.terrain[i] === 1) head = w.road[i] ? `Bridge — ${w.names[w.roadName[i]] || 'unnamed'}` : 'Water';
       else if (w.road[i]) {
         head = w.names[w.roadName[i]] || 'Unnamed street';
-        t.append(row('Type', ROAD_NAME[w.road[i]]), row('Traffic', `${Math.round(s.congestion[i] * 100)}% of capacity`), row('Condition', `${Math.round(s.roadCond * 100)}%`));
+        add(row('Type', ROAD_NAME[w.road[i]]), row('Traffic', `${Math.round(s.congestion[i] * 100)}% of capacity`), row('Condition', `${Math.round(s.roadCond * 100)}%`));
       } else if (w.svcAt[i] >= 0) {
         const sv = w.services[w.svcAt[i]];
         head = sv.name;
-        t.append(row('Facility', SERVICES[sv.type] ? SERVICES[sv.type].label : sv.type));
+        add(row('Facility', SERVICES[sv.type] ? SERVICES[sv.type].label : sv.type));
       } else if (lot && !lot.dead) {
         head = lot.addr || (lot.real ? 'Parcel (no street number)' : 'Lot');
         const names = lot.bldgs.map((id) => w.bldgs[id]).filter((b) => b.alive && b.name).map((b) => b.name);
         const sv = w.services.find((q) => q.real && q.lot === li && q.alive);
         const v = lot.landVal + lot.bldgVal + (lot.otherVal || 0);
-        t.append(
+        add(
           row('Landmark', names.length ? names.slice(0, 3).join(', ') : sv && sv.name ? sv.name : ''),
           row('Use', lot.useDesc || ZONE_NAME[lot.zone]),
           row('Zone', `${ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''}${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
@@ -285,10 +286,10 @@ export class UI {
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')})` : n; }).join(' · ') : '')
         );
-        if (lot.built > 0 && lot.year >= CFG.START.y) t.append(row('Note', 'Built during your term'));
+        if (lot.built > 0 && lot.year >= CFG.START.y) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
       if (w.inTown[i] && w.terrain[i] !== 1) {
-        t.append(
+        add(
           row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
           row('Pollution', bar(s.pollC[c] / (s.base.pollN * 1.3))),

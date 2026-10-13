@@ -8,7 +8,9 @@ const ROAD_CLASS = {
   secondary: 2, secondary_link: 2, tertiary: 2, tertiary_link: 2,
   residential: 1, unclassified: 1, living_street: 1, road: 1,
 };
-const PATHS = new Set(['footway', 'cycleway', 'path', 'pedestrian', 'steps', 'bridleway', 'track']);
+const PATHS = new Set(['footway', 'cycleway', 'path', 'pedestrian', 'bridleway', 'track']);
+// Overture categories that aren't businesses
+const NOT_BIZ = /bridge|landmark|monument|structure|geograph|river|lake|pond|neighbo|^city$|street|road|highway|residential|apartment|condo|^park$|playground|trail|^home$/i;
 const SERVICE_AMEN = { police: 'police', fire_station: 'fire', school: 'school', library: 'library', townhall: 'townhall' };
 
 export const PAL = {
@@ -294,6 +296,7 @@ export function buildWorld(raw, progress = () => {}) {
     const t = e.tags || {};
     if (e.type === 'node') {
       if (t.natural === 'tree') treePts.push(G(e.lat, e.lon));
+      else if (t.src === 'overture' && NOT_BIZ.test(t.place_cat || '')) continue;
       else if (t.name || SERVICE_AMEN[t.amenity]) pois.push({ name: t.name || '', kind: poiKind(t), amen: t.amenity, pt: G(e.lat, e.lon) });
       continue;
     }
@@ -323,8 +326,8 @@ export function buildWorld(raw, progress = () => {}) {
       if (t.area === 'yes' || t.tunnel === 'yes' || t.tunnel === 'culvert') continue;
       let cls = ROAD_CLASS[t.highway] || 0;
       if (!cls && t.highway === 'service' && !t.service && t.name) cls = 1;
-      if (cls) roads.push({ p: polys[0], cls, name: t.name || '' });
-      else if (PATHS.has(t.highway)) paths.push(polys[0]);
+      if (cls) roads.push({ p: polys[0], cls, name: t.name || '', bridge: t.bridge && t.bridge !== 'no' });
+      else if (PATHS.has(t.highway) && !/^(sidewalk|crossing|traffic_island|access_aisle)$/.test(t.footway || '') && (t.highway !== 'footway' || t.name)) paths.push(polys[0]);
       continue;
     }
     const isArea = e.type === 'relation' || closed(polys[0]);
@@ -364,6 +367,20 @@ export function buildWorld(raw, progress = () => {}) {
 
   // ---- roads ----
   progress('Paving the streets…');
+  const osmRoad = new Uint8Array(N);
+  const roadCut = new Uint8Array(N);
+  const roadLines = [];
+  for (const r of roads) {
+    if (!r.bridge)
+      for (let k = 0; k + 1 < r.p.length && !r.bridge; k++) {
+        const mx = Math.floor((r.p[k][0] + r.p[k + 1][0]) / 2), my = Math.floor((r.p[k][1] + r.p[k + 1][1]) / 2);
+        if (inB(mx, my) && terrain[my * W + mx] === 1) r.bridge = true;
+      }
+    const sp = r.p.length > 2 ? simplify(r.p, 0.04) : r.p;
+    const flat = new Float32Array(sp.length * 2);
+    sp.forEach((q, k) => { flat[k * 2] = q[0]; flat[k * 2 + 1] = q[1]; });
+    roadLines.push({ cls: r.cls, pts: flat, bridge: !!r.bridge });
+  }
   for (const r of roads) {
     let ni = 0;
     if (r.name) {
@@ -378,6 +395,7 @@ export function buildWorld(raw, progress = () => {}) {
       traverse(r.p[k][0], r.p[k][1], r.p[k + 1][0], r.p[k + 1][1], (x, y) => {
         if (!inB(x, y)) return;
         const i = y * W + x;
+        osmRoad[i] = 1;
         if (r.cls >= road[i]) {
           road[i] = r.cls;
           if (ni) roadName[i] = ni;
@@ -474,7 +492,7 @@ export function buildWorld(raw, progress = () => {}) {
         bldArea: sum('BLD_AREA') * 0.0929 || sum('RES_AREA') * 0.0929,
         units, records: P.length,
         year: years.length ? Math.min(...years) : 0,
-        addr: titleCase(prim.SITE_ADDR || ''), useDesc: titleCase(prim.USE_DESC || ''), style: titleCase(prim.STYLE || ''),
+        addr: titleCase(prim.SITE_ADDR || ''), useDesc: titleCase(prim.USE_DESC || '').replace(/^Imputed\s*-\s*/i, ''), style: titleCase(prim.STYLE || ''),
         stories: num(prim.STORIES), zoning: String(prim.ZONING || '').trim(), fy: prim.FY || '',
         biz: [], bldgs: [], occ: 0.95, dens: 0, jobs: 0, pop: 0, road: -1, dense: false, inTown: 1, built: 0,
       };
@@ -608,7 +626,7 @@ export function buildWorld(raw, progress = () => {}) {
   }
 
   const world = {
-    W, H, bbox, terrain, road, path, cover, zoneHint, inTown, lotOf, bAt, svcAt, tree, roadName, names,
+    W, H, bbox, terrain, road, path, cover, osmRoad, roadCut, roadLines, zoneHint, inTown, lotOf, bAt, svcAt, tree, roadName, names,
     lots, bldgs, services, lvBase: new Float32Array(N),
     townFound: !!townRel, hasParcels: parcels.length > 0, parcelError: raw.parcelError || null,
     fetched: raw.fetched, source: raw.source || 'live', demo: !!raw.demo, sources: raw.sources || null,

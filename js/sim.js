@@ -820,6 +820,7 @@ export class Sim {
           } else if (li < 0) touched.push(...demolish(w, bldgs[w.bAt[i]]));
         } else if (road[i]) {
           road[i] = 0;
+          if (w.roadCut) w.roadCut[i] = 1;
           touched.push(i);
         } else if (w.tree[i]) {
           w.tree[i] = 0;

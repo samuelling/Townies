@@ -34,7 +34,7 @@ export const COVER = { GRASS: 0, PARK: 1, WOOD: 2, PAVED: 3, CEMETERY: 4, SPORT:
 export const ROAD_NAME = ['', 'Street', 'Collector', 'Arterial'];
 
 export const SERVICES = {
-  police: { label: 'Police station', size: 3, cost: 12e6, radius: 70, color: '#3a5fbf' },
-  fire: { label: 'Fire station', size: 3, cost: 9e6, radius: 52, color: '#c8352b' },
+  police: { label: 'Police station', size: 3, cost: 12e6, radius: 130, color: '#3a5fbf' },
+  fire: { label: 'Fire station', size: 3, cost: 9e6, radius: 95, color: '#c8352b' },
   school: { label: 'School', size: 5, cost: 45e6, radius: 60, color: '#b8643f' },
 };
