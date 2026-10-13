@@ -1,0 +1,187 @@
+import { CFG } from './config.js';
+import { loadRawData, kvGet, kvSet, kvDel } from './data.js';
+import { buildWorld } from './world.js';
+import { Sim } from './sim.js';
+import { Renderer } from './render.js';
+import { UI } from './ui.js';
+import { Music } from './music.js';
+import { nextScenario, FOLLOWUPS } from './events.js';
+import { makeDemoRaw } from './demo.js';
+import { el } from './util.js';
+
+const MONTH_MS = [Infinity, 9000, 4500, 1600];
+const QUIPS = [
+  'Reticulating splines…',
+  'Counting triple-deckers…',
+  'Measuring the Square’s five corners…',
+  'Arguing about parking…',
+  'Locating the 70 bus…',
+  'Assessing pipettes…',
+  'Raising the levy limit by exactly 2.5%…',
+  'Reminding commenters to use their full names…',
+  'Teaching herring to climb ladders…',
+];
+
+const game = { world: null, sim: null, renderer: null, ui: null, music: new Music(), speed: 1 };
+window.townies = game;
+const params = new URLSearchParams(location.search);
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+function titleScreen() {
+  const t = document.getElementById('title');
+  t.innerHTML = '';
+  t.style.display = 'flex';
+  const status = el('div', { class: 'tstatus' });
+  const btns = el('div', { class: 'tbtns' });
+  const card = el(
+    'div',
+    { class: 'tcard' },
+    el('div', { class: 'tlogo' }, 'TOWNIES'),
+    el('div', { class: 'tsub' }, 'A city sim of Watertown, Massachusetts'),
+    el('div', { class: 'tsky' }, ...Array.from({ length: 22 }, (_, k) => el('i', { style: `height:${14 + ((k * 37) % 44)}px;background:${['#c7d6e0', '#dcbfa5', '#b5654a', '#9fb3c8', '#e6dcc0'][k % 5]}` }))),
+    el('p', { class: 'tblurb' }, 'Four square miles, true to scale: every street, building and parcel, with real assessed values. You’re the new City Manager. The Council is watching. So is the comment section.'),
+    btns,
+    status,
+    el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels: MassGIS · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
+  );
+  t.append(card);
+  const go = (mode) => () => start(mode, status, btns);
+  kvGet(CFG.SAVE_KEY).then((sv) => {
+    if (sv && sv.world) {
+      const when = new Date(sv.at).toLocaleDateString();
+      btns.prepend(el('button', { class: 'tbtn primary', onclick: go('continue') }, `Continue (${sv.label || 'saved'} · ${when})`));
+    }
+  });
+  btns.append(
+    el('button', { class: 'tbtn primary', onclick: go('live') }, 'New term in real Watertown'),
+    el('button', { class: 'tbtn', onclick: go('demo') }, 'Demoville (offline demo)')
+  );
+  if (params.get('auto')) start(params.get('auto'), status, btns);
+}
+
+async function start(mode, status, btns) {
+  btns.style.display = 'none';
+  const log = (msg) => {
+    status.innerHTML = '';
+    status.append(el('div', { class: 'tmsg' }, msg), el('div', { class: 'tquip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]));
+  };
+  try {
+    if (localStorage.getItem('townies-music') !== '0' && !params.get('auto')) game.music.toggle(true);
+  } catch (e) {}
+  try {
+    let state = null;
+    if (mode === 'continue') {
+      log('Opening your saved city…');
+      const sv = await kvGet(CFG.SAVE_KEY);
+      game.world = sv.world;
+      state = sv;
+    } else {
+      const raw = mode === 'demo' ? makeDemoRaw() : await loadRawData({ refresh: mode === 'refresh', progress: log });
+      log(raw.demo ? 'Laying out Demoville…' : 'Building Watertown tile by tile…');
+      await nextFrame();
+      game.world = buildWorld(raw, log);
+    }
+    log('Waking up the City Council…');
+    await nextFrame();
+    boot(state);
+  } catch (e) {
+    console.error(e);
+    status.innerHTML = '';
+    status.append(
+      el('div', { class: 'terr' }, `Couldn't load the map: ${e.message || e}`),
+      el('p', { class: 'fine' }, 'The OpenStreetMap servers may be busy. Try again in a minute, or play the offline demo.'),
+      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns) }, 'Try again'), el('button', { class: 'tbtn', onclick: () => start('demo', status, btns) }, 'Play Demoville'))
+    );
+  }
+}
+
+function boot(state) {
+  const hooks = {
+    invalidateTiles: (t) => game.renderer && game.renderer.invalidateTiles(t),
+    invalidateBuilding: (b) => game.renderer && game.renderer.invalidateBuilding(b),
+    news: (n) => {
+      if (game.ui) game.ui.refreshStatus();
+      if (n.size === 'big' && game.ui) game.music.sfx('news');
+    },
+    followup: (p) => FOLLOWUPS[p.id] && FOLLOWUPS[p.id](game.sim, p.data || {}),
+    yearly: () => save(false),
+    openBudget: () => game.ui && game.ui.budgetWindow(),
+  };
+  game.sim = new Sim(game.world, state ? state.sim : null, hooks);
+  const canvas = document.getElementById('view');
+  document.getElementById('title').style.display = 'none';
+  document.getElementById('app').classList.add('live');
+  game.renderer = new Renderer(canvas, game.world, game.sim);
+  if (state && state.cam) {
+    game.renderer.cam = state.cam;
+    game.renderer.rot = state.rot || 0;
+    game.renderer.z = state.z || 1;
+  } else game.renderer.z = window.innerWidth < 700 ? 0.75 : 1;
+  game.ui = new UI(game);
+  game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? state.speed : 1);
+  game.ui.musicBtn.classList.toggle('muted', !game.music.on);
+  game.renderer.resize();
+  if (!state) setTimeout(() => game.ui.newsWindow(), 600);
+  requestAnimationFrame(frame);
+}
+
+let last = performance.now();
+let acc = 0;
+function frame(now) {
+  const dt = Math.min(250, now - last);
+  last = now;
+  const s = game.sim;
+  if (s && !game.ui.modal && game.speed > 0 && !s.gameOver) {
+    acc += dt;
+    if (acc >= MONTH_MS[game.speed]) {
+      acc = 0;
+      monthTick();
+    }
+  }
+  if (game.renderer && game.renderer.needs) game.renderer.draw(dt);
+  requestAnimationFrame(frame);
+}
+
+function monthTick() {
+  const s = game.sim;
+  s.tick();
+  if (s.m === 9 || s.m === 11) game.renderer.invalidateAll(); // fall foliage on, then off
+  game.ui.refreshStatus();
+  game.ui.refreshWins();
+  if (game.renderer.overlayMode !== 'none') game.renderer.refreshOverlay();
+  game.renderer.needs = true;
+  if (s.gameOver) return game.ui.gameOver(s.gameOver);
+  const next = nextScenario(s);
+  if (next) game.ui.agenda(next.sc, next.ctx);
+}
+game.monthTick = monthTick;
+
+async function save(manual) {
+  if (!game.sim) return;
+  const r = game.renderer;
+  const data = {
+    v: 1,
+    world: game.world,
+    sim: game.sim.serialize(),
+    cam: { ...r.cam },
+    rot: r.rot,
+    z: r.z,
+    speed: game.speed,
+    at: Date.now(),
+    label: `${game.world.demo ? 'Demoville' : 'Watertown'} ${game.sim.dateStr()}`,
+  };
+  const ok = await kvSet(CFG.SAVE_KEY, data);
+  if (manual) game.ui.toast(ok ? 'City saved' : 'Save failed');
+}
+game.save = save;
+game.loadSave = () => location.reload();
+game.restart = async (refresh) => {
+  if (!confirm(refresh ? 'Re-download Watertown from OpenStreetMap and MassGIS? Your saved game stays.' : 'Leave this city? Unsaved progress since the last save will be lost.')) return;
+  if (refresh) await kvDel(CFG.RAW_KEY);
+  location.href = location.pathname;
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && game.sim && !game.world.demo) save(false);
+});
+
+titleScreen();
