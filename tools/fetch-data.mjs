@@ -26,6 +26,8 @@ const REGION_PLACES = arg('--region-places');
 const NO_MASSGIS = args.includes('--no-massgis');
 const LOG = dirname(OUT) + '/refresh-log.txt';
 const UA = 'Townies/1.0 (city sim; https://github.com/samuelling/Townies)';
+// MassDOT Road Inventory: traffic counts (AADT), lanes and speed limits per road segment
+const MASSDOT_ROADS = 'https://services1.arcgis.com/hGdibHYSPO59RG1h/ArcGIS/rest/services/MassDOTRoads_gdb/FeatureServer/0/query';
 const STRUCTURES = 'https://services1.arcgis.com/hGdibHYSPO59RG1h/arcgis/rest/services/Building_Structures/FeatureServer/0/query';
 const OVERPASS = [...CFG.OVERPASS, 'https://overpass.private.coffee/api/interpreter'];
 const lines = [];
@@ -178,6 +180,10 @@ async function arcgis(url, params) {
   }
   throw new Error('MassGIS unavailable');
 }
+async function fetchTraffic() {
+  return arcgisAll(MASSDOT_ROADS, ['CITY=314 AND AADT>0', "MGIS_TOWN='WATERTOWN' AND AADT>0"], ['STREET_NAME', 'AADT', 'AADT_YEAR', 'AADT_DERIV', 'NUM_LANES', 'OPP_LANES', 'SPEED_LIM', 'F_F_CLASS', 'OPERATION'], 'MassDOT traffic counts');
+}
+
 async function arcgisAll(url, wheres, outFields, label) {
   let ids = null, where = null;
   for (const w of wheres) {
@@ -515,7 +521,14 @@ async function main() {
         log(`Overture merge skipped: ${e.message}`);
       }
     else log('No Overture places file; businesses from OpenStreetMap only');
-    raw = { osm, parcels, parcelError, fetched: new Date().toISOString(), junctions: osm.junctions || null };
+    let traffic = null;
+    try {
+      traffic = await fetchTraffic();
+      sources.traffic = traffic.length;
+    } catch (e) {
+      log(`Traffic counts skipped: ${e.message}`);
+    }
+    raw = { osm, parcels, parcelError, fetched: new Date().toISOString(), junctions: osm.junctions || null, traffic };
     if (REGION_OPL && existsSync(REGION_OPL)) {
       try {
         const reg = parseOPL(REGION_OPL);

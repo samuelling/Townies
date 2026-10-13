@@ -136,6 +136,7 @@ export function compactRaw(raw, crop = null) {
     fetched: raw.fetched || new Date().toISOString(),
     parcelError: raw.parcelError || null,
     sources: raw.sources || null,
+    traffic: compactTraffic(raw.traffic, inC),
     junctions: raw.junctions ? enc(raw.junctions.filter(([lat, lon]) => !crop || (lat >= crop.s && lat <= crop.n && lon >= crop.w && lon <= crop.e))) : null,
     crop,
     nodes,
@@ -146,6 +147,23 @@ export function compactRaw(raw, crop = null) {
 }
 
 // compact -> raw shape consumed by buildWorld()
+// MassDOT segments: [aadt, year, derivation, lanes, oppositeLanes, speedLimit, fedClass, operation(1 = one-way), encodedLine]
+function compactTraffic(feats, inC) {
+  if (!feats || !feats.length) return null;
+  const out = [];
+  for (const f of feats) {
+    const p = f.properties || {}, g = f.geometry;
+    if (!g || !(p.AADT > 0)) continue;
+    const parts = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+    for (const part of parts) {
+      const pts = part.map(([lon, lat]) => [lat, lon]);
+      if (!pts.some(([lat, lon]) => inC(lat, lon))) continue;
+      out.push([p.AADT, p.AADT_YEAR || 0, p.AADT_DERIV || 0, p.NUM_LANES || 0, p.OPP_LANES || 0, p.SPEED_LIM || 0, p.F_F_CLASS || 0, p.OPERATION || 0, enc(pts)]);
+    }
+  }
+  return out;
+}
+
 export function expandSnapshot(s) {
   const osm = [];
   for (const [lat, lon, tags] of s.nodes) osm.push({ type: 'node', lat: lat / Q, lon: lon / Q, tags });
@@ -157,5 +175,6 @@ export function expandSnapshot(s) {
     properties,
     geometry: { type: 'Polygon', coordinates: rings.map((r) => dec(r).map(([lat, lon]) => [lon, lat])) },
   }));
-  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, junctions: s.junctions ? dec(s.junctions) : null, source: 'snapshot' };
+  const traffic = s.traffic ? s.traffic.map(([aadt, year, deriv, lanes, opp, speed, fclass, op, flat]) => ({ aadt, year, deriv, lanes, opp, speed, fclass, oneway: op === 1, pts: dec(flat) })) : null;
+  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, junctions: s.junctions ? dec(s.junctions) : null, traffic, source: 'snapshot' };
 }
