@@ -1,10 +1,14 @@
-// Generative ambient-but-upbeat soundtrack in a eurorack / Eno spirit, synthesized live.
-// Turing-machine-style shift-register sequencers drive low-pass-gate "pings" on Euclidean
-// rhythms of different lengths (so loops phase against each other), over slow pads in a big
-// reverb. Drums drift in for some sections only. Plus SC2000-ish UI blips.
-const BPM = 104;
-const SCALE = [0, 2, 4, 7, 9, 11, 12, 14, 16, 19, 21, 23, 24]; // major pentatonic + maj7 colour
-const ROOTS = [53, 50, 56, 51, 48, 53]; // F, D, Ab, Eb, C ... drifting modal centres
+// Generative ambient soundtrack in a eurorack / Eno spirit, synthesized live.
+// Everything is drawn from one major key at a time: a slow diatonic chord progression (pads + bass)
+// and a sparse Turing-machine melody on the key's pentatonic scale, snapped to chord tones on the
+// beat, so nothing ever clashes. Keys only move by a fourth or fifth (sharing most notes), with the
+// echoes ducked at the change. Soft drums drift in for some sections only. Plus SC2000-ish UI blips.
+const BPM = 88;
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const PENT = [0, 1, 2, 4, 5]; // scale degrees 1 2 3 5 6
+// uplifting progressions as scale degrees (0 = I, 3 = IV, 4 = V, 5 = vi, 1 = ii)
+const PROGS = [[0, 4, 5, 3], [0, 3, 0, 4], [5, 3, 0, 4], [0, 5, 3, 4], [3, 0, 4, 0], [0, 1, 3, 4]];
+const CHORD = 32; // 16th-notes per chord (two bars)
 const N = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const euclid = (k, n, rot = 0) => Array.from({ length: n }, (_, i) => ((i + rot) * k) % n < k);
 
@@ -18,7 +22,7 @@ class Turing {
   }
   next() {
     const v = this.reg[this.pos];
-    if (Math.random() > this.lock) this.reg[this.pos] = Math.max(0, Math.min(this.range - 1, v + Math.floor(Math.random() * 5) - 2));
+    if (Math.random() > this.lock) this.reg[this.pos] = Math.max(0, Math.min(this.range - 1, v + Math.floor(Math.random() * 3) - 1));
     this.pos = (this.pos + 1) % this.len;
     return v;
   }
@@ -31,9 +35,9 @@ export class Music {
     this.sfxOn = true;
     this.step = 0;
     this.timer = null;
-    this.seqA = new Turing(11, 9);
-    this.seqB = new Turing(7, 6);
-    this.seqBass = new Turing(5, 3);
+    this.key = 50; // D
+    this.seqA = new Turing(13, 8);
+    this.seqB = new Turing(7, 5);
     this.newSection(0);
   }
   ensure() {
@@ -55,29 +59,29 @@ export class Music {
     this.sfxBus.connect(this.master);
     // big generated reverb
     this.verb = c.createConvolver();
-    const len = Math.floor(c.sampleRate * 4.2);
+    const len = Math.floor(c.sampleRate * 3.6);
     const ir = c.createBuffer(2, len, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
       const d = ir.getChannelData(ch);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
     }
     this.verb.buffer = ir;
     this.verbSend = c.createGain();
     this.verbSend.gain.value = 1;
     const wet = c.createGain();
-    wet.gain.value = 0.55;
+    wet.gain.value = 0.5;
     this.verbSend.connect(this.verb).connect(wet).connect(this.musicBus);
     // dotted-eighth echo
     this.delay = c.createDelay(2);
     this.delay.delayTime.value = (60 / BPM) * 0.75;
-    const fb = c.createGain();
-    fb.gain.value = 0.42;
+    this.fb = c.createGain();
+    this.fb.gain.value = 0.36;
     const dl = c.createBiquadFilter();
     dl.type = 'lowpass';
-    dl.frequency.value = 2600;
-    this.delay.connect(dl).connect(fb).connect(this.delay);
+    dl.frequency.value = 2200;
+    this.delay.connect(dl).connect(this.fb).connect(this.delay);
     const dOut = c.createGain();
-    dOut.gain.value = 0.32;
+    dOut.gain.value = 0.28;
     dl.connect(dOut).connect(this.musicBus);
     dOut.connect(this.verbSend);
     // noise
@@ -109,17 +113,29 @@ export class Music {
       }, 2500);
     return this.on;
   }
-  newSection(n) {
+  // a section is one pass through a four-chord progression
+  newSection(n, t) {
     this.sec = n;
-    this.root = ROOTS[Math.floor(n / 2) % ROOTS.length];
-    this.drums = n > 0 && Math.random() < 0.45;
-    this.voiceB = Math.random() < 0.7;
-    this.rhA = euclid(5 + Math.floor(Math.random() * 3), 16, Math.floor(Math.random() * 4));
-    this.rhB = euclid(3, 10 + Math.floor(Math.random() * 3));
-    this.rhBass = euclid(3, 8);
-    this.rhHat = euclid(7 + Math.floor(Math.random() * 3), 16, 2);
-    this.seqA.lock = 0.8 + Math.random() * 0.15;
-    this.padChange = true;
+    if (n > 0 && n % 4 === 0) this.modulate(t);
+    this.prog = PROGS[Math.floor(Math.random() * PROGS.length)];
+    this.drums = n > 1 && Math.random() < 0.3;
+    this.voiceB = Math.random() < 0.45;
+    this.rhA = euclid(3 + Math.floor(Math.random() * 3), 16, Math.floor(Math.random() * 4));
+    this.rhB = euclid(2, 11 + Math.floor(Math.random() * 3));
+    this.rhHat = euclid(5, 16, 2);
+    this.seqA.lock = 0.82 + Math.random() * 0.13;
+  }
+  // move to a neighbouring key (up a fourth or a fifth): six of seven notes stay the same
+  modulate(t) {
+    let k = this.key + (Math.random() < 0.5 ? 5 : 7);
+    while (k > 55) k -= 12;
+    while (k < 45) k += 12;
+    this.key = k;
+    if (this.fb && t != null) {
+      // duck the echo so old-key notes don't ring into the new key
+      this.fb.gain.setTargetAtTime(0.05, t - 0.6, 0.15);
+      this.fb.gain.setTargetAtTime(0.36, t + 1.5, 0.8);
+    }
   }
   // 16th-note scheduler
   schedule() {
@@ -127,62 +143,89 @@ export class Music {
     const six = 60 / BPM / 4;
     while (this.next < c.currentTime + 0.15) {
       const s = this.step;
-      if (s % 128 === 0) this.newSection(s / 128);
-      if (this.padChange || s % 64 === 0) this.pad(this.next);
+      if (s % (CHORD * 4) === 0) this.newSection(s / (CHORD * 4), this.next);
+      if (s % CHORD === 0) {
+        this.deg = this.prog[(s / CHORD) % 4];
+        this.pad(this.next);
+      }
       this.play(this.next, s);
       this.next += six;
       this.step++;
     }
   }
-  scaleNote(idx, oct = 0) {
-    const i = Math.max(0, Math.min(SCALE.length - 1, idx));
-    return this.root + SCALE[i] + 12 * oct;
+  // MIDI note for scale degree d (can exceed 6) in the current key
+  note(d, oct = 0) {
+    return this.key + MAJOR[((d % 7) + 7) % 7] + 12 * (oct + Math.floor(d / 7));
+  }
+  chordTones(oct) {
+    return [0, 2, 4].map((k) => this.note(this.deg + k, oct));
+  }
+  melody(i, snap) {
+    let m = this.note(PENT[i % 5] + 7 * Math.floor(i / 5), 1);
+    if (snap) {
+      // on strong beats, land on the nearest chord tone
+      const ct = [...this.chordTones(1), ...this.chordTones(2)];
+      m = ct.reduce((a, b) => (Math.abs(b - m) < Math.abs(a - m) ? b : a));
+    }
+    return m;
   }
   play(t, s) {
     const six = 60 / BPM / 4;
-    // main ping voice: Turing machine on a Euclidean rhythm
-    if (this.rhA[s % 16]) this.ping(t, N(this.scaleNote(this.seqA.next(), 1)), 0.13, 0.35 + Math.random() * 0.4, (s % 32) / 32);
-    // high bell voice on an odd-length rhythm, so it phases
-    if (this.voiceB && this.rhB[s % this.rhB.length] && s % 2 === 0) this.bell(t, N(this.scaleNote(this.seqB.next() + 3, 2)), 0.06);
-    // bass pulse
-    if (this.rhBass[s % 8] && s % 2 === 0) this.bass(t, N(this.root - 12 + [0, 7, 12][this.seqBass.next()]), six * 3);
-    // drums, sometimes
+    const inChord = s % CHORD;
+    // main ping voice: Turing machine on a sparse Euclidean rhythm, with rests
+    if (this.rhA[s % 16] && Math.random() < 0.8) {
+      const v = this.seqA.next();
+      this.ping(t, N(this.melody(v, s % 4 === 0)), 0.1, 0.4 + Math.random() * 0.4, (s % 32) / 32);
+    }
+    // high bell on an odd-length rhythm so it phases; chord tones only
+    if (this.voiceB && this.rhB[s % this.rhB.length] && s % 2 === 0 && Math.random() < 0.7) {
+      const ct = this.chordTones(2);
+      this.bell(t, N(ct[this.seqB.next() % 3]), 0.045);
+    }
+    // bass: the chord root, held, with a soft fifth halfway through
+    if (inChord === 0) this.bass(t, N(this.note(this.deg, -1)), six * 14, 0.3);
+    else if (inChord === 20 && Math.random() < 0.5) this.bass(t, N(this.note(this.deg + 4, -1)), six * 8, 0.16);
+    // soft drums, some sections only
     if (this.drums) {
-      if (s % 8 === 0) this.kick(t, s % 16 === 0 ? 0.9 : 0.6);
-      if (this.rhHat[s % 16]) this.hat(t, 0.1 + 0.12 * Math.random());
-      if (s % 16 === 12 && Math.random() < 0.7) this.click(t);
+      if (s % 16 === 0 || (s % 16 === 10 && Math.random() < 0.3)) this.kick(t, s % 16 === 0 ? 0.6 : 0.35);
+      if (this.rhHat[s % 16] && Math.random() < 0.8) this.hat(t, 0.06 + 0.06 * Math.random());
+      if (s % 32 === 24 && Math.random() < 0.4) this.click(t);
     }
   }
   pad(t) {
-    this.padChange = false;
     const c = this.ctx;
-    this.stopPad(t + 3);
-    const notes = [this.root - 12, this.root - 5, this.root + 4, this.root + 11].map((m) => m + (Math.random() < 0.3 ? 2 : 0));
+    this.stopPad(t + 0.3);
+    // root low, then 3rd, 5th and the 9th above, voiced close to the last chord
+    const center = this.key + 12;
+    const raw = [this.note(this.deg + 2), this.note(this.deg + 4), this.note(this.deg + 1, 1)];
+    const voiced = raw.map((m) => { while (m - center > 7) m -= 12; while (center - m > 6) m += 12; return m; });
+    const notes = [this.note(this.deg, -1), ...voiced];
     const out = c.createGain();
     out.gain.setValueAtTime(0.0001, t);
-    out.gain.linearRampToValueAtTime(0.05, t + 4);
+    out.gain.linearRampToValueAtTime(0.045, t + 1.8);
     const f = c.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.value = 700;
-    f.Q.value = 2;
+    f.frequency.value = 800;
+    f.Q.value = 0.8;
     const lfo = c.createOscillator();
-    lfo.frequency.value = 0.05 + Math.random() * 0.05;
+    lfo.frequency.value = 0.06 + Math.random() * 0.04;
     const lg = c.createGain();
-    lg.gain.value = 450;
+    lg.gain.value = 300;
     lfo.connect(lg).connect(f.frequency);
     f.connect(out);
     out.connect(this.musicBus);
     out.connect(this.verbSend);
     const oscs = [lfo];
-    for (const m of notes)
-      for (const det of [-6, 6]) {
+    notes.forEach((m, k) => {
+      for (const det of [-3, 3]) {
         const o = c.createOscillator();
-        o.type = 'sawtooth';
+        o.type = k === 0 ? 'sine' : 'triangle';
         o.frequency.value = N(m);
         o.detune.value = det;
         o.connect(f);
         oscs.push(o);
       }
+    });
     oscs.forEach((o) => o.start(t));
     this.padNodes = { out, oscs };
   }
@@ -192,8 +235,8 @@ export class Music {
     t = t || c.currentTime;
     const { out, oscs } = this.padNodes;
     out.gain.cancelScheduledValues(t);
-    out.gain.setTargetAtTime(0.0001, t, 1.5);
-    oscs.forEach((o) => o.stop(t + 8));
+    out.gain.setTargetAtTime(0.0001, t, 0.9);
+    oscs.forEach((o) => o.stop(t + 6));
     this.padNodes = null;
   }
   // low-pass-gate "bongo" ping
@@ -203,9 +246,9 @@ export class Music {
     o.type = 'triangle';
     o.frequency.value = f;
     const m = c.createOscillator();
-    m.frequency.value = f * 2.01;
+    m.frequency.value = f * 2;
     const mg = c.createGain();
-    mg.gain.setValueAtTime(f * 0.9, t);
+    mg.gain.setValueAtTime(f * 0.6, t);
     mg.gain.exponentialRampToValueAtTime(1, t + decay);
     m.connect(mg).connect(o.frequency);
     const lp = c.createBiquadFilter();
@@ -237,9 +280,9 @@ export class Music {
     const o = c.createOscillator();
     o.frequency.value = f;
     const m = c.createOscillator();
-    m.frequency.value = f * 3.5;
+    m.frequency.value = f * 3; // integer ratio keeps the partials in tune
     const mg = c.createGain();
-    mg.gain.setValueAtTime(f * 1.2, t);
+    mg.gain.setValueAtTime(f * 0.8, t);
     mg.gain.exponentialRampToValueAtTime(1, t + 1.2);
     m.connect(mg).connect(o.frequency);
     const g = c.createGain();
@@ -254,7 +297,7 @@ export class Music {
     o.stop(t + 2.3);
     m.stop(t + 2.3);
   }
-  bass(t, f, dur) {
+  bass(t, f, dur, vol = 0.3) {
     const c = this.ctx;
     const o = c.createOscillator();
     o.type = 'sine';
@@ -266,15 +309,15 @@ export class Music {
     g2.gain.value = 0.15;
     const g = c.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.32, t + 0.02);
-    g.gain.setTargetAtTime(0.0001, t + dur * 0.6, 0.12);
+    g.gain.linearRampToValueAtTime(vol, t + 0.04);
+    g.gain.setTargetAtTime(0.0001, t + dur * 0.7, 0.3);
     o.connect(g);
     o2.connect(g2).connect(g);
     g.connect(this.musicBus);
     o.start(t);
     o2.start(t);
-    o.stop(t + dur + 0.8);
-    o2.stop(t + dur + 0.8);
+    o.stop(t + dur + 1.6);
+    o2.stop(t + dur + 1.6);
   }
   kick(t, v) {
     const c = this.ctx;
