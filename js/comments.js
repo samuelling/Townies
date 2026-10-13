@@ -142,6 +142,58 @@ const T = {
     ['dad', 'Thank god everyone got out. How long did the trucks take?'],
     ['tom', 'This is what happens when you cut the fire budget.'],
   ],
+  'project-proposed': [
+    ['lifer', '{floors} stories on {street}? This is not Cambridge.'],
+    ['yimby', 'More homes near transit and shops. Approve it.'],
+    ['dad', 'Has anyone done a traffic study for {street} at school pickup?'],
+    ['foodie', 'Will the ground floor be real shops or another bank and a phone store?'],
+    ['tom', 'Who pays for the extra school seats?'],
+    ['pete', 'And where do the businesses on that block go? Nobody ever asks us.'],
+    ['mall', 'As long as there is a garage, I am in.'],
+  ],
+  'project-continued': [
+    ['yimby', 'Four hours of public comment to decide nothing. Classic.'],
+    ['lifer', 'Good. Slow down.'],
+  ],
+  'project-denied': [
+    ['yimby', 'And rents go up again. Congratulations, everyone.'],
+    ['lifer', 'The neighborhood spoke. Thank you to the Board.'],
+    ['carol', 'Something has to happen on that block eventually.'],
+  ],
+  'project-approved': [
+    ['dad', 'Construction on {street} for two years. Pray for us.'],
+    ['yimby', '{name} approved! Shovels in the ground.'],
+    ['lifer', 'Mark my words: we will regret {name}.'],
+  ],
+  'project-open-mega': [
+    ['mall', '{name} is open and it has everything! Free parking for two hours!'],
+    ['foodie', 'Walked {name}. A bank, a phone store, a salad chain and a gym. Could be anywhere in America.'],
+    ['yimby', 'Hundreds of new neighbors at {name}. That is a win, chains or not.'],
+    ['lifer', 'Another glass box with a garage. This is the new Watertown, I guess.'],
+  ],
+  'project-open-infill': [
+    ['foodie', 'The new storefronts on {street} are exactly what this town needed. Bookstore! Bakery! Actual people on the sidewalk!'],
+    ['carol', 'Rents capped for fifteen years on {street}. That is how you keep a small shop alive.'],
+    ['lifer', 'Okay. The new buildings on {street} actually look like they belong here.'],
+    ['tom', 'Lovely. How much did the City pay for that land again?'],
+    ['barb', 'Rode down {street} and had to slow down because there were PEOPLE. Love it.'],
+  ],
+  'project-open-housing': [
+    ['yimby', 'Keys handed out at {name} today. Real homes for real people.'],
+    ['dad', 'More kids for the schools. Hope the budget keeps up.'],
+    ['lifer', 'Where will they all park?'],
+  ],
+  'project-open-lab': [
+    ['tom', 'Finally, a big commercial taxpayer. That is what keeps my bill down.'],
+    ['foodie', 'A lab. With a lobby. Nobody will ever walk past it on purpose.'],
+    ['dad', 'Rush hour on {street} just got worse.'],
+  ],
+  'project-open-plaza': [
+    ['foodie', 'Got a coffee at the kiosk in {name} and sat in the sun. Felt like a real town square.'],
+    ['lifer', 'They built a place to sit downtown. About time.'],
+    ['barb', '{name} is full of kids and dogs and people. This is what downtown is for.'],
+    ['tom', 'Nice park. Expensive park.'],
+  ],
   'service-built': [
     ['dad', 'A new {what}! Long overdue.'],
     ['tom', 'And what will the {what} cost us every year after the ribbon is cut?'],

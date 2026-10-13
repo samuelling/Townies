@@ -5,11 +5,13 @@ import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
+import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
 const ICON = {
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
   pan: '<svg viewBox="0 0 24 24"><path d="M8 11V5a1.5 1.5 0 013 0v5V3.5a1.5 1.5 0 013 0V10V5a1.5 1.5 0 013 0v6V8a1.5 1.5 0 013 0v7c0 4-3 7-7 7s-5-1.5-7-4l-3-4.5c-.7-1 .8-2.3 1.8-1.4L8 14z" fill="#f2d3b0" stroke="#000" stroke-width="1.3"/></svg>',
   bulldoze: '<svg viewBox="0 0 24 24"><rect x="7" y="9" width="10" height="7" fill="#f1c232" stroke="#000"/><rect x="10" y="5" width="5" height="5" fill="#f1c232" stroke="#000"/><path d="M2 12h4v6H2z" fill="#888" stroke="#000"/><rect x="6" y="16" width="13" height="4" rx="2" fill="#333"/></svg>',
+  develop: '<svg viewBox="0 0 24 24"><path d="M5 22V4h2v18" fill="#e3a21a" stroke="#000" stroke-width="0.8"/><path d="M4 4h17v2H4z" fill="#e3a21a" stroke="#000" stroke-width="0.8"/><path d="M18 6v6" stroke="#000" stroke-width="1"/><rect x="16" y="12" width="4" height="3" fill="#777" stroke="#000" stroke-width="0.8"/><rect x="9" y="15" width="10" height="7" fill="#b5654a" stroke="#000" stroke-width="0.8"/><path d="M11 17h2M15 17h2M11 19.5h2M15 19.5h2" stroke="#2a3a55" stroke-width="1.2"/></svg>',
   road: '<svg viewBox="0 0 24 24"><path d="M8 2h8l4 20H4z" fill="#555"/><path d="M12 4v3M12 10v3M12 16v4" stroke="#f1c232" stroke-width="1.6"/></svg>',
   zoneR: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5fd35f" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">R</text></svg>',
   zoneC: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5f9fff" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">C</text></svg>',
@@ -35,6 +37,7 @@ const TOOLS = [
   { id: 'pan', label: 'Pan', key: 'h', tip: 'Drag to move around. Two fingers pinch to zoom.' },
   { id: 'bulldoze', label: 'Bulldoze', key: 'b', tip: 'Drag a box to demolish buildings, roads or trees.' },
   { id: 'road', label: 'Road', key: 'd', tip: 'Drag to build a road. Bridges over water cost more.' },
+  { id: 'develop', label: 'Redevelop', key: 'v', tip: 'Drag a box over parcels to plan a redevelopment project.' },
   { id: 'zoneR', label: 'Residential', key: '1', tip: 'Drag to zone residential. Tap again to switch light/dense.' },
   { id: 'zoneC', label: 'Commercial', key: '2', tip: 'Drag to zone commercial. Tap again to switch light/dense.' },
   { id: 'zoneI', label: 'Industrial / R&D', key: '3', tip: 'Drag to zone industrial or lab. Tap again to switch light/dense.' },
@@ -102,7 +105,7 @@ export class UI {
       return m;
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)], ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Crews', () => this.crewsWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -592,6 +595,130 @@ export class UI {
     }, { cls: 'wide' });
   }
 
+  projectPlanner(ids) {
+    const sim = this.sim;
+    const prev = this.planState && this.planState.ids.join() === ids.join() ? this.planState : null;
+    this.planState = prev || { ids, exclude: new Set(), prog: 'infill', t: { ...PROGRAMS.infill.defaults }, name: null, showParcels: false };
+    const st = this.planState;
+    this.closeWin('planner');
+    this.win('planner', 'Plan a project', (body) => {
+      const site = analyze(sim, st.ids, st.exclude);
+      if (!st.name || st.nameProg !== st.prog) {
+        st.name = projectName(sim, st.prog, site);
+        st.nameProg = st.prog;
+      }
+      const o = evaluate(sim, site, st.prog, st.t);
+      const reasons = [];
+      const hs = hearingScore(sim, site, st.prog, st.t, o, reasons);
+      const odds = hearingOdds(hs);
+      const acres = (site.area / 4046.86).toFixed(1);
+      body.append(
+        el('div', { class: 'psite' }, el('b', {}, `${site.ids.length} parcel${site.ids.length === 1 ? '' : 's'} · ${acres} acres`), ` · assessed ${fmtMoney(site.value)} · tax today ${fmtMoney(site.tax)}/yr`),
+        el('div', { class: 'psite' }, [site.homes ? `🏠 ${site.homes} homes (${site.residents} residents)` : '', site.indie ? `🏪 ${site.indie} independent businesses${site.sig ? ` (${site.sig} signature)` : ''}` : '', site.auto ? `🚗 ${site.auto} auto-oriented lots` : '', site.holdouts.length ? `✋ ${site.holdouts.length} holdout owner${site.holdouts.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ') || 'Nothing much here today.'),
+        el('button', { class: 'link', onclick: () => { st.showParcels = !st.showParcels; this.wins.get('planner').refresh(); } }, st.showParcels ? 'Hide parcels' : 'Choose parcels…')
+      );
+      if (st.showParcels) {
+        const box = el('div', { class: 'parcels' });
+        for (const li of st.ids) {
+          const lot = this.w.lots[li];
+          const ho = site.holdouts.find((h) => h.id === li) || analyze(sim, [li]).holdouts[0];
+          const cb = el('input', { type: 'checkbox' });
+          cb.checked = !st.exclude.has(li);
+          cb.addEventListener('change', () => { if (cb.checked) st.exclude.delete(li); else st.exclude.add(li); this.wins.get('planner').refresh(); });
+          const flags = [lot.units ? `🏠${lot.units}` : '', lot.auto ? '🚗' : '', lot.bizSig && lot.bizSig.some(Boolean) ? '★' : '', ho ? `✋ asks ${fmtMoney(ho.ask)}` : ''].filter(Boolean).join(' ');
+          box.append(el('label', { class: 'parcel' }, cb, el('span', {}, `${lot.addr || 'Parcel'} — ${lot.useDesc || ''}`), el('small', {}, `${fmtMoney(lot.landVal + lot.bldgVal)} ${flags}`)));
+        }
+        body.append(box);
+      }
+      // program cards
+      const cards = el('div', { class: 'progs' });
+      for (const [k, p] of Object.entries(PROGRAMS)) {
+        cards.append(el('button', { class: `prog${st.prog === k ? ' on' : ''}`, onclick: () => { st.prog = k; st.t = { ...p.defaults }; this.wins.get('planner').refresh(); } }, el('span', { class: 'pi' }, p.icon), el('b', {}, p.label), el('small', {}, p.who === 'city' ? 'City-led' : 'Private developer')));
+      }
+      body.append(el('h4', {}, 'Program'), cards, el('p', { class: 'fine' }, PROGRAMS[st.prog].blurb));
+      // terms
+      const terms = el('div', { class: 'terms' });
+      const slider = (key, label, min, max, step, fmt) => {
+        const out = el('span', { class: 'sval' }, fmt(st.t[key]));
+        const inp = el('input', { type: 'range', min, max, step, value: st.t[key] });
+        inp.addEventListener('input', () => { st.t[key] = +inp.value; out.textContent = fmt(st.t[key]); });
+        inp.addEventListener('change', () => this.wins.get('planner').refresh());
+        terms.append(el('div', { class: 'srow2' }, el('label', {}, label), inp, out));
+      };
+      const check = (key, label) => {
+        const cb = el('input', { type: 'checkbox' });
+        cb.checked = !!st.t[key];
+        cb.addEventListener('change', () => { st.t[key] = cb.checked; this.wins.get('planner').refresh(); });
+        terms.append(el('label', { class: 'tcheck' }, cb, ' ', label));
+      };
+      const pr = st.prog;
+      if (pr === 'mega' || pr === 'housing' || pr === 'lab' || pr === 'infill') slider('floors', 'Stories', pr === 'infill' ? 3 : 3, pr === 'infill' ? 5 : pr === 'lab' ? 9 : 12, 1, (v) => `${v}`);
+      if (pr === 'mega' || (pr === 'housing' && !st.t.nonprofit)) slider('affordable', 'Affordable homes', 0, 30, 1, (v) => `${v}%`);
+      if (pr === 'mega') slider('local', 'Local-only storefronts', 0, 100, 25, (v) => `${v}%`);
+      if (pr === 'mega' || pr === 'housing' || pr === 'lab') slider('parking', 'Parking per home/1,000 m²', 0, 1.5, 0.25, (v) => v.toFixed(2));
+      if (pr === 'mega' || pr === 'lab') slider('transit', 'Transit & streetscape $', 0, 5, 0.5, (v) => `$${v}M`);
+      if (pr === 'mega') check('plaza', 'Include a public plaza');
+      if (pr === 'housing') check('nonprofit', '100% affordable with a nonprofit (City subsidy)');
+      if (pr === 'infill') {
+        check('deedRent', 'Deed-restrict storefront rents for 15 years (costs more up front)');
+        const sel = el('select', {}, el('option', { value: 'homes' }, 'Apartments upstairs'), el('option', { value: 'offices' }, 'Offices upstairs'));
+        sel.value = st.t.upper;
+        sel.addEventListener('change', () => { st.t.upper = sel.value; this.wins.get('planner').refresh(); });
+        terms.append(el('div', { class: 'srow2' }, el('label', {}, 'Upper floors'), sel, el('span', {})));
+      }
+      if (pr === 'plaza') check('kiosk', 'Café kiosk (leased to a local operator)');
+      body.append(el('h4', {}, 'Terms'), terms);
+      // projection
+      const mood = devMood(o.devFeas);
+      const outlook = odds > 0.75 ? ['Likely', '#145a14'] : odds > 0.5 ? ['Toss-up, leaning yes', '#3a7a1a'] : odds > 0.25 ? ['Uphill', '#a06a00'] : ['Long shot', '#b00'];
+      const kv = (k, v, cls) => el('div', { class: `kvline${cls ? ' ' + cls : ''}` }, el('span', {}, k), el('b', {}, v));
+      body.append(
+        el('h4', {}, 'What you get'),
+        o.homes ? kv('Homes', `${o.homes}${o.affordable ? ` (${o.affordable} affordable)` : ''}`) : '',
+        o.storefronts ? kv('Storefronts', `${o.storefronts}${o.chainShops ? ` · ${o.localShops} local / ${o.chainShops} chain` : ' · local'}`) : '',
+        o.jobs ? kv('Jobs', fmtInt(o.jobs)) : '',
+        kv('Property tax / yr', `${fmtMoney(o.taxNow)} → ${fmtMoney(o.taxNew)}`),
+        kv('Street life', `+${o.vibGain.toFixed(1)} added · −${Math.max(0, o.vibLost).toFixed(1)} lost`, o.vibGain - Math.max(0, o.vibLost) > 0 ? 'pos' : 'neg'),
+        kv('City cost', o.cityCost ? fmtMoney(o.cityCost) : 'none (developer pays)', o.cityCost ? 'neg' : ''),
+        kv('Construction', `~${Math.round((o.months / 12) * 10) / 10} years`),
+        mood ? el('div', { class: 'kvline' }, el('span', {}, 'Developer'), el('b', { style: `color:${mood[1]}` }, mood[0])) : '',
+        el('div', { class: 'kvline' }, el('span', {}, 'Planning Board outlook'), el('b', { style: `color:${outlook[1]}` }, `${outlook[0]} (${Math.round(odds * 100)}%)`)),
+        el('div', { class: 'reasons' }, ...reasons.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5).map(([l, v]) => el('div', { class: v > 0 ? 'pos' : 'neg' }, `${v > 0 ? '▲' : '▼'} ${l}`))),
+        ...o.notes.map((n) => el('p', { class: 'warn' }, n))
+      );
+      const nameIn = el('input', { type: 'text', value: st.name, class: 'pname' });
+      nameIn.addEventListener('input', () => (st.name = nameIn.value));
+      body.append(
+        el('div', { class: 'srow2' }, el('label', {}, 'Project name'), nameIn, el('span', {})),
+        el('div', { class: 'choices' },
+          el('button', { class: 'choice', onclick: () => {
+            const res = submit(sim, st.ids, st.prog, { ...st.t, exclude: [...st.exclude] }, st.name);
+            if (res.error) { this.toast(res.error, 4000); this.g.music.sfx('error'); return; }
+            this.g.music.sfx('build');
+            this.closeWin('planner');
+            this.planState = null;
+            this.refreshStatus();
+            this.r.needs = true;
+            this.toast(`${st.name} filed. Hearing in two months.`, 3000);
+          } }, el('b', {}, 'Submit to the Planning Board'), el('small', {}, mood && mood[0] === 'Walks away' && !(st.prog === 'housing' && st.t.nonprofit) ? 'The developer will not sign at these terms.' : 'Public hearing in two months.')),
+          el('button', { class: 'choice', onclick: () => { this.closeWin('planner'); this.planState = null; } }, el('b', {}, 'Cancel')))
+      );
+    }, { cls: 'wide planner', x: 100, y: 60 });
+  }
+
+  projectsWindow() {
+    this.win('projects', 'Projects', (body) => {
+      const s = this.sim;
+      const list = [...(s.projects || [])].reverse();
+      body.append(el('p', { class: 'fine' }, 'Use the Redevelop tool (crane) to outline a site over parcels. Target car lots and parking, keep homes out of the outline, and the hearing gets easier.'));
+      if (!list.length) body.append(el('p', { class: 'fine' }, 'No projects yet.'));
+      for (const p of list) {
+        const stage = p.stage === 'hearing' ? `Hearing ${p.at - s.t <= 0 ? 'this month' : 'in ' + (p.at - s.t) + ' mo'}` : p.stage === 'build' ? `Building · ${Math.round((100 * (s.t - p.start)) / Math.max(1, p.at - p.start))}%` : p.stage === 'done' ? `Opened ${p.doneAt != null ? '' : ''}` : 'Denied';
+        body.append(el('div', { class: `projrow ${p.stage}` }, el('span', { class: 'pi' }, PROGRAMS[p.prog].icon), el('button', { class: 'link', onclick: () => this.r.centerOn(p.cx, p.cy) }, p.name), el('small', {}, stage)));
+      }
+    });
+  }
+
   councilWindow() {
     this.win('council', 'City Council', (body) => {
       const s = this.sim;
@@ -758,7 +885,7 @@ export class UI {
       const r = cv.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    const dragTools = new Set(['bulldoze', 'road', 'zoneR', 'zoneC', 'zoneI', 'dezone', 'park']);
+    const dragTools = new Set(['bulldoze', 'road', 'zoneR', 'zoneC', 'zoneI', 'dezone', 'park', 'develop']);
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('pointerdown', (e) => {
       if (!this.r) return;
@@ -857,6 +984,16 @@ export class UI {
     window.addEventListener('resize', () => this.r && this.r.resize());
   }
   updatePlan(a, b) {
+    if (this.tool === 'develop') {
+      if (a < 0) return;
+      const ids = siteFromRect(this.sim, a, b < 0 ? a : b);
+      const tiles = ids.flatMap((li) => this.w.lots[li].tiles);
+      this.plan = { tool: 'develop', ids, tiles, ok: ids.length > 0, cost: 0, msg: ids.length ? `${ids.length} parcel${ids.length > 1 ? 's' : ''} selected` : 'Drag over private parcels (not parks or civic land)' };
+      this.r.preview = { tiles, ok: ids.length > 0, color: 'rgba(255,200,40,0.45)' };
+      this.r.needs = true;
+      this.updateHint(this.plan.msg);
+      return;
+    }
     const p = this.sim.plan(this.tool, a, b, { dense: this.dense });
     this.plan = p;
     if (!p) { this.r.preview = null; return; }
@@ -876,6 +1013,10 @@ export class UI {
       return;
     }
     if (!p.tiles.length) return;
+    if (p.tool === 'develop') {
+      this.projectPlanner(p.ids);
+      return;
+    }
     this.sim.execute(p, { dense: this.dense });
     this.g.music.sfx(p.tool === 'bulldoze' ? 'bulldoze' : p.tool.startsWith('zone') || p.tool === 'dezone' ? 'zone' : 'build');
     this.r.refreshOverlay();

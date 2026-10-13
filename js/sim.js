@@ -6,6 +6,7 @@ import { frontage, classifyLot } from './vibrancy.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
+import { projectsMonthly } from './projects.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -246,7 +247,7 @@ export class Sim {
     const D = new Float32Array(this.N);
     for (const lot of lots) {
       if (lot.dead || lot.road < 0) continue;
-      D[lot.road] += (lot.units * 2.3 * 0.4 + lot.jobs * 0.45) * lot.occ;
+      D[lot.road] += (lot.units * 2.3 * 0.4 + lot.jobs * 0.45) * lot.occ * (lot.tripF || 1);
     }
     T.set(D);
     const rl = this.roadList;
@@ -548,6 +549,7 @@ export class Sim {
     this.growth();
     this.computeAll();
     this.updateDemand();
+    projectsMonthly(this);
     this.storefrontNews(storefrontsMonthly(this));
     ambient(this);
     this.updateApproval();
@@ -612,7 +614,7 @@ export class Sim {
     const slow = this.flags.treeOrdinance ? 0.85 : 1;
     for (let k = 0; k < K; k++) {
       const lot = w.lots[this.zLots[Math.floor(this.rand() * n)]];
-      if (!lot || lot.dead || !lot.inTown) continue;
+      if (!lot || lot.dead || !lot.inTown || lot.locked || lot.under || lot.project) continue;
       const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
       const d = this.demand[key];
       const c = this.cellOf(lot.cx, lot.cy);

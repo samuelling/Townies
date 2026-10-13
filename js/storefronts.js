@@ -158,14 +158,19 @@ export function storefrontsMonthly(sim) {
   const hype = sim.hype + devBuzz;
   let popups = 0, reliefN = 0, vacantOld = 0;
   for (const lot of w.lots) {
-    if (lot.dead || !lot.inTown || !lot.storefronts) continue;
+    if (lot.dead || !lot.inTown || !lot.storefronts || lot.under) continue;
     const c = sim.cellOf(lot.cx, lot.cy);
+    if (!lot.ff0) {
+      lot.ff0 = footfall(sim, c) || 1;
+      lot.vib0 = sim.vibSat ? sim.vibSat[c] : 0;
+    }
     const ff = footfall(sim, c) / (lot.ff0 || 1);
     const vibD = (sim.vibSat ? sim.vibSat[c] : 0) - (lot.vib0 || 0);
     const lvRise = Math.max(0, sim.lvMod[c] - 1);
     // landlords' asking rent: follows buzz up quickly, comes down slowly (and slower still when empty)
     const greed = lot.greed || 1;
-    const target = (1 + 1.6 * lvRise + 1.15 * hype + 0.45 * Math.max(0, vibD)) * (1 + (greed - 1) * Math.min(1, hype * 4));
+    let target = (1 + 1.6 * lvRise + 1.15 * hype + 0.45 * Math.max(0, vibD)) * (1 + (greed - 1) * Math.min(1, hype * 4));
+    if (lot.rentCap && sim.t < (lot.rentCapUntil || 0)) target = Math.min(target, lot.rentCap); // deed-restricted storefronts
     const vacantNow = lot.vacant > 0;
     if (target > lot.ask) lot.ask += (target - lot.ask) * 0.05;
     else lot.ask -= (lot.ask - target) * (vacantNow ? (P.vacancyFee ? 0.06 : greed > 1.15 ? 0.003 : 0.012) : 0.01);
@@ -200,7 +205,7 @@ export function storefrontsMonthly(sim) {
         reliefN++;
       }
       if (!s.chain && s.orig && P.legacy) margin += 0.06;
-      const retire = s.chain ? 0.0008 : 0.0022;
+      const retire = s.chain || /bank|credit|financ|insurance/i.test(s.k || s.n) ? 0.0006 : 0.0022;
       const pClose = margin < 0 ? Math.min(0.45, 0.06 + 0.6 * -margin) : retire;
       if (rand() < pClose) {
         lot.sf.splice(k, 1);

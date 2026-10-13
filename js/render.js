@@ -22,6 +22,7 @@ const C = {
   yard: hexRgb('#a49d8a'),
   civic: hexRgb('#7aa64a'),
   svc: hexRgb('#9b9890'),
+  dirt: hexRgb('#9c7b55'),
 };
 const ZONE_RGB = ZONE_COLOR.map(hexRgb);
 
@@ -304,7 +305,8 @@ export class Renderer {
           const cv = cover[i];
           const li = lotOf[i];
           const lot = li >= 0 ? lots[li] : null;
-          if (cv === COVER.PARK) col = C.park;
+          if (lot && lot.under) { col = C.dirt; kind = 7; }
+          else if (cv === COVER.PARK) col = C.park;
           else if (cv === COVER.WOOD) col = C.wood;
           else if (cv === COVER.CEMETERY) { col = C.cemetery; kind = 4; }
           else if (cv === COVER.SPORT) { col = C.sport; kind = 5; }
@@ -391,6 +393,27 @@ export class Renderer {
     if (osmRoad) this.drawRoadLines(g, P, cc, cx, cy, L);
     for (const [x, y, fill] of cutTiles) diamond(x, y, fill, true);
     for (const i of tileRoads) this.drawRoad(g, P, poly, i % W, (i / W) | 0, road[i], terrain[i] === 1, L);
+    // construction fences around project sites
+    if (L >= 0.5) {
+      g.strokeStyle = '#f2c200';
+      g.lineWidth = Math.max(1, 1.6 * L);
+      g.setLineDash([3 * L, 2 * L]);
+      g.beginPath();
+      for (let y = cc.y0; y < cc.y1; y++)
+        for (let x = cc.x0; x < cc.x1; x++) {
+          const i = y * W + x;
+          const li = lotOf[i];
+          if (li < 0 || !lots[li].under) continue;
+          const u = lots[li].under;
+          const same = (j) => lotOf[j] >= 0 && lots[lotOf[j]].under === u;
+          if (x + 1 < W && !same(i + 1)) { const a = P(x + 1, y), b = P(x + 1, y + 1); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+          if (x > 0 && !same(i - 1)) { const a = P(x, y), b = P(x, y + 1); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+          if (y + 1 < H && !same(i + W)) { const a = P(x, y + 1), b = P(x + 1, y + 1); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+          if (y > 0 && !same(i - W)) { const a = P(x, y), b = P(x + 1, y); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+        }
+      g.stroke();
+      g.setLineDash([]);
+    }
     // town line + neighbour shading
     for (let y = cc.y0; y < cc.y1; y++)
       for (let x = cc.x0; x < cc.x1; x++) {
@@ -1217,7 +1240,9 @@ export class Renderer {
   drawIncidents(ctx, s, offX, offY) {
     const sim = this.sim;
     this.incHits = [];
-    if (!sim || !sim.inc || !sim.inc.list.length && !sim.inc.crews.some((c) => c.state !== 'idle')) return false;
+    const building = (sim && sim.projects ? sim.projects : []).filter((p) => p.stage === 'build');
+    for (const p of building) this.drawCrane(ctx, s, offX, offY, p);
+    if (!sim || !sim.inc || !sim.inc.list.length && !sim.inc.crews.some((c) => c.state !== 'idle')) return building.length > 0;
     const I = sim.inc;
     const d = this.dpr;
     const P = (x, y, hm = 0) => {
@@ -1299,6 +1324,38 @@ export class Renderer {
       this.incHits.push({ id: it.id, x: gx / d, y: py / d, r: (R / d) * 1.5 });
     }
     return true;
+  }
+  drawCrane(ctx, s, offX, offY, p) {
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
+    };
+    const [bx, by] = P(p.cx, p.cy, 0);
+    if (bx < -200 || bx > this.cw + 200 || by < -50 || by > this.ch + 400) return;
+    const H = 34;
+    const [tx, ty] = P(p.cx, p.cy, H);
+    const ang = this.time / 4000 + p.id;
+    const jx = Math.cos(ang) * 4, jy = Math.sin(ang) * 4;
+    const [ex, ey] = P(p.cx + jx, p.cy + jy, H);
+    const [cx2, cy2] = P(p.cx - jx * 0.35, p.cy - jy * 0.35, H);
+    ctx.strokeStyle = '#e3a21a';
+    ctx.lineWidth = Math.max(1.5, 2.2 * s);
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(tx, ty);
+    ctx.moveTo(cx2, cy2);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = Math.max(1, s);
+    const [hx, hy] = P(p.cx + jx * 0.8, p.cy + jy * 0.8, H - 14);
+    const [hx0, hy0] = P(p.cx + jx * 0.8, p.cy + jy * 0.8, H);
+    ctx.beginPath();
+    ctx.moveTo(hx0, hy0);
+    ctx.lineTo(hx, hy);
+    ctx.stroke();
+    ctx.fillStyle = '#555';
+    ctx.fillRect(cx2 - 3 * s, cy2 - 2 * s, 6 * s, 4 * s);
   }
   incidentAt(cssX, cssY) {
     let best = null, bd = Infinity;
