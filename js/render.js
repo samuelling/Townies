@@ -1,6 +1,7 @@
 // SimCity-2000-style isometric renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
+import { INC, DEPTS } from './incidents.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
 const CH = CFG.CHUNK;
@@ -1086,8 +1087,9 @@ export class Renderer {
       if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
     }
     for (const v of vis) blit(fetch(v, 'o'));
+    const incAnim = this.drawIncidents(ctx, s, offX, offY);
     this.drawPreview(ctx, s, offX, offY);
-    this.needs = incomplete || carsDrawn;
+    this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused);
   }
 
   visibleRect() {
@@ -1210,6 +1212,101 @@ export class Renderer {
         }
       }
     return drew && !this.sim.paused;
+  }
+
+  drawIncidents(ctx, s, offX, offY) {
+    const sim = this.sim;
+    this.incHits = [];
+    if (!sim || !sim.inc || !sim.inc.list.length && !sim.inc.crews.some((c) => c.state !== 'idle')) return false;
+    const I = sim.inc;
+    const d = this.dpr;
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
+    };
+    const on = (px, py) => px > -40 && py > -60 && px < this.cw + 40 && py < this.ch + 60;
+    // ground effects: snow drifts, flooding
+    for (const it of I.list) {
+      if (it.type !== 'snow' && it.type !== 'watermain') continue;
+      const [px, py] = P(it.x, it.y);
+      if (!on(px, py)) continue;
+      const r = (it.type === 'snow' ? 3.2 : 1.6) * 16 * s;
+      ctx.fillStyle = it.type === 'snow' ? 'rgba(248,250,255,0.62)' : 'rgba(60,120,210,0.5)';
+      ctx.beginPath();
+      ctx.ellipse(px, py, r, r / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // crews
+    for (const c of I.crews) {
+      if (c.state === 'idle') continue;
+      const [px, py] = P(c.x, c.y, 1);
+      if (!on(px, py)) continue;
+      const w = Math.max(6 * d, 9 * s), h = w * 0.6;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(px - w / 2 + 2, py - h / 2 + 3, w, h);
+      ctx.fillStyle = DEPTS[c.dept].truck;
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = Math.max(1, d);
+      ctx.fillRect(px - w / 2, py - h / 2, w, h);
+      ctx.strokeRect(px - w / 2, py - h / 2, w, h);
+      if (c.state === 'work' && Math.floor(this.time / 300) % 2) {
+        ctx.fillStyle = c.dept === 'fire' ? '#ff4040' : '#ffb000';
+        ctx.beginPath();
+        ctx.arc(px, py - h, Math.max(2 * d, 3 * s), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // incident markers (constant screen size, bobbing)
+    const bob = sim.paused ? 0 : Math.sin(this.time / 260) * 3 * d;
+    const R = Math.max(9, Math.min(14, 12 * Math.sqrt(s))) * d;
+    for (const it of I.list) {
+      const def = INC[it.type];
+      const [gx, gy] = P(it.x, it.y, it.type === 'fire' ? 9 : 0);
+      if (!on(gx, gy)) continue;
+      if (it.type === 'fire') {
+        for (let k = 0; k < 3; k++) {
+          const fx = gx + (k - 1) * 5 * d * Math.max(0.6, s), fl = (8 + 6 * Math.sin(this.time / 90 + k * 2)) * d * Math.max(0.6, s);
+          ctx.fillStyle = k === 1 ? '#ffcf3a' : '#ff6a1a';
+          ctx.beginPath();
+          ctx.moveTo(fx - 4 * d, gy);
+          ctx.lineTo(fx, gy - fl);
+          ctx.lineTo(fx + 4 * d, gy);
+          ctx.fill();
+        }
+      }
+      const py = gy - R * 2.4 + (it.working ? 0 : bob);
+      const age = I.day - it.born;
+      const u = age / def.grace;
+      const col = it.working ? '#2e9e44' : it.crew ? '#2b6fd0' : u < 0.6 ? '#e8b400' : u < 1 ? '#e67e22' : '#d0312d';
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = d;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx, py + R);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3 * d;
+      ctx.beginPath();
+      ctx.arc(gx, py, R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = `${Math.round(R * 1.15)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#000';
+      ctx.fillText(def.icon, gx, py + d);
+      this.incHits.push({ id: it.id, x: gx / d, y: py / d, r: (R / d) * 1.5 });
+    }
+    return true;
+  }
+  incidentAt(cssX, cssY) {
+    let best = null, bd = Infinity;
+    for (const h of this.incHits || []) {
+      const dd = Math.hypot(h.x - cssX, h.y - cssY);
+      if (dd < h.r && dd < bd) { bd = dd; best = h.id; }
+    }
+    return best;
   }
 
   drawPreview(ctx, s, offX, offY) {

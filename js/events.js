@@ -172,7 +172,7 @@ export const SCENARIOS = [
     title: 'Nineteen Inches',
     text: () =>
       'A nor’easter buried the city overnight. Public Works has been plowing for 40 hours straight and is now hauling snowbanks away by truck. Sidewalks are a mess, and the new sidewalk-shoveling rule is about to get its first real test.',
-    run: (s) => s.apply({ funds: s.flags.noParkingBan ? -2.4e6 : -1.2e6 }),
+    run: (s) => { s.apply({ funds: s.flags.noParkingBan ? -2.4e6 : -1.2e6 }); s.storm(s.flags.noParkingBan ? 26 : 18); },
     choices: [
       { label: 'Fine people who don’t shovel', fx: '+$80K · Seniors ↓ · walkable sidewalks', run: (s) => s.apply({ funds: 80e3, approval: { seniors: -5, renters: 1, commuters: 2 } }) },
       { label: 'Fund a volunteer shovel corps', fx: '−$120K · Seniors ↑', run: (s) => s.apply({ funds: -120e3, approval: { seniors: 5, homeowners: 1 } }) },

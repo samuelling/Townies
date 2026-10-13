@@ -56,6 +56,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sfl small { color: #666; }
 .sfl.close-rent { color: #8a1f1f; }
 .sfl.open-indie { color: #145a14; }
+.sinc { background: none; border: 0; padding: 0; font-weight: bold; }
+.sinc.neg { color: #b00; }
+.crewrow { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px dotted #999; }
+.crewrow .auto { font-size: 12px; }
+.incrow { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 6px; align-items: center; padding: 2px 0; font-size: 12px; }
+.incrow.late { color: #a01; }
+.incrow .ii { font-size: 15px; }
 .svib { background: none; border: 0; padding: 0; font-weight: bold; color: #8a4a12; text-decoration: underline dotted; }
 .svib.up { color: #145a14; }
 .svib.neg { color: #b00; }

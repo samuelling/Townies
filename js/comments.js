@@ -127,6 +127,21 @@ const T = {
     ['foodie', 'Good riddance to another lot full of half-repaired cars.'],
     ['lifer', '{name} fixed my car for thirty years.'],
   ],
+  'fixed-late': [
+    ['dad', 'The {what} on {street} is finally fixed. Only took {days} days.'],
+    ['tom', '{days} days for one {what}. Where does the Public Works budget go?'],
+    ['lifer', 'They fixed the {what} on {street}. I will believe it lasts when I see it.'],
+  ],
+  unfixed: [
+    ['dad', 'That {what} on {street} has been there for weeks. I have reported it to the city app three times.'],
+    ['mall', 'Lost a hubcap to the {what} on {street}. Thanks, City Hall.'],
+    ['barb', 'The {what} on {street} nearly threw me off my bike.'],
+  ],
+  'fire-lost': [
+    ['lifer', 'Where were the engines? We used to have a station closer to {street}.'],
+    ['dad', 'Thank god everyone got out. How long did the trucks take?'],
+    ['tom', 'This is what happens when you cut the fire budget.'],
+  ],
   'service-built': [
     ['dad', 'A new {what}! Long overdue.'],
     ['tom', 'And what will the {what} cost us every year after the ribbon is cut?'],

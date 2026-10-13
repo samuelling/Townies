@@ -5,6 +5,7 @@ import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, 
 import { frontage, classifyLot } from './vibrancy.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
 import { react, ambient } from './comments.js';
+import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -49,6 +50,8 @@ export class Sim {
       this.capLocal = Float32Array.from(state.capLocal);
       this.S0 = Float32Array.from(state.S0);
       this.rand = rng(Date.now() & 0xffffffff);
+      if (!this.inc) initIncidents(this);
+      refreshBlocks(this);
       this.recalc();
       this.computeAll();
       this.updateDemand();
@@ -125,6 +128,7 @@ export class Sim {
     this.funds = budget * 0.1;
     this.computeAll(true);
     initStorefronts(this);
+    initIncidents(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.updateApproval(true);
@@ -268,7 +272,7 @@ export class Sim {
     const capMul = (0.82 + 0.18 * this.roadCond) * (1 + this.capBump);
     let sum = 0, n = 0;
     for (const i of rl) {
-      const cap = this.base.capC1 * [0, 1, 2.6, 4.2][road[i]] * capMul * this.capLocal[i];
+      const cap = this.base.capC1 * [0, 1, 2.6, 4.2][road[i]] * capMul * this.capLocal[i] * (this.incBlock ? this.incBlock[i] : 1);
       const c = T[i] / cap;
       this.congestion[i] = c;
       if (road[i] >= 2 && this.w.inTown[i]) { sum += c; n++; }
@@ -519,8 +523,21 @@ export class Sim {
   }
 
   // ---------------- monthly tick ----------------
+  // advance incidents/crews in real time between monthly ticks (never past the end of this month)
+  realtime(days) {
+    if (!this.inc || this.gameOver) return;
+    const cap = (this.t + 1) * 30 - this.inc.day;
+    if (cap > 0) stepIncidents(this, Math.min(days, cap));
+  }
+  storm(n) {
+    return stormFn(this, n);
+  }
   tick() {
     if (this.gameOver) return;
+    if (!this.inc) initIncidents(this);
+    const catchUp = (this.t + 1) * 30 - this.inc.day;
+    if (catchUp > 0) stepIncidents(this, catchUp);
+    syncCrews(this);
     const prevY = this.y;
     this.m++;
     if (this.m > 11) { this.m = 0; this.y++; }
@@ -678,6 +695,7 @@ export class Sim {
     if (this.funds < 0) for (const k of FACTIONS) f[k] -= 6;
     const sp = this.specialApproval();
     for (const [k, v] of Object.entries(policyApproval(this))) sp[k] = (sp[k] || 0) + v;
+    for (const [k, v] of Object.entries(incidentPenalty(this))) sp[k] = (sp[k] || 0) - v;
     for (const [k, v] of Object.entries(sp)) {
       if (k === 'all') for (const g of FACTIONS) f[g] += v;
       else if (f[k] != null) f[k] += v;
@@ -710,30 +728,6 @@ export class Sim {
   // ---------------- random events ----------------
   randomEvents() {
     const w = this.w;
-    // fires
-    const avgFire = this.fireN ? this.fireCov.reduce((a, b) => a + b, 0) / this.fireCov.length : 0;
-    if (this.rand() < 0.12 * (1.5 - Math.min(1, avgFire * 2.5))) {
-      const lot = w.lots[this.zLots[Math.floor(this.rand() * this.zLots.length)]];
-      if (lot && lot.bldgs.length) {
-        const c = this.cellOf(lot.cx, lot.cy);
-        const save = this.fireCov[c] * this.fund.fire;
-        const st = streetOf(lot);
-        if (this.rand() > 0.3 + save * 0.65) {
-          const touched = [];
-          for (const id of lot.bldgs) touched.push(...demolish(w, w.bldgs[id]));
-          lot.bldgs = [];
-          lot.baseBldg = 0;
-          lot.bldgVal = 0;
-          computeLotMetrics(w, lot, false);
-          this.hooks.invalidateTiles && this.hooks.invalidateTiles(touched);
-          this.news(`Multi-alarm fire${st ? ' on ' + st : ''}`, 'Nobody was hurt, but the building is a total loss. Residents ask whether fire coverage is adequate in that part of town.', 'big');
-          this.approvalOff.seniors -= 2;
-          this.recalc();
-        } else {
-          this.news(`Quick work by firefighters${st ? ' on ' + st : ''}`, 'Crews knocked down a kitchen fire within minutes. Neighbors brought them coffee.');
-        }
-      }
-    }
     // flavour
     if (this.rand() < 0.22) this.flavour();
   }
@@ -1174,7 +1168,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0']);
+    const skip = new Set(['w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0) };

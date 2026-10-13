@@ -9,7 +9,7 @@ import { nextScenario, FOLLOWUPS } from './events.js';
 import { makeDemoRaw } from './demo.js';
 import { el } from './util.js';
 
-const MONTH_MS = [Infinity, 9000, 4500, 1600];
+const MONTH_MS = [Infinity, 14000, 6000, 2000];
 const QUIPS = [
   'Reticulating splines…',
   'Counting triple-deckers…',
@@ -106,6 +106,12 @@ function boot(state) {
     followup: (p) => FOLLOWUPS[p.id] && FOLLOWUPS[p.id](game.sim, p.data || {}),
     yearly: () => save(false),
     openBudget: () => game.ui && game.ui.budgetWindow(),
+    hint: (msg) => game.ui && game.ui.toast(msg, 6000),
+    incidents: () => {
+      if (game.ui) game.ui.refreshIncidents();
+      if (game.renderer) game.renderer.needs = true;
+    },
+    comment: () => {},
   };
   game.sim = new Sim(game.world, state ? state.sim : null, hooks);
   const canvas = document.getElementById('view');
@@ -132,6 +138,7 @@ function frame(now) {
   last = now;
   const s = game.sim;
   if (s && !game.ui.modal && game.speed > 0 && !s.gameOver) {
+    s.realtime((dt / MONTH_MS[game.speed]) * 30);
     acc += dt;
     if (acc >= MONTH_MS[game.speed]) {
       acc = 0;

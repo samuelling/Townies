@@ -4,6 +4,7 @@ import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
+import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
 
 const ICON = {
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
@@ -101,7 +102,7 @@ export class UI {
       return m;
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)], ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Crews', () => this.crewsWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -149,6 +150,7 @@ export class UI {
     this.sDate = el('span', { class: 'sdate' });
     this.sFunds = el('span', { class: 'sfunds' });
     this.sPop = el('span', { class: 'spop' });
+    this.sInc = el('button', { class: 'sinc', title: 'Open problems around town. Tap for Crews.', onclick: () => this.crewsWindow() });
     this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for Main Street.', onclick: () => this.mainStreetWindow() });
     this.sAppr = el('button', { class: 'sappr', onclick: () => this.councilWindow() });
     this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Commercial, Industrial' });
@@ -156,7 +158,7 @@ export class UI {
     this.tickerFlip = 0;
     clearInterval(this.tickerTimer);
     this.tickerTimer = setInterval(() => this.rotateTicker(), 7000);
-    sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.rci), this.ticker);
+    sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.sInc, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
     this.setTool('query');
     this.refreshStatus();
@@ -279,15 +281,71 @@ export class UI {
       g.font = 'bold 8px sans-serif';
       g.fillText(k, 7 + j * 17, v > 0 ? 38 : 8);
     });
+    this.refreshIncidents();
     const n = s.newsLog[0];
     if (n && this.tickerMode !== 'c') this.ticker.textContent = `📰 ${n.title}`;
   }
 
-  toast(msg) {
+  refreshIncidents() {
+    const s = this.sim;
+    if (!s || !this.sInc) return;
+    const st = incidentStats(s);
+    this.sInc.textContent = st.open ? `🚧 ${st.open}` : '🚧 0';
+    this.sInc.classList.toggle('neg', st.late > 0);
+    const w = this.wins.get('crews');
+    if (w) w.refresh();
+  }
+  sendCrew(id) {
+    const s = this.sim;
+    const it = s.inc.list.find((x) => x.id === id);
+    const msg = dispatch(s, id, true);
+    if (msg) {
+      this.toast(msg);
+      this.g.music.sfx('error');
+    } else {
+      this.toast(`${CREW_DEPTS[INC[it.type].dept].label} ${CREW_DEPTS[INC[it.type].dept].unit} on the way${it.street ? ' to ' + it.street : ''}`);
+      this.g.music.sfx('build');
+    }
+    this.refreshIncidents();
+    this.r.needs = true;
+  }
+  crewsWindow() {
+    this.win('crews', 'Crews', (body) => {
+      const s = this.sim;
+      const I = s.inc;
+      if (!I) return;
+      body.append(el('p', { class: 'fine' }, 'Tap a problem on the map (or Send below) to dispatch the nearest free crew. Auto-dispatch handles a department for you, but waits on paperwork and pays overtime (+40%). Quick hands-on fixes earn goodwill.'));
+      for (const [dk, dd] of Object.entries(CREW_DEPTS)) {
+        const crews = I.crews.filter((c) => c.dept === dk);
+        const busy = crews.filter((c) => c.state !== 'idle').length;
+        const cb = el('input', { type: 'checkbox' });
+        cb.checked = !!I.auto[dk];
+        cb.addEventListener('change', () => { I.auto[dk] = cb.checked; this.g.music.sfx('zone'); });
+        body.append(el('div', { class: 'crewrow' }, el('b', {}, dd.label), el('span', {}, `${crews.length - busy}/${crews.length} ${dd.unit}s free`), el('label', { class: 'auto' }, cb, ' auto')));
+      }
+      const list = [...I.list];
+      list.sort((a, b) => (I.day - b.born) / INC[b.type].grace - (I.day - a.born) / INC[a.type].grace);
+      body.append(el('h4', {}, `Open problems (${I.list.length})`));
+      if (!list.length) body.append(el('p', { class: 'fine' }, 'All quiet. Enjoy it.'));
+      for (const it of list.slice(0, 25)) {
+        const def = INC[it.type];
+        const age = Math.floor(I.day - it.born);
+        const late = I.day - it.born > def.grace;
+        const status = it.working ? 'working' : it.crew ? 'on the way' : late ? `${age}d — late` : `${age}d`;
+        body.append(el('div', { class: `incrow${late && !it.crew ? ' late' : ''}` },
+          el('span', { class: 'ii' }, def.icon),
+          el('button', { class: 'link', onclick: () => { this.r.centerOn(it.x, it.y); if (this.r.z < 1) this.r.setZoom(1.4); } }, `${def.label}${it.street ? ' · ' + it.street : ''}`),
+          el('small', {}, status),
+          it.crew ? '' : el('button', { class: 'btn', onclick: () => this.sendCrew(it.id) }, 'Send')));
+      }
+      body.append(el('p', { class: 'fine' }, `Fixed so far: ${I.fixed}${I.quick ? ` · ${I.quick} quick hands-on fixes` : ''}. Crew counts follow the Public Works and Fire budgets.`));
+    });
+  }
+  toast(msg, ms = 1600) {
     const t = el('div', { class: 'toast' }, msg);
     document.body.append(t);
-    setTimeout(() => t.classList.add('out'), 1600);
-    setTimeout(() => t.remove(), 2200);
+    setTimeout(() => t.classList.add('out'), ms);
+    setTimeout(() => t.remove(), ms + 600);
   }
 
   // ---------------- windows ----------------
@@ -761,7 +819,9 @@ export class UI {
       }
       if (pts.size) return;
       const p = pos(e);
-      if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.tileAt(p[0], p[1]));
+      const hitInc = !moved && (this.tool === 'query' || this.tool === 'pan') ? this.r.incidentAt(p[0], p[1]) : null;
+      if (hitInc != null) this.sendCrew(hitInc);
+      else if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.tileAt(p[0], p[1]));
       else if (mode === 'tool') {
         const endT = dragTools.has(this.tool) ? this.r.tileAt(p[0], p[1]) : startTile;
         this.updatePlan(startTile, endT);
