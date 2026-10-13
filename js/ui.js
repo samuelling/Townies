@@ -47,6 +47,15 @@ const TOOLS = [
   { id: 'hospital', label: 'Hospital', key: '', tip: 'Tap to place a 5×5 hospital ($60M). Big land-value & approval boost; high upkeep.' },
   { id: 'stadium', label: 'Stadium', key: '', tip: 'Tap to place a 7×7 stadium ($120M). Civic pride & business — commuters grumble about traffic.' },
 ];
+// SC2000-style grouped tools: one toolbar button opens a flyout of its members.
+const GROUPS = [
+  { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneI', 'dezone'] },
+  { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'school', 'park'] },
+];
+const TOOL_NOTE = {
+  zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', dezone: 'Remove zoning',
+  police: '$12M · 3×3 · cuts crime', fire: '$9M · 3×3 · fewer fires', school: '$45M · 5×5 · raises land value', park: '$25K per tile',
+};
 const OVERLAYS = [
   ['none', 'None'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
 ];
@@ -108,18 +117,28 @@ export class UI {
     const tb = document.getElementById('toolbar');
     tb.innerHTML = '';
     this.toolBtns = {};
+    this.groupBtns = {};
+    this.groupCur = { zone: 'zoneR', civic: 'police' };
     for (const t of TOOLS) {
+      if (GROUPS.some((g) => g.members.includes(t.id))) continue;
       const b = el('button', { class: 'tool', title: `${t.label}${t.key ? ' (' + t.key + ')' : ''}`, onclick: () => this.setTool(t.id) });
       b.innerHTML = ICON[t.id];
       this.toolBtns[t.id] = b;
       tb.append(b);
     }
+    for (const g of GROUPS) {
+      const b = el('button', { class: 'tool group', title: g.label, onclick: (e) => { e.stopPropagation(); this.toggleFlyout(g, b); } });
+      this.groupBtns[g.id] = b;
+      tb.append(b);
+    }
+    this.paintGroups();
     tb.append(el('div', { class: 'tsep' }));
     for (const [id, fn, tip] of [['rotl', () => this.r.rotate(-1), 'Rotate left (,)'], ['rotr', () => this.r.rotate(1), 'Rotate right (.)'], ['zin', () => this.r.setZoom(this.r.z * 1.5), 'Zoom in (+)'], ['zout', () => this.r.setZoom(this.r.z / 1.5), 'Zoom out (−)']]) {
-      const b = el('button', { class: 'tool', title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
+      const b = el('button', { class: `tool${id.startsWith('z') ? ' zoombtn' : ''}`, title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
       b.innerHTML = ICON[id];
       tb.append(b);
     }
+    document.addEventListener('click', () => this.closeFlyout());
 
     const sb = document.getElementById('statusbar');
     sb.innerHTML = '';
@@ -138,11 +157,56 @@ export class UI {
     document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
   }
 
+  paintGroups() {
+    for (const g of GROUPS) {
+      const b = this.groupBtns[g.id];
+      const active = g.members.includes(this.tool);
+      if (active) this.groupCur[g.id] = this.tool;
+      b.innerHTML = ICON[this.groupCur[g.id]] + '<i class="tri"></i><b class="glabel">' + (g.id === 'zone' ? 'Zone' : 'Civic') + '</b>';
+      b.classList.toggle('on', active);
+    }
+  }
+  toggleFlyout(g, btn) {
+    if (this.flyout && this.flyout.dataset.g === g.id) return this.closeFlyout();
+    this.closeFlyout();
+    const fl = el('div', { class: 'flyout' });
+    fl.dataset.g = g.id;
+    fl.append(el('div', { class: 'fhead' }, g.label));
+    for (const id of g.members) {
+      const t = TOOLS.find((x) => x.id === id);
+      const ic = el('span', { class: 'ficon' });
+      ic.innerHTML = ICON[id];
+      fl.append(el('button', { class: `fitem${this.tool === id ? ' on' : ''}`, onclick: (e) => { e.stopPropagation(); this.setTool(id); this.closeFlyout(); } }, ic, el('span', {}, el('b', {}, t.label), el('small', {}, TOOL_NOTE[id] || ''))));
+    }
+    fl.addEventListener('click', (e) => e.stopPropagation());
+    document.body.append(fl);
+    const r = btn.getBoundingClientRect();
+    if (window.innerWidth <= 700) {
+      const tb = document.getElementById('toolbar').getBoundingClientRect();
+      fl.style.left = '6px';
+      fl.style.right = '6px';
+      fl.style.bottom = `${window.innerHeight - tb.top + 6}px`;
+    } else {
+      fl.style.left = `${r.right + 6}px`;
+      fl.style.top = `${Math.min(r.top, window.innerHeight - fl.offsetHeight - 8)}px`;
+    }
+    this.flyout = fl;
+    btn.classList.add('open');
+    this.g.music && this.g.music.sfx('click');
+  }
+  closeFlyout() {
+    if (!this.flyout) return;
+    this.flyout.remove();
+    this.flyout = null;
+    for (const b of Object.values(this.groupBtns || {})) b.classList.remove('open');
+  }
+
   setTool(id) {
     if (this.tool === id && id.startsWith('zone')) this.dense = !this.dense;
     else if (this.tool !== id && id.startsWith('zone')) this.dense = false;
     this.tool = id;
     for (const [k, b] of Object.entries(this.toolBtns)) b.classList.toggle('on', k === id);
+    if (this.groupBtns) this.paintGroups();
     this.r && (this.r.preview = null);
     this.updateHint();
     this.g.music && this.g.music.sfx('click');
