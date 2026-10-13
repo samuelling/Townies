@@ -2,7 +2,7 @@
 
 A SimCity 2000–style city sim set in the real Watertown, Massachusetts. You're the new City Manager.
 
-**Play:** https://samuelling.github.io/townies/
+**Play:** https://samuelling.github.io/Townies/
 
 ## What's real
 - **The map, true to scale.** Each tile is 16 m. Streets, building footprints, the Charles, parks, trees and named businesses come live from OpenStreetMap. Your browser downloads them on first launch and caches them on your device.
