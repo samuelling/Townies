@@ -1205,11 +1205,72 @@ export class Renderer {
     const spooky = this.drawHalloween(ctx, s, offX, offY, 'ground');
     for (const v of vis) blit(fetch(v, 'o'));
     if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
-    const skyAnim = this.drawSky(ctx, s, offX, offY);
+    const skyAnim = this.drawSky(ctx, s, offX, offY) || this.drawMoments(ctx, s, offX, offY);
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
-    this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused);
+    this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // ---- moments: ribbon cuttings, lab openings, plazas, the first big snow ----
+  addMoment(kind, x, y, label) {
+    this.moments = (this.moments || []).filter((m) => this.time - m.t0 < m.life);
+    this.moments.push({ kind, x, y, label: label || '', t0: this.time, life: kind === 'snow' ? 7000 : 4500 });
+    this.needs = true;
+  }
+  drawMoments(ctx, s, offX, offY) {
+    if (!this.moments || !this.moments.length) return false;
+    const now = this.time;
+    this.moments = this.moments.filter((m) => now - m.t0 < m.life);
+    if (!this.moments.length) return false;
+    const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
+    const W = this.cw / this.dpr, H = this.ch / this.dpr;
+    for (const m of this.moments) {
+      const u = (now - m.t0) / m.life; // 0 → 1
+      const fade = u < 0.1 ? u / 0.1 : u > 0.75 ? (1 - u) / 0.25 : 1;
+      if (m.kind === 'snow') {
+        // flakes drifting down over the whole view
+        ctx.save();
+        ctx.globalAlpha = 0.85 * fade;
+        ctx.fillStyle = '#fff';
+        for (let k = 0; k < 160; k++) {
+          const x = (hash2(k, 3, 1) * W + Math.sin((now / 900) + k) * 12) % W;
+          const y = ((hash2(k, 3, 2) * H + (now - m.t0) * (0.03 + 0.04 * hash2(k, 3, 3))) % H);
+          const r = 1 + 2 * hash2(k, 3, 4);
+          ctx.beginPath(); ctx.arc(x * this.dpr, y * this.dpr, r * this.dpr, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 0.18 * fade;
+        ctx.fillRect(0, 0, this.cw, this.ch);
+        ctx.restore();
+        continue;
+      }
+      if (m.x == null) continue;
+      const base = P(m.x, m.y, 6);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      // confetti (or, for labs, rising bubbles)
+      const n = m.kind === 'lab' ? 26 : 60;
+      for (let k = 0; k < n; k++) {
+        const ang = hash2(k, 9, 1) * Math.PI * 2, sp = 0.6 + hash2(k, 9, 2);
+        const tt = (now - m.t0) / 1000;
+        let x, y;
+        if (m.kind === 'lab') { x = base[0] + Math.cos(ang) * 14 * s * sp; y = base[1] - tt * 22 * s * sp; ctx.strokeStyle = '#4aa3df'; ctx.lineWidth = Math.max(1, s); ctx.beginPath(); ctx.arc(x, y, 2 * s * sp, 0, Math.PI * 2); ctx.stroke(); continue; }
+        x = base[0] + Math.cos(ang) * tt * 40 * s * sp;
+        y = base[1] - Math.sin(ang) * tt * 30 * s * sp + tt * tt * 26 * s;
+        ctx.fillStyle = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#ffffff'][k % 6];
+        ctx.fillRect(x, y, 4 * s, 2.2 * s);
+      }
+      // a banner that floats up
+      const label = (m.kind === 'lab' ? '🧪 ' : m.kind === 'plaza' ? '🌳 ' : '✂️ ') + (m.label || 'Ribbon cutting');
+      ctx.font = `bold ${Math.round(12 * this.dpr)}px sans-serif`;
+      const tw = ctx.measureText(label).width + 12 * this.dpr;
+      const by = base[1] - 18 * s - u * 24 * this.dpr;
+      ctx.fillStyle = 'rgba(255,253,240,0.95)'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5 * this.dpr;
+      ctx.fillRect(base[0] - tw / 2, by - 13 * this.dpr, tw, 18 * this.dpr); ctx.strokeRect(base[0] - tw / 2, by - 13 * this.dpr, tw, 18 * this.dpr);
+      ctx.fillStyle = '#000'; ctx.textAlign = 'center'; ctx.fillText(label, base[0], by + 1 * this.dpr);
+      ctx.restore();
+    }
+    return true;
   }
 
   // Halloween: one yard on Irving Street from September (see js/eggs.js), the neighbors in October.

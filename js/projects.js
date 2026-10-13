@@ -570,6 +570,7 @@ function complete(sim, p) {
   sim.parkPts = null;
   sim.recalc();
   sim.computeAll();
+  sim.moment && sim.moment(p.prog === 'lab' ? 'lab' : p.prog === 'plaza' ? 'plaza' : 'ribbon', p.cx, p.cy, p.name);
   const item = sim.news(`Ribbon cut at ${p.name}`, ribbonText(p), 'big');
   react(sim, `project-open-${p.prog}`, { name: p.name, street: streetName(sim, p) }, item, 3);
 }

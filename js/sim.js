@@ -837,6 +837,7 @@ export class Sim {
     eggMonthly(this);
     ambient(this);
     this.updateApproval();
+    this.approvalWhy = this.approvalChange();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;
     for (const k of Object.keys(this.demandMod)) this.demandMod[k] *= 0.99;
     // scheduled consequences
@@ -980,35 +981,67 @@ export class Sim {
     const cong = (this.congAvg || 0) - (b.cong0 || 0);
     const crime = (this.crimeAvg || 0) / (b.crimeAvg0 || 1) - 1;
     const d = this.demand || { R: 0, C: 0, I: 0 };
-    const f = {
-      homeowners: 60 - 70 * billR + 12 * (this.fund.schools - 1) - 25 * crime + 25 * ex + 8 * (this.market - 1),
-      renters: 56 - 25 * Math.max(0, d.R - 0.3) - 20 * ex - 10 * (this.market - 1) + 6 * (this.fund.parks - 1),
-      seniors: 58 - 40 * billR + 10 * (this.fund.police + this.fund.fire - 2) - 15 * crime,
-      business: 57 - 70 * billC + 15 * d.C - 40 * cong + 6 * (this.roadCond - 1),
-      commuters: 56 - 90 * cong + 15 * (this.roadCond - 1),
-    };
     const dv = (this.vibrancy || 0) - (b.vib0 ?? this.vibrancy ?? 0);
-    f.renters += 0.6 * dv;
-    f.homeowners += 0.35 * dv;
-    f.business += 0.4 * dv;
-    f.seniors += 0.2 * dv;
-    if (this.funds < 0) for (const k of FACTIONS) f[k] -= 6;
-    const sp = this.specialApproval();
-    for (const [k, v] of Object.entries(policyApproval(this))) sp[k] = (sp[k] || 0) + v;
-    for (const [k, v] of Object.entries(incidentPenalty(this))) sp[k] = (sp[k] || 0) - v;
-    for (const [k, v] of Object.entries(techApproval(this))) sp[k] = (sp[k] || 0) + v;
-    for (const [k, v] of Object.entries(sp)) {
-      if (k === 'all') for (const g of FACTIONS) f[g] += v;
-      else if (f[k] != null) f[k] += v;
+    // every faction's approval is a sum of named reasons, so the game can say why it moved
+    const T = {};
+    const add = (k, why, v) => { if (v) (T[k] = T[k] || {})[why] = ((T[k] || {})[why] || 0) + v; };
+    add('homeowners', 'baseline', 60); add('renters', 'baseline', 56); add('seniors', 'baseline', 58); add('business', 'baseline', 57); add('commuters', 'baseline', 56);
+    add('homeowners', 'tax bills', -70 * billR); add('seniors', 'tax bills', -40 * billR); add('business', 'commercial tax rate', -70 * billC);
+    add('homeowners', 'schools', 12 * (this.fund.schools - 1));
+    add('homeowners', 'crime', -25 * crime); add('seniors', 'crime', -15 * crime);
+    add('homeowners', 'residential exemption', 25 * ex); add('renters', 'residential exemption', -20 * ex);
+    add('homeowners', 'home values', 8 * (this.market - 1)); add('renters', 'rents and prices', -10 * (this.market - 1));
+    add('renters', 'housing scarcity', -25 * Math.max(0, d.R - 0.3));
+    add('renters', 'parks', 6 * (this.fund.parks - 1));
+    add('seniors', 'police and fire', 10 * (this.fund.police + this.fund.fire - 2));
+    add('business', 'demand for shops and offices', 15 * d.C);
+    add('business', 'traffic', -40 * cong); add('commuters', 'traffic', -90 * cong);
+    add('business', 'road conditions', 6 * (this.roadCond - 1)); add('commuters', 'road conditions', 15 * (this.roadCond - 1));
+    add('renters', 'street life', 0.6 * dv); add('homeowners', 'street life', 0.35 * dv); add('business', 'street life', 0.4 * dv); add('seniors', 'street life', 0.2 * dv);
+    if (this.funds < 0) for (const k of FACTIONS) add(k, 'budget in the red', -6);
+    const groups = [['projects and places', this.specialApproval()], ['Main Street policies', policyApproval(this)], ['potholes, fires and crews', Object.fromEntries(Object.entries(incidentPenalty(this)).map(([k, v]) => [k, -v]))], ['new technology', techApproval(this)]];
+    for (const [why, sp] of groups) for (const [k, v] of Object.entries(sp)) {
+      if (k === 'all') for (const g of FACTIONS) add(g, why, v);
+      else if (FACTIONS.includes(k)) add(k, why, v);
     }
+    for (const k of FACTIONS) add(k, 'your recent decisions', this.approvalOff[k]);
     this.factions = {};
+    this.approvalTerms = T;
     let a = 0;
     for (const k of FACTIONS) {
-      this.factions[k] = clamp(f[k] + this.approvalOff[k], 0, 100);
+      const sum = Object.values(T[k] || {}).reduce((x, y) => x + y, 0);
+      this.factions[k] = clamp(sum, 0, 100);
       a += this.factions[k] * FW[k];
     }
     this.approval = a;
     void init;
+  }
+
+  // a short on-map flourish for a big event (drawn by the renderer; harmless when there isn't one)
+  moment(kind, x, y, label) {
+    if (this.hooks.moment) this.hooks.moment(kind, x, y, label);
+  }
+
+  // Which faction moved most since last month, and the reason that moved it most (for the HUD)
+  approvalChange() {
+    const prev = this.prevTerms, cur = this.approvalTerms;
+    this.prevTerms = cur;
+    const pa = this.prevApproval;
+    this.prevApproval = this.approval;
+    if (!prev || pa == null) return null;
+    let best = null;
+    for (const k of FACTIONS) {
+      const keys = new Set([...Object.keys(prev[k] || {}), ...Object.keys(cur[k] || {})]);
+      let tot = 0, top = null;
+      for (const why of keys) {
+        const dd = ((cur[k] || {})[why] || 0) - ((prev[k] || {})[why] || 0);
+        tot += dd;
+        if (why !== 'baseline' && (!top || Math.abs(dd) > Math.abs(top.d))) top = { why, d: dd };
+      }
+      if (!best || Math.abs(tot) > Math.abs(best.d)) best = { f: k, d: tot, top };
+    }
+    if (!best || Math.abs(best.d) < 2) return null;
+    return { ...best, overall: this.approval - pa };
   }
 
   checkGameOver() {

@@ -289,6 +289,22 @@ export class UI {
     try { localStorage.setItem('townies-music', on ? '1' : '0'); } catch (e) {}
   }
 
+  // a small chip under the Approval readout: who moved, by how much, and the main reason
+  approvalNote(moves, why) {
+    if (!moves || !moves.length || !this.sAppr) return;
+    if (!this.apprChip) {
+      this.apprChip = el('div', { class: 'apprchip', onclick: () => this.councilWindow() });
+      document.body.append(this.apprChip);
+    }
+    const r = this.sAppr.getBoundingClientRect();
+    this.apprChip.style.left = `${Math.max(4, r.left)}px`;
+    this.apprChip.style.top = `${r.bottom + 4}px`;
+    this.apprChip.replaceChildren(...moves.map(([f, d]) => el('span', { class: d > 0 ? 'up' : 'down' }, `${FACTION_LABEL[f]} ${d > 0 ? '▲' : '▼'}${Math.abs(Math.round(d))}`)), why ? el('small', {}, ` · ${why}`) : '');
+    this.apprChip.classList.add('show');
+    clearTimeout(this.apprT);
+    this.apprT = setTimeout(() => this.apprChip && this.apprChip.classList.remove('show'), 6000);
+  }
+
   refreshStatus() {
     const s = this.sim;
     if (!s) return;
@@ -903,7 +919,14 @@ export class UI {
     this.win('council', 'City Council', (body) => {
       const s = this.sim;
       body.append(el('div', { class: 'big' }, `${Math.round(s.approval)}%`), el('p', { class: 'fine' }, 'Approval of the City Manager. Below 30% for a year and the Council won’t renew your contract.'));
-      for (const f of FACTIONS) body.append(el('div', { class: 'frow' }, el('span', {}, FACTION_LABEL[f]), bar(s.factions[f] / 100, true), el('b', {}, `${Math.round(s.factions[f])}`)));
+      for (const f of FACTIONS) {
+        body.append(el('div', { class: 'frow' }, el('span', {}, FACTION_LABEL[f]), bar(s.factions[f] / 100, true), el('b', {}, `${Math.round(s.factions[f])}`)));
+        const t = (s.approvalTerms || {})[f];
+        if (t) {
+          const top = Object.entries(t).filter(([k, v]) => k !== 'baseline' && Math.abs(v) >= 0.5).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3);
+          if (top.length) body.append(el('div', { class: 'fwhy' }, ...top.map(([k, v]) => el('span', { class: v > 0 ? 'up' : 'down' }, `${k} ${v > 0 ? '+' : '−'}${Math.abs(Math.round(v))}`))));
+        }
+      }
       if (s.lowMonths) body.append(el('p', { class: 'warn' }, `Approval has been under 30% for ${s.lowMonths} month(s).`));
     });
   }
@@ -1159,6 +1182,7 @@ export class UI {
         const delta = {};
         for (const k of Object.keys(this.sim.approvalOff)) delta[k] = this.sim.approvalOff[k] - (before[k] || 0);
         try { reactAgenda(this.sim, title, delta); } catch (e) { console.error(e); }
+        this.approvalNote(Object.entries(delta).filter(([, v]) => Math.abs(v) >= 0.5).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3), 'your decision');
         this.closeModal();
         this.refreshStatus();
         this.refreshWins();

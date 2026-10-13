@@ -209,7 +209,10 @@ function maybeSpawn(sim) {
   }
   if (winter && !open('snow') && r() < 0.012) {
     const n = storm(sim, 8 + Math.floor(r() * 8));
-    if (n) sim.news('Snowstorm buries the main streets', `${n} major streets need plowing. Overnight parking ban in effect.`);
+    if (n) {
+      sim.news('Snowstorm buries the main streets', `${n} major streets need plowing. Overnight parking ban in effect.`);
+      sim.moment && sim.moment('snow');
+    }
   }
   if (m >= 5 && m <= 8 && r() < 0.01) {
     let n = 0;
