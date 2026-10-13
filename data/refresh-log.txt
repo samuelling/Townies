@@ -1,0 +1,12 @@
+OK
+[2026-10-13T11:07:20.276Z] OPL work/watertown.opl: 10556 tagged nodes, 54426 ways, 233 relations -> 56105 elements kept
+[2026-10-13T11:07:21.061Z] MassGIS parcels: 10912 ids for TOWN_ID=314
+[2026-10-13T11:07:26.187Z] MassGIS parcels: 10912 records (TOWN_ID=314)
+[2026-10-13T11:07:40.511Z] MassGIS footprints: 9983 ids for TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y')
+[2026-10-13T11:07:44.322Z] MassGIS footprints: 9983 records (TOWN_ID=314 AND (ARCHIVED IS NULL OR ARCHIVED <> 'Y'))
+[2026-10-13T11:07:44.439Z] MassGIS footprints: 33387 OSM buildings checked, 267 missing buildings added
+[2026-10-13T11:07:44.561Z] Overture places: 6695 in file, 5101 added, 756 already in OSM, 838 closed/low-confidence skipped
+[2026-10-13T11:07:44.680Z] Kept 5754 nodes (4371 named places), 41248 ways (25938 buildings, 13742 streets/paths), 84 relations, 10912 parcels
+[2026-10-13T11:07:45.149Z] Wrote data/watertown.json.gz: 10.3 MB JSON, 2.17 MB gzipped. Sources: {"osm":"geofabrik","parcels":10912,"footprintsAdded":267,"places":5101}
+
+steps: geofabrik=success overture=success build=success
