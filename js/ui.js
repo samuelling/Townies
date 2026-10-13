@@ -283,7 +283,7 @@ export class UI {
           row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents` : ''),
           row('Jobs', lot.jobs >= 1 ? `~${Math.round(lot.jobs * lot.occ)}` : ''),
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
-          row('Businesses', lot.biz.length ? lot.biz.join(' · ') : '')
+          row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')})` : n; }).join(' · ') : '')
         );
         if (lot.built > 0 && lot.year >= CFG.START.y) t.append(row('Note', 'Built during your term'));
       } else head = 'Open land';
@@ -456,7 +456,7 @@ export class UI {
       body.append(
         el('p', {}, 'A city-building game set in the real Watertown, Massachusetts, inspired by SimCity 2000. Not affiliated with Maxis or EA.'),
         el('p', {}, `Every tile is ${CFG.TILE_M} m across, true to scale. Streets, buildings, rivers, parks and businesses come from OpenStreetMap; parcels, assessed values, year built and use come from the MassGIS statewide property tax parcels. Council agenda items are fictionalised riffs on recurring local storylines.`),
-        el('p', { class: 'fine' }, `Map data © OpenStreetMap contributors (ODbL). Parcels: MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts. ${w.stats ? `${fmtInt(w.stats.buildings)} buildings, ${fmtInt(w.stats.lots)} lots.` : ''} ${w.hasParcels ? '' : 'Parcel data was unavailable; values are estimated.'} Data downloaded ${w.fetched ? new Date(w.fetched).toLocaleDateString() : ''}.`),
+        el('p', { class: 'fine' }, `Map data © OpenStreetMap contributors (ODbL), via Geofabrik. Parcels and building footprints: MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts. Business listings: Overture Maps Foundation (CDLA-Permissive-2.0). ${w.sources && w.sources.footprintsAdded ? `${fmtInt(w.sources.footprintsAdded)} buildings filled in from MassGIS; ` : ''}${w.sources && w.sources.places ? `${fmtInt(w.sources.places)} businesses from Overture. ` : ''}${w.stats ? `${fmtInt(w.stats.buildings)} buildings, ${fmtInt(w.stats.lots)} lots.` : ''} ${w.hasParcels ? '' : 'Parcel data was unavailable; values are estimated.'} Data downloaded ${w.fetched ? new Date(w.fetched).toLocaleDateString() : ''}.`),
         el('p', { class: 'fine' }, 'Keys: Q query · H pan · B bulldoze · D road · 1/2/3 zone R/C/I · P park · , . rotate · + − zoom · space pause · arrows pan.')
       );
     });

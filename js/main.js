@@ -42,7 +42,7 @@ function titleScreen() {
     el('p', { class: 'tblurb' }, 'Four square miles, true to scale: every street, building and parcel, with real assessed values. You’re the new City Manager. The Council is watching. So is the comment section.'),
     btns,
     status,
-    el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels: MassGIS · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
+    el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels & footprints: MassGIS · Places: Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
   );
   t.append(card);
   const go = (mode) => () => start(mode, status, btns);

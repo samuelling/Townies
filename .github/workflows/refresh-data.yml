@@ -1,8 +1,10 @@
 name: Refresh Watertown map data
 
-# Downloads OpenStreetMap + MassGIS parcel data on GitHub's servers and commits a
-# trimmed snapshot (data/watertown.json.gz) that the game loads instead of hitting
-# the map servers from every player's browser.
+# Builds data/watertown.json.gz on GitHub's servers so players' browsers never have to
+# query the map servers themselves.
+#   - OpenStreetMap: Geofabrik's daily Massachusetts extract, cut down with osmium
+#   - MassGIS: tax parcels (values/use/style) + building footprints to fill OSM gaps
+#   - Overture Maps: business listings (places)
 on:
   workflow_dispatch:
   schedule:
@@ -19,23 +21,68 @@ permissions:
 
 concurrency:
   group: refresh-data
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Fetch and trim map data
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Work out the download box
+        run: |
+          BBOX=$(node -e "import('./js/config.js').then(m=>{const b=m.CFG.FETCH_BBOX;console.log([b.w,b.s,b.e,b.n].join(','))})")
+          echo "BBOX=$BBOX" >> "$GITHUB_ENV"
+          echo "Box: $BBOX"
+          mkdir -p work data
+
+      - name: OpenStreetMap via Geofabrik
+        id: osm
+        continue-on-error: true
+        timeout-minutes: 12
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osmium-tool
+          osmium --version | head -1
+          curl -fSL --retry 4 --retry-delay 15 --connect-timeout 30 -o work/ma.osm.pbf \
+            https://download.geofabrik.de/north-america/us/massachusetts-latest.osm.pbf
+          ls -lh work/ma.osm.pbf
+          osmium extract -b "$BBOX" -s smart -S types=multipolygon,boundary work/ma.osm.pbf -o work/area.osm.pbf --overwrite
+          osmium tags-filter work/area.osm.pbf \
+            nwr/building w/highway nwr/waterway nwr/natural nwr/landuse nwr/leisure nwr/amenity nw/shop \
+            n/office n/craft n/tourism n/healthcare r/boundary=administrative \
+            -o work/filtered.osm.pbf --overwrite
+          osmium add-locations-to-ways work/filtered.osm.pbf -f opl,add_metadata=false -o work/watertown.opl --overwrite
+          wc -l work/watertown.opl
+          rm -f work/ma.osm.pbf
+
+      - name: Businesses via Overture Maps
+        id: places
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          pip install --quiet overturemaps
+          overturemaps download --bbox="$BBOX" -f geojson --type=place -o work/places.geojson
+          ls -lh work/places.geojson
+
+      - name: Build snapshot (adds MassGIS parcels + footprints)
         id: fetch
-        run: node tools/fetch-data.mjs
+        run: node tools/fetch-data.mjs --opl work/watertown.opl --places work/places.geojson
+
       - name: Commit snapshot and run log
         if: always()
         run: |
+          {
+            echo ""
+            echo "steps: geofabrik=${{ steps.osm.outcome }} overture=${{ steps.places.outcome }} build=${{ steps.fetch.outcome }}"
+          } >> data/refresh-log.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/refresh-log.txt

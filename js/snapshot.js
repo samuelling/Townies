@@ -45,7 +45,7 @@ export const PARCEL_FIELDS = [
 const KEEP_TAGS = new Set([
   'name', 'building', 'building:levels', 'height', 'roof:levels', 'building:colour', 'roof:colour', 'roof:shape', 'building:material',
   'highway', 'area', 'tunnel', 'service', 'waterway', 'natural', 'water', 'landuse', 'leisure', 'parking',
-  'amenity', 'shop', 'office', 'craft', 'tourism', 'healthcare', 'boundary', 'admin_level', 'type',
+  'amenity', 'shop', 'office', 'craft', 'tourism', 'healthcare', 'boundary', 'admin_level', 'type', 'place_cat', 'src',
 ]);
 
 const Q = 1e6;
@@ -135,6 +135,7 @@ export function compactRaw(raw, crop = null) {
     v: 1,
     fetched: raw.fetched || new Date().toISOString(),
     parcelError: raw.parcelError || null,
+    sources: raw.sources || null,
     crop,
     nodes,
     ways,
@@ -155,5 +156,5 @@ export function expandSnapshot(s) {
     properties,
     geometry: { type: 'Polygon', coordinates: rings.map((r) => dec(r).map(([lat, lon]) => [lon, lat])) },
   }));
-  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, source: 'snapshot' };
+  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, source: 'snapshot' };
 }

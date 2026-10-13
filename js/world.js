@@ -288,7 +288,7 @@ export function buildWorld(raw, progress = () => {}) {
     if (['education', 'institutional', 'religious', 'military'].includes(t.landuse) || t.amenity === 'school') return ZONE.CIVIC;
     return 0;
   };
-  const poiKind = (t) => t.shop || t.amenity || t.office || t.craft || t.tourism || t.healthcare || '';
+  const poiKind = (t) => t.shop || t.amenity || t.office || t.craft || t.tourism || t.healthcare || t.place_cat || '';
 
   for (const e of els) {
     const t = e.tags || {};
@@ -572,7 +572,10 @@ export function buildWorld(raw, progress = () => {}) {
     for (let d = 1; li < 0 && d <= 1; d++)
       for (let dy = -d; dy <= d && li < 0; dy++)
         for (let dx = -d; dx <= d && li < 0; dx++) if (inB(x + dx, y + dy)) li = lotOf[(y + dy) * W + x + dx];
-    if (li >= 0 && p.name && lots[li].biz.length < 14 && !lots[li].biz.includes(p.name)) lots[li].biz.push(p.name);
+    if (li >= 0 && p.name && lots[li].biz.length < 14 && !lots[li].biz.includes(p.name)) {
+      lots[li].biz.push(p.name);
+      (lots[li].bizKind || (lots[li].bizKind = []))[lots[li].biz.length - 1] = p.kind || '';
+    }
     const st = SERVICE_AMEN[p.amen];
     if (st && inTown[y * W + x]) {
       if (!services.some((s) => s.type === st && Math.hypot(s.x - p.pt[0], s.y - p.pt[1]) < 8))
@@ -608,7 +611,7 @@ export function buildWorld(raw, progress = () => {}) {
     W, H, bbox, terrain, road, path, cover, zoneHint, inTown, lotOf, bAt, svcAt, tree, roadName, names,
     lots, bldgs, services, lvBase: new Float32Array(N),
     townFound: !!townRel, hasParcels: parcels.length > 0, parcelError: raw.parcelError || null,
-    fetched: raw.fetched, source: raw.source || 'live', demo: !!raw.demo,
+    fetched: raw.fetched, source: raw.source || 'live', demo: !!raw.demo, sources: raw.sources || null,
   };
 
   // ---- lot metrics, road access, land value field ----
