@@ -281,9 +281,10 @@ export const SCENARIOS = [
   },
   {
     id: 'blizzard',
-    when: (s) => (s.m === 0 || s.m === 1) && s.rand() < 0.35,
+    // a real big storm in last month's weather (js/weather.js)
+    when: (s) => { const w = (s.wxLog || [])[(s.wxLog || []).length - 1]; return !!w && w.maxSnow >= 12; },
     cooldown: 10,
-    title: 'Nineteen Inches',
+    title: (s) => { const w = s.wxLog[s.wxLog.length - 1]; return `${Math.round(w.maxSnow)} Inches`; },
     text: () =>
       'A nor’easter buried the city overnight. Public Works has been plowing for 40 hours straight and is now hauling snowbanks away by truck. Sidewalks are a mess, and the new sidewalk-shoveling rule is about to get its first real test.',
     run: (s) => { s.apply({ funds: s.flags.noParkingBan ? -2.4e6 : -1.2e6 }); s.storm(s.flags.noParkingBan ? 26 : 18); },

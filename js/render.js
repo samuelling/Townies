@@ -1,5 +1,6 @@
 // SimCity-2000-style isometric renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
+import { weatherFoot, WF_AVG } from './weather.js';
 import { ROUTES, routeLines } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
@@ -1203,15 +1204,95 @@ export class Renderer {
       carsDrawn = this.drawCars(ctx, s, offX, offY);
       if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
       carsDrawn = this.drawBuses(ctx, s, offX, offY) || carsDrawn;
+      if (this.lineIdx) carsDrawn = this.drawPeople(ctx, s, offX, offY, vis) || carsDrawn;
     }
     const spooky = this.drawHalloween(ctx, s, offX, offY, 'ground');
     for (const v of vis) blit(fetch(v, 'o'));
     if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
+    // snow on the ground: a light white wash while the snowpack lasts
+    if (this.sim && this.sim.wxc && this.sim.wxc.month && this.sim.wxc.month.pack >= 1) {
+      ctx.fillStyle = `rgba(245,248,255,${Math.min(0.16, 0.05 + this.sim.wxc.month.pack * 0.01)})`;
+      ctx.fillRect(0, 0, this.cw, this.ch);
+    }
     const skyAnim = this.drawSky(ctx, s, offX, offY) || this.drawMoments(ctx, s, offX, offY);
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // People on the sidewalks, as many as the street life there supports (the same field that drives vibrancy):
+  // a lively block of shops fills up, a strip of car lots stays empty however many cars go by. Cyclists ride
+  // where e-bikes have caught on. Fewer in bad weather.
+  drawPeople(ctx, s, offX, offY, vis) {
+    const w = this.world, sim = this.sim;
+    if (s < 1.2 || !sim.vibSat) return false;
+    const [vx0, vy0, vx1, vy1] = this.visibleRect();
+    if ((vx1 - vx0) * (vy1 - vy0) > 14000) return false;
+    const t = sim.paused ? this.frozenT2 || this.time : this.time;
+    const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
+    const wf = sim.wxc && sim.wxc.month ? clamp(weatherFoot(sim) / WF_AVG, 0.75, 1.15) : 1;
+    const bikes = Math.min(0.5, 0.06 + 0.5 * this.techA('ebike') + (sim.flags && sim.flags.bikeLane ? 0.1 : 0));
+    const shirts = ['#c0392b', '#2b5fb8', '#f1c40f', '#27ae60', '#8e44ad', '#ecf0f1', '#e67e22', '#34495e'];
+    const RW = [0, 0.55, 0.75, 0.95];
+    const step = 0.55;
+    const seen = new Set();
+    let drew = false;
+    for (const v of vis)
+      for (const li of this.lineIdx[v.cy * this.ncx + v.cx]) {
+        if (seen.has(li)) continue;
+        seen.add(li);
+        const ln = w.roadLines[li];
+        if (ln.cls > 2 && !/Street|Avenue|Road/.test(ln.name || '')) continue; // highways: nobody walks the Pike
+        const p = ln.pts;
+        let acc = 0;
+        for (let k = 0; k + 3 < p.length; k += 2) {
+          const ax = p[k], ay = p[k + 1], bx = p[k + 2], by = p[k + 3];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (len < 1e-4) continue;
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          if (mx < vx0 - 2 || mx > vx1 + 2 || my < vy0 - 2 || my > vy1 + 2) { acc += len; continue; }
+          const life = Math.max(0, sim.vibSat[sim.cellOf(mx, my)] || 0);
+          const dens = clamp((0.012 + 0.7 * life * life) * wf, 0, 0.7);
+          const ux = (bx - ax) / len, uy = (by - ay) / len, nx = -uy, ny = ux;
+          for (const side of [1, -1]) {
+            const off = (RW[ln.cls] * 0.5 + 0.12) * side;
+            const j0 = Math.ceil(acc / step), j1 = Math.floor((acc + len) / step);
+            for (let j = j0; j <= j1; j++) {
+              const h = hash2(li * 13 + j, side + 3, 7);
+              if (h > dens) continue;
+              const dir = hash2(li, j, side) < 0.5 ? 1 : -1;
+              const bike = hash2(li, j, side + 9) < bikes;
+              const sp = bike ? 0.0009 : 0.00018;
+              // each walker paces back and forth around their own spot on the block
+              const u = j * step - acc + Math.sin(t * sp * 6 + j) * step * 0.45 * dir;
+              if (u < 0 || u > len) continue;
+              const o = bike ? (RW[ln.cls] * 0.5 - 0.02) * side : off;
+              const x = ax + ux * u + nx * o, y = ay + uy * u + ny * o;
+              // walkers stay off the roadway (wide and divided roads have their other half there)
+              if (!bike) { const ti = Math.floor(y) * w.W + Math.floor(x); if (x < 0 || y < 0 || x >= w.W || y >= w.H || w.road[ti]) continue; }
+              const g = P(x, y, 0);
+              const col = shirts[Math.floor(hash2(li, j, side + 5) * shirts.length)];
+              if (bike) {
+                ctx.strokeStyle = '#222'; ctx.lineWidth = Math.max(0.8, 0.35 * s);
+                const q = P(x + ux * 0.07, y + uy * 0.07, 0), r2 = P(x - ux * 0.07, y - uy * 0.07, 0);
+                ctx.beginPath(); ctx.arc(q[0], q[1], 0.9 * s, 0, Math.PI * 2); ctx.arc(r2[0], r2[1], 0.9 * s, 0, Math.PI * 2); ctx.stroke();
+                ctx.fillStyle = col; ctx.fillRect(g[0] - 0.6 * s, g[1] - 3.2 * s, 1.2 * s, 2 * s);
+                ctx.fillStyle = '#e8c39e'; ctx.beginPath(); ctx.arc(g[0], g[1] - 3.8 * s, 0.6 * s, 0, Math.PI * 2); ctx.fill();
+              } else {
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(g[0] - 0.7 * s, g[1] - 0.2 * s, 1.4 * s, 0.5 * s);
+                ctx.fillStyle = '#333'; ctx.fillRect(g[0] - 0.5 * s, g[1] - 1.6 * s, 1 * s, 1.6 * s);
+                ctx.fillStyle = col; ctx.fillRect(g[0] - 0.6 * s, g[1] - 3.2 * s, 1.2 * s, 1.7 * s);
+                ctx.fillStyle = ['#e8c39e', '#c68e63', '#8d5a3b', '#f1d2b6'][Math.floor(h * 97) % 4];
+                ctx.beginPath(); ctx.arc(g[0], g[1] - 3.8 * s, 0.6 * s, 0, Math.PI * 2); ctx.fill();
+              }
+              drew = true;
+            }
+          }
+          acc += len;
+        }
+      }
+    return drew;
   }
 
   // MBTA buses on their real routes; more of them when service is better (js/transit.js)

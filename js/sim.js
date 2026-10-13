@@ -1,5 +1,6 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { weatherCapF, weatherMonthly } from './weather.js';
 import { initTransit, computeTransit, transitCarF } from './transit.js';
 import { eggMonthly } from './eggs.js';
 import { valeMonthly } from './rival.js';
@@ -29,10 +30,11 @@ const DEFAULT_LANES = [0, 2, 2, 4];
 export const GROWTH = { R: 1, C: 0.15, I: 0.3, size: 1.5, vacant: 0.06 };
 const sizeW = (lot) => (GROWTH.size ? clamp(Math.pow(lot.area / 1500, GROWTH.size), 0.03, 5) : 1);
 
-export const NEW_GROWTH_BASE = 0.014;
-// department costs per year; with benefits at 4.5%, the whole budget grows about 4% a year, as Watertown's did
-// (roughly ×2.8 from 2000 to FY2025's ~$204M)
-export const COST_GROWTH = 0.036;
+// Budget growth, calibrated by the 2000–2026 replay: newGrowth is the yearly new growth from renovations,
+// additions and business equipment (share of the levy); costGrowth is department costs per year. With benefits
+// at 4.5%, the whole budget grows about 4% a year, as Watertown's did (roughly ×2.8 to FY2025's ~$204M).
+// tools/uncertainty.mjs samples both.
+export const FISCAL = { newGrowth: 0.014, costGrowth: 0.036 };
 
 // street-class prior for uncounted streets; fitted by 5-fold hold-out on MassDOT counts (tools/validate.mjs)
 export const TRAFFIC_PRIOR = { beta: 0.2, smooth: 2000, decay: 0.99 };
@@ -248,7 +250,7 @@ export class Sim {
   }
   budgetLines() {
     const r = this.rates();
-    const infl = Math.pow(1 + COST_GROWTH, this.t / 12); // wages and contracts outpace general inflation
+    const infl = Math.pow(1 + FISCAL.costGrowth, this.t / 12); // wages and contracts outpace general inflation
     const scale = {
       schools: Math.pow(this.pop / this.base.pop0, 0.7),
       police: 1 + 0.15 * (this.policeN - this.base.police0),
@@ -321,7 +323,7 @@ export class Sim {
       this.base.capC1 = (percentile(v1, 0.8) || 10) / 0.55;
     }
     if (!(this.calF && this.V0) && this.w.aadt) this.calibrateTraffic(T);
-    const capMul = (0.82 + 0.18 * this.roadCond) * (1 + this.capBump);
+    const capMul = (0.82 + 0.18 * this.roadCond) * (1 + this.capBump) * weatherCapF(this);
     const jf = junctionFactors(this);
     let sum = 0, n = 0;
     if (!this.vpd || this.vpd.length !== this.N) this.vpd = new Float32Array(this.N);
@@ -838,6 +840,7 @@ export class Sim {
     meloraMonthly(this);
     valeMonthly(this);
     eggMonthly(this);
+    weatherMonthly(this);
     ambient(this);
     this.updateApproval();
     this.approvalWhy = this.approvalChange();
@@ -882,7 +885,7 @@ export class Sim {
     // new growth: taxes on what got built this year, plus renovations, additions and business equipment
     // (personal property), which the game doesn't model building by building. That second part is calibrated
     // so a replay of 2000–2026 grows the levy about as much as Watertown's really did (to ~$165M by FY2025).
-    const growth = this.newGrowth + this.levyLimit * NEW_GROWTH_BASE;
+    const growth = this.newGrowth + this.levyLimit * FISCAL.newGrowth;
     this.levyLimit = this.levyLimit * 1.025 + growth;
     this.newGrowth = 0;
     const r1 = this.rates();

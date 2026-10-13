@@ -78,6 +78,14 @@ export const CHAPTERS = [
     },
   },
   {
+    id: 'unsure', title: 'How sure is it?',
+    build: () => {
+      const box = el('div', {}, P('Loading the uncertainty runs…'));
+      fetch('data/uncertainty.json').then((r) => r.json()).then((u) => box.replaceChildren(...uncertaintyChapter(u))).catch(() => box.replaceChildren(P('The uncertainty runs aren’t available right now (data/uncertainty.json).')));
+      return [el('p', { class: 'lead' }, 'One run of a model is one guess. Here are many, with the parts nobody knows drawn from plausible ranges.'), box];
+    },
+  },
+  {
     id: 'tax', title: 'Taxes & Prop 2½',
     build: () => [
       P('The budget follows real Massachusetts municipal finance, which is unusual and very constraining.'),
@@ -235,6 +243,22 @@ export const CHAPTERS = [
     },
   },
   {
+    id: 'weather', title: 'Weather',
+    build: (g) => [
+      P('The weather is generated day by day from Boston’s real climate normals (Logan Airport, NOAA 1991–2020): average highs and lows, total precipitation and the number of wet days for each month. It’s the method hydrologists and crop models use: wet and dry days come in runs (a Markov chain matched to each month’s wet-day count), rain amounts are drawn to match monthly totals, temperatures wander around the normal with day-to-day persistence, and a wet day turns to snow when it’s cold enough.'),
+      P('Run over many years it lands close to the record: about 45 inches of snow a year against Boston’s 49, with winters from barely 15 inches to over 70. It reproduces the character of Watertown weather, not the weather of any actual day: a game started in 2000 won’t replay the real blizzards of 2015.'),
+      H('What it does in the game'),
+      LIST(
+        'A snowfall of 3 inches or more needs plowing; big storms make the news, and the first snow of each season gets a moment on the map.',
+        'Wet months and snow on the ground slow traffic a little; snow-narrowed streets more.',
+        'Pleasant months bring people out: storefronts see more foot traffic in May than in a slushy February.',
+        'Heat waves (three or more days over 90°F) make the news.'
+      ),
+      H('Climate change'),
+      P('Temperatures shift with a warming trend, one of the labeled assumptions (Model assumptions → Climate warming): by default 0.4°F a decade from the 1991–2020 normals, with options for none or twice that. Warming turns some snow into rain, adds hot days, and makes downpours a little heavier. Massachusetts has warmed about 3.5°F since 1900, faster in recent decades (NOAA).'),
+    ],
+  },
+  {
     id: 'inc', title: 'Crews & incidents',
     build: () => [
       P('Between monthly ticks, the town keeps happening in days: potholes, water main breaks, downed trees, unplowed streets after a storm, building fires and rat complaints.'),
@@ -364,6 +388,67 @@ function accuracyChapter(v) {
     ),
     el('p', { class: 'fine' }, `Run ${new Date(v.generated).toLocaleDateString()}, ${v.runs} seeds per mode. Census figures: 2000, 2010 and 2020 decennial counts. Price history: NeighborhoodScout repeat-sales appreciation for Watertown. Reproduce with node tools/validate.mjs.`),
   ];
+}
+
+// ---- "How sure is it?" ----
+const SVGNS = 'http://www.w3.org/2000/svg';
+const sv = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); for (const c of kids) n.append(c); return n; };
+const STRAT_COL = { handsoff: '#8a8f98', mainstreet: '#c0392b', build: '#2b6cb0' };
+function fanChart(u, key, title, fmt) {
+  const W = 300, H = 150, L = 44, R = 8, T = 18, Bm = 22;
+  const years = u.years, y0 = u.startY;
+  let lo = Infinity, hi = -Infinity;
+  for (const st of Object.values(u.strategies)) for (const [a, , c] of st.bands[key]) { lo = Math.min(lo, a); hi = Math.max(hi, c); }
+  if (hi - lo < 1e-6) hi = lo + 1;
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = (i) => L + ((W - L - R) * i) / years, Y = (v) => T + (H - T - Bm) * (1 - (v - lo) / (hi - lo));
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, class: 'fan', role: 'img', 'aria-label': title });
+  svg.append(sv('text', { x: L, y: 12, class: 'fan-t' }, title));
+  for (const f of [0, 0.5, 1]) {
+    const v = lo + (hi - lo) * f, y = Y(v);
+    svg.append(sv('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'fan-grid' }), sv('text', { x: L - 4, y: y + 3, class: 'fan-ax', 'text-anchor': 'end' }, fmt(v)));
+  }
+  for (const i of [0, years / 2, years]) svg.append(sv('text', { x: X(i), y: H - 6, class: 'fan-ax', 'text-anchor': 'middle' }, String(y0 + i)));
+  for (const [st, d] of Object.entries(u.strategies)) {
+    const b = d.bands[key];
+    const top = b.map((q, i) => `${X(i)},${Y(q[2])}`), bot = b.map((q, i) => `${X(i)},${Y(q[0])}`).reverse();
+    svg.append(sv('polygon', { points: top.concat(bot).join(' '), fill: STRAT_COL[st], 'fill-opacity': 0.14 }));
+    svg.append(sv('polyline', { points: b.map((q, i) => `${X(i)},${Y(q[1])}`).join(' '), fill: 'none', stroke: STRAT_COL[st], 'stroke-width': 2 }));
+  }
+  return svg;
+}
+function uncertaintyChapter(u) {
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  const R = u.ranges;
+  const name = { vib: 'Vibrancy', indies: 'independent shops', funds: 'reserves' };
+  const top = (k) => (u.drivers[k] || []).slice(0, 2).map(([p, c]) => `${R[p] ? R[p].label.toLowerCase() : p} (${c > 0 ? 'more → higher' : 'more → lower'})`).join(' and ');
+  return [
+    P(`Each of ${u.draws} runs draws its own values for the knobs below, then plays ${u.years} years from ${u.startY} under three simple strategies, reusing the same draws for each strategy so they're compared fairly. Bands show the middle 80% of outcomes (10th to 90th percentile); lines are medians. No Council agenda, no Melora, no Vale: just the model's slow forces.`),
+    el('div', { class: 'fanlegend' }, ...Object.entries(u.strategies).map(([k, d]) => el('span', {}, el('i', { style: `background:${STRAT_COL[k]}` }), d.label))),
+    el('div', { class: 'fans' },
+      fanChart(u, 'vib', 'Vibrancy', (v) => v.toFixed(0)),
+      fanChart(u, 'indies', 'Independent shops', (v) => fmtInt(v)),
+      fanChart(u, 'funds', 'City reserves ($M)', (v) => v.toFixed(0)),
+      fanChart(u, 'approval', 'Approval (%)', (v) => v.toFixed(0))),
+    H('Which choices hold up?'),
+    LIST(
+      `Main Street policies end with more independent shops than doing nothing in ${pct(u.pairs['mainstreet:indies'])} of draws, higher vibrancy in ${pct(u.pairs['mainstreet:vib'])}, and more money in the bank in ${pct(u.pairs['mainstreet:funds'])}.`,
+      `Rebuilding auto lots ends with higher vibrancy than doing nothing in ${pct(u.pairs['build:vib'])} of draws, more homes in ${pct(u.pairs['build:homes'])}, and more money in the bank in ${pct(u.pairs['build:funds'])}.`
+    ),
+    P('A choice that wins in nearly every draw is robust: it holds up even if the model is wrong in any of these ways. One that wins about half the time depends on things nobody knows yet.'),
+    H('What the spread depends on'),
+    LIST(...['vib', 'indies', 'funds'].map((k) => `${name[k][0].toUpperCase() + name[k].slice(1)} (hands off) depends most on ${top(k)}.`)),
+    H('The ranges'),
+    TABLE(['Uncertain knob', 'Low', 'High'], Object.values(R).map((d) => ({ cells: [d.label, rangeFmt(d, d.lo), rangeFmt(d, d.hi)] }))),
+    el('p', { class: 'fine' }, `Run ${new Date(u.generated).toLocaleDateString()}. Reproduce with node tools/uncertainty.mjs. Ranges are judgment calls around the calibrated values, wide on purpose.`),
+  ];
+}
+function rangeFmt(d, v) {
+  if (/growth after|cost growth/i.test(d.label)) return `${(v * 100).toFixed(1)}%/yr`;
+  if (/renovations/i.test(d.label)) return `${(v * 100).toFixed(1)}% of levy`;
+  if (/closures/i.test(d.label)) return `${(v * 1200).toFixed(1)}%/yr`;
+  if (/homebuilding/i.test(d.label)) return `×${v.toFixed(2)}`;
+  return `${Math.round(v * 100)}%`;
 }
 
 export function behindScenes(ui, start = 'why') {

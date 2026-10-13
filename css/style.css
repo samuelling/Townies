@@ -359,3 +359,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .apprchip .up, .fwhy .up { color: #1c7a2e; } .apprchip .down, .fwhy .down { color: #b3261e; }
 .apprchip small { color: #444; }
 .fwhy { font-size: 11px; margin: -2px 0 6px 2px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+
+/* uncertainty fan charts */
+.fans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin: 6px 0; }
+.fan { width: 100%; height: auto; background: #fbf8ef; border: 1px solid #999; }
+.fan-t { font: 600 11px sans-serif; fill: #222; }
+.fan-ax { font: 9px sans-serif; fill: #555; }
+.fan-grid { stroke: #ddd; stroke-width: 1; }
+.fanlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.fanlegend i { display: inline-block; width: 14px; height: 4px; margin-right: 5px; vertical-align: middle; }

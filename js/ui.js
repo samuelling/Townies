@@ -1,5 +1,6 @@
 // SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
+import { monthWeather, WX_ICON, NORMALS } from './weather.js';
 import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
@@ -129,7 +130,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -309,7 +310,9 @@ export class UI {
   refreshStatus() {
     const s = this.sim;
     if (!s) return;
-    this.sDate.textContent = s.dateStr();
+    const wx = monthWeather(s);
+    this.sDate.textContent = `${s.dateStr()} ${WX_ICON(wx)} ${wx.hi}°`;
+    this.sDate.title = `This month: highs around ${wx.hi}°F, lows ${wx.lo}°F, ${wx.precip.toFixed(1)}" of rain and melted snow${wx.snow >= 0.5 ? `, ${Math.round(wx.snow)}" of snow` : ''}. Windows → Weather for more.`;
     this.sFunds.textContent = fmtMoney(s.funds);
     this.sFunds.classList.toggle('neg', s.funds < 0);
     this.sPop.textContent = `Pop ${fmtInt(s.pop)}`;
@@ -865,6 +868,21 @@ export class UI {
           el('button', { class: 'choice', onclick: () => this.g.restart() }, el('b', {}, 'Start a new term')))));
     }
     this.showModal(box);
+  }
+
+  weatherWindow() {
+    this.win('weather', 'Weather', (body) => {
+      const s = this.sim, M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const w = monthWeather(s);
+      body.append(el('p', {}, el('b', {}, `${M[w.m]} ${w.y}: `), `highs around ${w.hi}°F, lows ${w.lo}°F (normal ${Math.round(NORMALS.hi[w.m])}° / ${Math.round(NORMALS.lo[w.m])}°), ${w.precip.toFixed(1)}" of precipitation on ${w.wetDays} days${w.snow >= 0.5 ? `, ${Math.round(w.snow)}" of snow` : ''}${w.hotDays ? `, ${w.hotDays} days over 90°` : ''}.`));
+      const log = (s.wxLog || []).slice(-12).reverse();
+      if (log.length) {
+        const t = el('table', { class: 'peers' }, el('tr', {}, el('th', {}, 'Month'), el('th', {}, 'High'), el('th', {}, 'Normal'), el('th', {}, 'Precip'), el('th', {}, 'Snow')));
+        for (const x of log) t.append(el('tr', {}, el('td', {}, `${M[x.m]} ${x.y}`), el('td', {}, `${x.hi}°`), el('td', {}, `${Math.round(NORMALS.hi[x.m])}°`), el('td', {}, `${x.precip.toFixed(1)}"`), el('td', {}, x.snow >= 0.5 ? `${Math.round(x.snow)}"` : '–')));
+        body.append(t);
+      }
+      body.append(el('p', { class: 'fine' }, `Generated day by day from Boston's 1991–2020 climate normals${A(s, 'warming') ? `, warming ${A(s, 'warming')}°F a decade (see Model assumptions)` : ''}. Snow means plowing; wet and snowy months slow traffic; pleasant months bring people out to the shops.`));
+    });
   }
 
   busesWindow() {

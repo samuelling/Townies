@@ -2,6 +2,7 @@
 // Everything is relative to the starting city (index 1.0 = rents and foot traffic in the starting year), so the
 // real data sets the starting point and the dynamics come from what changes after you take office.
 import { ZONE } from './config.js';
+import { weatherFoot, WF_AVG } from './weather.js';
 import { bizCategory, classifyLot, isSignature } from './vibrancy.js';
 import { clamp, hash2 } from './util.js';
 import { techFootfall, techRetailF } from './tech.js';
@@ -191,6 +192,7 @@ export function storefrontsMonthly(sim) {
   sim.hype = buzzOn ? clamp((sim.hype || 0) + (sim.y < 2013 ? 0.0012 : 0.0042) + 0.0009 * (sim.vibrancy - sim.base.vib0), 0, 0.8) : 0;
   const hype = (sim.hype + devBuzz) * buzzOn;
   let popups = 0, reliefN = 0, vacantOld = 0;
+  const wf = weatherFoot(sim) / WF_AVG; // seasons: busier in good weather, quieter in a cold wet month
   for (const lot of w.lots) {
     if (lot.dead || !lot.inTown || !lot.storefronts || lot.under) continue;
     const c = sim.cellOf(lot.cx, lot.cy);
@@ -198,7 +200,7 @@ export function storefrontsMonthly(sim) {
       lot.ff0 = footfall(sim, c) || 1;
       lot.vib0 = sim.vibSat ? sim.vibSat[c] : 0;
     }
-    const ff = footfall(sim, c) / (lot.ff0 || 1);
+    const ff = (footfall(sim, c) / (lot.ff0 || 1)) * wf;
     const vibD = (sim.vibSat ? sim.vibSat[c] : 0) - (lot.vib0 || 0);
     const lvRise = Math.max(0, sim.lvMod[c] - 1);
     // landlords' asking rent: follows buzz up quickly, comes down slowly (and slower still when empty)

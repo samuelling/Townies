@@ -3,6 +3,7 @@
 // crew, or let auto-dispatch handle a department (slower: paperwork first). Unhandled problems cost
 // approval every day past their grace period; fires burn buildings down.
 import { ZONE, SERVICES } from './config.js';
+import { weatherDay } from './weather.js';
 import { clamp } from './util.js';
 import { demolish, computeLotMetrics } from './world.js';
 import { react } from './comments.js';
@@ -207,13 +208,13 @@ function maybeSpawn(sim) {
       if (it && r() < 0.5) sim.news(`Water main break on ${it.street || 'a side street'}`, 'Water service is off for a few blocks. Public Works says crews are "aware."');
     }
   }
-  if (winter && !open('snow') && r() < 0.012) {
-    const n = storm(sim, 8 + Math.floor(r() * 8));
-    if (n) {
-      sim.news('Snowstorm buries the main streets', `${n} major streets need plowing. Overnight parking ban in effect.`);
-      sim.moment && sim.moment('snow');
-    }
+  // snowstorms come from the weather (js/weather.js): a real storm of 3+ inches needs plowing
+  const wd = weatherDay(sim, I.day - sim.t * 30);
+  if (wd && wd.snow >= 3 && !open('snow')) {
+    const n = storm(sim, Math.min(20, 4 + Math.round(wd.snow * 1.2)));
+    if (n) sim.news(`${Math.round(wd.snow)} inches of snow`, `${n} major streets need plowing. Overnight parking ban in effect.`);
   }
+  void winter;
   if (m >= 5 && m <= 8 && r() < 0.01) {
     let n = 0;
     for (let k = 0; k < 6; k++) {

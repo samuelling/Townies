@@ -59,6 +59,15 @@ export const MARKET_ASSUMPTIONS = {
   },
 };
 
+MARKET_ASSUMPTIONS.warming = {
+  label: 'Climate warming',
+  evidence: 'data',
+  def: 0.4,
+  options: [{ v: 0, label: 'None', small: 'today’s climate' }, { v: 0.4, label: 'Recent pace', small: '+0.4°F/decade' }, { v: 0.8, label: 'Faster', small: '+0.8°F/decade' }],
+  fmt: (v) => (v ? `Temperatures rise ${v}°F a decade from the 1991–2020 normals: less snow, more rain, more hot days` : 'The weather keeps today’s climate'),
+  why: 'Massachusetts has warmed about 3.5°F since 1900, faster in recent decades (NOAA State Climate Summary). How fast from here depends on emissions.',
+};
+
 export const PRESETS = { thesis: 'Thesis', neutral: 'Neutral' };
 
 export function initAssumptions(sim, preset = 'thesis') {
