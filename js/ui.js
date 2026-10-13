@@ -3,6 +3,7 @@ import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
+import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 
 const ICON = {
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
@@ -100,7 +101,7 @@ export class UI {
       return m;
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)], ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -151,7 +152,10 @@ export class UI {
     this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for Main Street.', onclick: () => this.mainStreetWindow() });
     this.sAppr = el('button', { class: 'sappr', onclick: () => this.councilWindow() });
     this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Commercial, Industrial' });
-    this.ticker = el('button', { class: 'ticker', onclick: () => this.newsWindow() });
+    this.ticker = el('button', { class: 'ticker', onclick: () => (this.tickerMode === 'c' ? this.commentsWindow() : this.newsWindow()) });
+    this.tickerFlip = 0;
+    clearInterval(this.tickerTimer);
+    this.tickerTimer = setInterval(() => this.rotateTicker(), 7000);
     sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
     this.setTool('query');
@@ -276,7 +280,7 @@ export class UI {
       g.fillText(k, 7 + j * 17, v > 0 ? 38 : 8);
     });
     const n = s.newsLog[0];
-    if (n) this.ticker.textContent = `📰 ${n.title}`;
+    if (n && this.tickerMode !== 'c') this.ticker.textContent = `📰 ${n.title}`;
   }
 
   toast(msg) {
@@ -378,6 +382,7 @@ export class UI {
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
+          row('A neighbor says', s.trafC ? el('i', { class: 'quote' }, `“${neighborQuote(s, lot, c)}”`) : ''),
           row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
           row('Pollution', bar(s.pollC[c] / (s.base.pollN * 1.3))),
@@ -472,7 +477,8 @@ export class UI {
         cb.checked = !!s.policies[k];
         cb.addEventListener('change', () => {
           s.policies[k] = cb.checked;
-          s.news(cb.checked ? `Council adopts ${p.label.toLowerCase()}` : `Council repeals ${p.label.toLowerCase()}`, '');
+          const item = s.news(cb.checked ? `Council adopts ${p.label.toLowerCase()}` : `Council repeals ${p.label.toLowerCase()}`, '');
+          react(s, cb.checked ? 'policy-on:' + k : 'policy-off', {}, item);
           s.updateApproval();
           this.refreshStatus();
           this.g.music.sfx('zone');
@@ -484,6 +490,47 @@ export class UI {
       for (const l of (s.sfLog || []).slice(0, 12)) log.append(el('div', { class: `sfl ${l.type}` }, el('small', {}, l.date), ' ', l.text));
       if (!(s.sfLog || []).length) log.append(el('p', { class: 'fine' }, 'Nothing yet. Leases turn over every few years.'));
       body.append(log);
+    }, { cls: 'wide' });
+  }
+
+  rotateTicker() {
+    const s = this.sim;
+    if (!s || !this.ticker) return;
+    this.tickerFlip++;
+    const c = (s.comments || []).filter((x) => x.who !== 'editor' && s.t - x.t < 4);
+    if (this.tickerFlip % 2 === 1 && c.length) {
+      const x = c[(this.tickerFlip >> 1) % Math.min(3, c.length)];
+      this.tickerMode = 'c';
+      this.ticker.textContent = `💬 ${CAST[x.who] ? CAST[x.who].name : x.who}: ${x.text}`;
+    } else {
+      this.tickerMode = 'n';
+      const n = s.newsLog[0];
+      if (n) this.ticker.textContent = `📰 ${n.title}`;
+    }
+  }
+  avatar(who) {
+    const c = CAST[who];
+    const a = el('span', { class: 'avatar', style: `background:${c ? c.color : '#222'}` }, c ? c.name.replace(/[^A-Z]/g, '').slice(0, 2) : 'Ed');
+    return a;
+  }
+  commentBlock(list) {
+    if (!list || !list.length) return '';
+    const box = el('div', { class: 'cblock' });
+    for (const c of list.slice(0, 4)) box.append(el('div', { class: `cmt${c.who === 'editor' ? ' ed' : ''}` }, this.avatar(c.who), el('span', {}, el('b', {}, c.who === 'editor' ? 'Editor' : CAST[c.who] ? CAST[c.who].name : c.who), ' ', c.text)));
+    return box;
+  }
+  commentsWindow() {
+    this.win('comments', 'Comment Section', (body) => {
+      const s = this.sim;
+      body.append(el('p', { class: 'fine' }, 'The regulars. Fictional, but you have met them. Comments react to what you do; tap a block with Query to hear from a neighbor.'));
+      const list = el('div', { class: 'cfeed' });
+      for (const c of (s.comments || []).slice(0, 40)) {
+        list.append(el('div', { class: `cmt${c.who === 'editor' ? ' ed' : ''}` }, this.avatar(c.who),
+          el('span', {}, el('b', {}, c.who === 'editor' ? 'Editor' : CAST[c.who] ? CAST[c.who].name : c.who), el('small', {}, ` ${c.date}${c.re ? ' · re: ' + c.re : ''}`), el('br'), c.text)));
+      }
+      if (!(s.comments || []).length) list.append(el('p', { class: 'fine' }, 'Quiet for now. Give it a month.'));
+      body.append(list, el('h4', {}, 'The regulars'));
+      for (const [k, c] of Object.entries(CAST)) body.append(el('div', { class: 'cmt' }, this.avatar(k), el('span', {}, el('b', {}, c.name), ' — ', c.bio)));
     }, { cls: 'wide' });
   }
 
@@ -571,11 +618,11 @@ export class UI {
       const s = this.sim;
       const top = s.newsLog.find((n) => n.size === 'big') || s.newsLog[0];
       body.append(el('div', { class: 'mast' }, `The ${this.w.demo ? 'Demoville' : 'Watertown'} Townie`), el('div', { class: 'dateline' }, `${s.dateStr()} · Price: one civic grievance`));
-      if (top) body.append(el('h2', { class: 'headline' }, top.title), top.body ? el('p', {}, top.body) : null);
+      if (top) body.append(el('h2', { class: 'headline' }, top.title), top.body ? el('p', {}, top.body) : null, this.commentBlock(top.comments));
       const list = el('div', { class: 'stories' });
       for (const n of s.newsLog.slice(0, 18)) {
         if (n === top) continue;
-        list.append(el('div', { class: 'story' }, el('small', {}, n.date), el('b', {}, n.title), n.body ? el('p', {}, n.body) : null));
+        list.append(el('div', { class: 'story' }, el('small', {}, n.date), el('b', {}, n.title), n.body ? el('p', {}, n.body) : null, this.commentBlock(n.comments)));
       }
       body.append(list);
     }, { cls: 'paper' });
@@ -608,7 +655,11 @@ export class UI {
     const choices = el('div', { class: 'choices' });
     for (const ch of sc.choices) {
       choices.append(el('button', { class: 'choice', onclick: () => {
+        const before = { ...this.sim.approvalOff };
         try { ch.run(this.sim, ctx); } catch (e) { console.error(e); }
+        const delta = {};
+        for (const k of Object.keys(this.sim.approvalOff)) delta[k] = this.sim.approvalOff[k] - (before[k] || 0);
+        try { reactAgenda(this.sim, sc.title, delta); } catch (e) { console.error(e); }
         this.closeModal();
         this.refreshStatus();
         this.refreshWins();

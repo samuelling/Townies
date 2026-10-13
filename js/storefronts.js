@@ -75,6 +75,8 @@ export function initStorefronts(sim) {
       lot.greed = g < 0.27 ? 1.22 + 0.3 * hash2(lot.id, 92, 7) : 1 + 0.08 * g;
     }
     lot.sf = [];
+    // only commercial and mixed-use parcels have storefronts (home businesses on house lots don't)
+    if (!(lot.zone === ZONE.C || lot.mixed)) continue;
     (lot.biz || []).forEach((name, k) => {
       const cat = lot.bizCat[k];
       if (!STOREFRONT.has(cat)) return;

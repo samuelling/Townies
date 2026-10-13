@@ -4,6 +4,7 @@ import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
 import { frontage, classifyLot } from './vibrancy.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
+import { react, ambient } from './comments.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -386,7 +387,7 @@ export class Sim {
         if (s.orig && this.rand() < 0.3) { title = `${s.n} closing as owner retires`; body = 'No one wanted to take it over at the new rent.'; }
       } else if (e.type === 'open-indie') {
         line = `${s.n} opened on ${st(e.lot)}${s.sig ? ' ★' : ''}`;
-        if (s.sig) { title = `${s.n} opens on ${st(e.lot)}`; body = pick(OPEN_BODIES, this.rand()); }
+        if (s.sig) { title = `${s.n} opens on ${st(e.lot)}`; body = pick(s.cat === 'food' ? OPEN_BODIES : OPEN_BODIES.slice(0, 2), this.rand()); }
       } else if (e.type === 'open-chain') {
         line = `${s.n} (chain) signed a lease on ${st(e.lot)}`;
         if (this.rand() < 0.5) { title = `${s.n} signs a ten-year lease on ${st(e.lot)}`; body = pick(CHAIN_BODIES, this.rand()); }
@@ -396,10 +397,14 @@ export class Sim {
         body = 'The owner is asking well above what the last tenant paid. A sign in the window promises "Coming soon."';
       } else if (e.type === 'popup') line = `Pop-up gallery moved into an empty storefront on ${st(e.lot)}`;
       if (line) this.sfLog.unshift({ date: this.dateStr(), t: this.t, text: line, type: e.type });
+      let item = null;
       if (title && posted < 2) {
-        this.news(title, body);
+        item = this.news(title, body);
         posted++;
       }
+      const ctx = { name: s ? s.n : '', street: st(e.lot), cat: s ? s.cat : '' };
+      const rt = e.type === 'close-rent' ? 'close-indie' : e.type === 'close-retire' ? 'close-retire' : e.type;
+      if (item || this.rand() < 0.15) react(this, rt, ctx, item);
     }
     if (this.sfLog.length > 40) this.sfLog.length = 40;
   }
@@ -527,6 +532,7 @@ export class Sim {
     this.computeAll();
     this.updateDemand();
     this.storefrontNews(storefrontsMonthly(this));
+    ambient(this);
     this.updateApproval();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;
     for (const k of Object.keys(this.demandMod)) this.demandMod[k] *= 0.99;
@@ -569,6 +575,8 @@ export class Sim {
     this.levyLimit = this.levyLimit * 1.025 + growth;
     this.newGrowth = 0;
     const r1 = this.rates();
+    if (r1.rateR > r0.rateR * 1.025) react(this, 'taxes-up', {}, null, 2);
+    else if (r1.rateR < r0.rateR * 0.98) react(this, 'taxes-down', {}, null, 1);
     this.news(
       `${this.y}: New Year, New Assessments`,
       `Assessors finished the annual revaluation. Under Prop 2½ the levy limit grew 2.5% plus ${(growth / 1e6).toFixed(1)}M in new growth, to ${(this.levyLimit / 1e6).toFixed(1)}M. Residential rate ${r1.rateR.toFixed(2)} (was ${r0.rateR.toFixed(2)}), commercial ${r1.rateC.toFixed(2)} per $1,000.`,
@@ -622,7 +630,8 @@ export class Sim {
         this.devCount = (this.devCount || 0) + 1;
         if (target2 >= 3 && this.rand() < 0.5) {
           const what = key === 'R' ? `${lot.units}-unit apartment building` : key === 'C' ? `${Math.round(lot.bldArea / 92.9) * 1000 > 0 ? Math.round(lot.bldArea * 10.76).toLocaleString() + '-square-foot ' : ''}commercial building` : 'lab building';
-          this.news(`New ${what} rises`, `Construction wraps up ${streetOf(lot) ? 'on ' + streetOf(lot) : 'in town'}. ${pick(DEV_QUIPS, this.rand())}`);
+          const item = this.news(`New ${what} rises`, `Construction wraps up ${streetOf(lot) ? 'on ' + streetOf(lot) : 'in town'}. ${pick(DEV_QUIPS, this.rand())}`);
+          if (this.rand() < 0.6) react(this, 'new-building', { street: streetOf(lot) || 'that street' }, item);
         }
       }
     }
@@ -757,6 +766,7 @@ export class Sim {
     this.newsLog.unshift(item);
     if (this.newsLog.length > 80) this.newsLog.pop();
     this.hooks.news && this.hooks.news(item);
+    return item;
   }
 
   // ---------------- scenario effects ----------------
@@ -1050,7 +1060,8 @@ export class Sim {
         w.tree[i] = 0;
         touched.push(i);
       }
-      this.news(`City opens ${SERVICES[p.tool].label.toLowerCase()}`, 'A ribbon was cut. A councilor gave a speech that ran long.');
+      const item = this.news(`City opens ${SERVICES[p.tool].label.toLowerCase()}`, 'A ribbon was cut. A councilor gave a speech that ran long.');
+      react(this, 'service-built', { what: SERVICES[p.tool].label.toLowerCase() }, item);
     }
     this.funds -= p.cost;
     this.recalc();
@@ -1172,7 +1183,10 @@ export class Sim {
 
 export function streetOf(lot) {
   if (lot.addr) {
-    const s = lot.addr.replace(/^[0-9\-A-Za-z]*[0-9][0-9\-A-Za-z]*\s+/, '').trim();
+    const s = lot.addr
+      .replace(/^[0-9\-A-Za-z]*[0-9][0-9\-A-Za-z]*\s+/, '')
+      .replace(/\s+(#|Unit\s*|Apt\s*|Ste\s*)?[0-9][0-9A-Za-z\-]*$/i, '')
+      .trim();
     if (s) return s;
   }
   return '';
