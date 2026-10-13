@@ -14,6 +14,8 @@ on:
     paths:
       - 'tools/fetch-data.mjs'
       - 'js/snapshot.js'
+      - 'js/walkscore.js'
+      - 'js/peers.js'
       - '.github/workflows/refresh-data.yml'
 
 permissions:
@@ -39,8 +41,10 @@ jobs:
       - name: Work out the download box
         run: |
           BBOX=$(node -e "import('./js/config.js').then(m=>{const b=m.CFG.FETCH_BBOX;console.log([b.w,b.s,b.e,b.n].join(','))})")
+          RBOX=$(node -e "import('./js/peers.js').then(m=>{const b=m.PEER_BBOX;console.log([b.w,b.s,b.e,b.n].join(','))})")
           echo "BBOX=$BBOX" >> "$GITHUB_ENV"
-          echo "Box: $BBOX"
+          echo "RBOX=$RBOX" >> "$GITHUB_ENV"
+          echo "Box: $BBOX  Region: $RBOX"
           mkdir -p work data
 
       - name: OpenStreetMap via Geofabrik
@@ -61,7 +65,13 @@ jobs:
             -o work/filtered.osm.pbf --overwrite
           osmium add-locations-to-ways work/filtered.osm.pbf -f opl,add_metadata=false -o work/watertown.opl --overwrite
           wc -l work/watertown.opl
-          rm -f work/ma.osm.pbf
+          # wider region for peer-town benchmarks (Davis Sq, Coolidge Corner, Moody St, …)
+          osmium extract -b "$RBOX" -s smart -S types=multipolygon work/ma.osm.pbf -o work/region.osm.pbf --overwrite
+          osmium tags-filter work/region.osm.pbf w/highway nwr/leisure nwr/amenity nw/shop n/office n/craft n/tourism n/healthcare nwr/landuse=recreation_ground \
+            -o work/region-f.osm.pbf --overwrite
+          osmium add-locations-to-ways work/region-f.osm.pbf -f opl,add_metadata=false -o work/region.opl --overwrite
+          wc -l work/region.opl
+          rm -f work/ma.osm.pbf work/region.osm.pbf
 
       - name: Businesses via Overture Maps
         id: places
@@ -70,11 +80,12 @@ jobs:
         run: |
           pip install --quiet overturemaps
           overturemaps download --bbox="$BBOX" -f geojson --type=place -o work/places.geojson
-          ls -lh work/places.geojson
+          overturemaps download --bbox="$RBOX" -f geojson --type=place -o work/region-places.geojson
+          ls -lh work/places.geojson work/region-places.geojson
 
       - name: Build snapshot (adds MassGIS parcels + footprints)
         id: fetch
-        run: node tools/fetch-data.mjs --opl work/watertown.opl --places work/places.geojson
+        run: node tools/fetch-data.mjs --opl work/watertown.opl --places work/places.geojson --region-opl work/region.opl --region-places work/region-places.geojson
 
       - name: Commit snapshot and run log
         if: always()
@@ -86,7 +97,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/refresh-log.txt
-          if [ "${{ steps.fetch.outcome }}" = "success" ]; then git add data/watertown.json.gz; fi
+          if [ "${{ steps.fetch.outcome }}" = "success" ]; then git add data/watertown.json.gz; if [ -f data/peers.json ]; then git add data/peers.json; fi; fi
           if git diff --cached --quiet; then echo "Nothing to commit"; exit 0; fi
           git commit -m "Refresh Watertown map data (${{ steps.fetch.outcome }})"
           git pull --rebase origin main

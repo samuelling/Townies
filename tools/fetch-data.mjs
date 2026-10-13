@@ -12,6 +12,9 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CFG } from '../js/config.js';
 import { overpassQuery, PARCEL_FIELDS, compactRaw, townCrop, SNAPSHOT_PATH } from '../js/snapshot.js';
+import { walkScore, walkCat, walkLabel } from '../js/walkscore.js';
+import { bizCategory, isChain, isSignature } from '../js/vibrancy.js';
+import { PEER_CENTERS, MIX_RADIUS_M } from '../js/peers.js';
 
 const args = process.argv.slice(2);
 const arg = (k) => (args.includes(k) ? args[args.indexOf(k) + 1] : null);
@@ -19,6 +22,8 @@ const DEMO = args.includes('--demo');
 const OUT = arg('--out') || SNAPSHOT_PATH;
 const OPL = arg('--opl');
 const PLACES = arg('--places');
+const REGION_OPL = arg('--region-opl');
+const REGION_PLACES = arg('--region-places');
 const NO_MASSGIS = args.includes('--no-massgis');
 const LOG = dirname(OUT) + '/refresh-log.txt';
 const UA = 'Townies/1.0 (city sim; https://github.com/samuelling/Townies)';
@@ -60,9 +65,12 @@ function parseTags(f) {
   }
   return t;
 }
-function parseOPL(file) {
+// street classes that count toward intersection density (not sidewalks, driveways or highways)
+const STREET = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'living_street', 'pedestrian', 'primary_link', 'secondary_link', 'tertiary_link', 'trunk']);
+function parseOPL(file, opts = {}) {
   const text = readFileSync(file, 'utf8');
   const nodes = [], ways = new Map(), rels = [];
+  const degree = new Map(), nodeLoc = new Map();
   for (const line of text.split('\n')) {
     if (!line) continue;
     const kind = line[0];
@@ -81,11 +89,20 @@ function parseOPL(file) {
       if (x != null && y != null && Object.keys(tags).length) nodes.push({ id, lat: y, lon: x, tags });
     } else if (kind === 'w') {
       const geometry = [];
-      if (N)
-        for (const ref of N.split(',')) {
-          const m = /^n-?\d+x(-?[\d.]+)y(-?[\d.]+)$/.exec(ref);
-          if (m) geometry.push({ lat: +m[2], lon: +m[1] });
-        }
+      const street = STREET.has(tags.highway) && tags.area !== 'yes';
+      if (N) {
+        const refs = N.split(',');
+        refs.forEach((ref, k) => {
+          const m = /^n(-?\d+)x(-?[\d.]+)y(-?[\d.]+)$/.exec(ref);
+          if (!m) return;
+          geometry.push({ lat: +m[3], lon: +m[2] });
+          if (street) {
+            const end = k === 0 || k === refs.length - 1;
+            degree.set(m[1], (degree.get(m[1]) || 0) + (end ? 1 : 2));
+            nodeLoc.set(m[1], [+m[3], +m[2]]);
+          }
+        });
+      }
       ways.set(id, { tags, geometry });
     } else if (kind === 'r') {
       const members = [];
@@ -110,7 +127,10 @@ function parseOPL(file) {
     }
     if (members.length) out.push({ type: 'relation', tags: r.tags, members });
   }
-  log(`OPL ${file}: ${nodes.length} tagged nodes, ${ways.size} ways, ${rels.length} relations -> ${out.length} elements kept`);
+  const junctions = [];
+  for (const [nid, d] of degree) if (d >= 3) junctions.push(nodeLoc.get(nid));
+  out.junctions = junctions;
+  log(`OPL ${file}: ${nodes.length} tagged nodes, ${ways.size} ways, ${rels.length} relations -> ${out.length} elements kept, ${junctions.length} street intersections`);
   return out;
 }
 
@@ -363,6 +383,103 @@ function mergePlaces(osm, file) {
   return kept;
 }
 
+// ---------------------------------------------------------------- peer benchmarks
+const R_EARTH = 6371000;
+function meters(lat1, lon1, lat2, lon2) {
+  const x = ((lon2 - lon1) * Math.PI) / 180 * Math.cos((((lat1 + lat2) / 2) * Math.PI) / 180);
+  const y = ((lat2 - lat1) * Math.PI) / 180;
+  return Math.hypot(x, y) * R_EARTH;
+}
+function poisFrom(osm, placesFile) {
+  const pois = [];
+  const parks = [];
+  for (const e of osm) {
+    const t = e.tags || {};
+    let lat, lon;
+    if (e.type === 'node') [lat, lon] = [e.lat, e.lon];
+    else if (e.geometry && e.geometry.length) {
+      const c = centroid(ringOf(e.geometry));
+      [lon, lat] = c;
+    } else if (e.members && e.members[0]) {
+      const c = centroid(ringOf(e.members[0].geometry));
+      [lon, lat] = c;
+    } else continue;
+    if (t.leisure === 'park' || t.leisure === 'playground' || t.leisure === 'nature_reserve' || t.landuse === 'recreation_ground') {
+      const g = e.geometry || (e.members && e.members[0] && e.members[0].geometry) || [];
+      parks.push(g.length ? g.filter((_, i) => i % 3 === 0).map((p) => [p.lat, p.lon]).concat([[lat, lon]]) : [[lat, lon]]);
+      continue;
+    }
+    const kind = t.shop || t.amenity || t.office || t.craft || t.tourism || t.healthcare || t.leisure || '';
+    if (!kind || (!t.name && !/school|library|cinema|theatre/.test(kind))) continue;
+    pois.push({ lat, lon, kind, name: t.name || '', brand: t.brand || '' });
+  }
+  if (placesFile && existsSync(placesFile)) {
+    const fc = JSON.parse(readFileSync(placesFile, 'utf8'));
+    const seen = new Set(pois.map((p) => norm(p.name) + '@' + p.lat.toFixed(3) + ',' + p.lon.toFixed(3)));
+    for (const f of fc.features || []) {
+      const p = f.properties || {};
+      if (!f.geometry || f.geometry.type !== 'Point') continue;
+      const names = parseMaybe(p.names) || {};
+      const name = names.primary;
+      if (!name || p.operating_status === 'permanently_closed' || (p.confidence != null && +p.confidence < 0.5)) continue;
+      const tax = parseMaybe(p.taxonomy) || {};
+      const cats = parseMaybe(p.categories) || {};
+      const brand = parseMaybe(p.brand) || {};
+      const [lon, lat] = f.geometry.coordinates;
+      const key = norm(name) + '@' + lat.toFixed(3) + ',' + lon.toFixed(3);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pois.push({ lat, lon, kind: p.basic_category || tax.primary || cats.primary || '', name, brand: (brand.names && brand.names.primary) || '' });
+    }
+  }
+  return { pois, parks };
+}
+function benchmarks(osm, junctions, placesFile) {
+  const { pois, parks } = poisFrom(osm, placesFile);
+  log(`Benchmarks: ${pois.length} places, ${parks.length} parks, ${junctions.length} intersections in the region`);
+  const out = [];
+  for (const c of PEER_CENTERS) {
+    const cats = {};
+    const mix = { storefronts: 0, food: 0, retail: 0, service: 0, sig: 0, chains: 0, auto: 0, offices: 0 };
+    for (const p of pois) {
+      const d = meters(c.lat, c.lon, p.lat, p.lon);
+      if (d > 2414) continue;
+      const wc = walkCat(p.kind, p.name);
+      if (wc) (cats[wc] ||= []).push(d);
+      if (d <= MIX_RADIUS_M) {
+        const cat = bizCategory(p.kind, p.name);
+        if (cat === 'auto') mix.auto++;
+        else if (cat === 'office') mix.offices++;
+        if (cat === 'food' || cat === 'retail' || cat === 'service') {
+          mix.storefronts++;
+          mix[cat]++;
+          const ch = isChain(p.name, p.brand);
+          if (ch) mix.chains++;
+          else if (isSignature(p.kind, p.name, false)) mix.sig++;
+        }
+      }
+    }
+    for (const g of parks) {
+      let best = Infinity;
+      for (const [la, lo] of g) best = Math.min(best, meters(c.lat, c.lon, la, lo));
+      if (best <= 2414) (cats.parks ||= []).push(best);
+    }
+    let inter = 0;
+    for (const [la, lo] of junctions) if (meters(c.lat, c.lon, la, lo) <= 804.7) inter++;
+    const perSqMi = inter / (Math.PI * 0.25);
+    const ws = walkScore(cats, perSqMi);
+    const areaKm2 = Math.PI * (MIX_RADIUS_M / 1000) ** 2;
+    out.push({
+      ...c, walk: ws, walkLabel: walkLabel(ws), interPerSqMi: Math.round(perSqMi),
+      storefronts: mix.storefronts, perKm2: Math.round(mix.storefronts / areaKm2), sig: mix.sig, sigPerKm2: Math.round(mix.sig / areaKm2),
+      chains: mix.chains, chainShare: mix.storefronts ? +(mix.chains / mix.storefronts).toFixed(2) : 0, auto: mix.auto, food: mix.food, retail: mix.retail, service: mix.service,
+      sigShare: mix.storefronts ? +(mix.sig / mix.storefronts).toFixed(2) : 0,
+    });
+    log(`  ${c.name.padEnd(18)} walk ${ws} (${Math.round(perSqMi)} int/mi²) · ${mix.storefronts} storefronts in ${MIX_RADIUS_M} m · ${mix.sig} signature · ${mix.chains} chains · ${mix.auto} auto`);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- main
 async function main() {
   let raw;
@@ -377,6 +494,7 @@ async function main() {
     if (OPL && existsSync(OPL)) {
       osm = parseOPL(OPL);
       sources.osm = 'geofabrik';
+      sources.junctions = osm.junctions.length;
     } else {
       log(OPL ? `No OPL file at ${OPL}; falling back to Overpass` : 'No --opl given; using Overpass');
       osm = await fetchOverpass();
@@ -403,7 +521,16 @@ async function main() {
         log(`Overture merge skipped: ${e.message}`);
       }
     else log('No Overture places file; businesses from OpenStreetMap only');
-    raw = { osm, parcels, parcelError, fetched: new Date().toISOString() };
+    raw = { osm, parcels, parcelError, fetched: new Date().toISOString(), junctions: osm.junctions || null };
+    if (REGION_OPL && existsSync(REGION_OPL)) {
+      try {
+        const reg = parseOPL(REGION_OPL);
+        const peers = benchmarks(reg, reg.junctions, REGION_PLACES);
+        writeFileSync(dirname(OUT) + '/peers.json', JSON.stringify({ generated: raw.fetched, radius: MIX_RADIUS_M, method: 'Walk Score-style index rebuilt from OpenStreetMap + Overture Maps; not Walk Score data.', centers: peers }, null, 1));
+      } catch (e) {
+        log(`Peer benchmarks skipped: ${e.stack || e.message}`);
+      }
+    } else log('No region extract; peer benchmarks not updated');
   }
   raw.sources = sources;
   const crop = townCrop(raw.osm, CFG.MARGIN_M + 150);

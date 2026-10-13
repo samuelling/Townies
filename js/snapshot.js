@@ -136,6 +136,7 @@ export function compactRaw(raw, crop = null) {
     fetched: raw.fetched || new Date().toISOString(),
     parcelError: raw.parcelError || null,
     sources: raw.sources || null,
+    junctions: raw.junctions ? enc(raw.junctions.filter(([lat, lon]) => !crop || (lat >= crop.s && lat <= crop.n && lon >= crop.w && lon <= crop.e))) : null,
     crop,
     nodes,
     ways,
@@ -156,5 +157,5 @@ export function expandSnapshot(s) {
     properties,
     geometry: { type: 'Polygon', coordinates: rings.map((r) => dec(r).map(([lat, lon]) => [lon, lat])) },
   }));
-  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, source: 'snapshot' };
+  return { osm, parcels, parcelError: s.parcelError, fetched: s.fetched, sources: s.sources || null, junctions: s.junctions ? dec(s.junctions) : null, source: 'snapshot' };
 }
