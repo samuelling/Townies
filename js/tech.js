@@ -7,6 +7,7 @@ import { hash2, clamp } from './util.js';
 import { classifyLot } from './vibrancy.js';
 import { react } from './comments.js';
 import { addShops } from './projects.js';
+import { A as assumeA } from './assumptions.js';
 import { streetOf } from './sim.js';
 
 // hist: known adoption by year (followed exactly until its last year) · cap: where it levels off ·
@@ -342,7 +343,7 @@ function marketRedevelop(sim, lot, why, events) {
   lot.units = Math.max(lot.units || 0, Math.round(lot.tiles.length * 2.2));
   lot.auto = false;
   const n = Math.max(1, Math.min(4, Math.round(lot.tiles.length / 5)));
-  const local = sim.policies && sim.policies.formulaRetail ? n : Math.round(n * 0.25);
+  const local = sim.policies && sim.policies.formulaRetail ? n : Math.round(n * assumeA(sim, 'marketChains'));
   addShops(sim, lot, local, n - local, false);
   classifyLot(lot);
   lot.auto = false;

@@ -46,7 +46,8 @@ function titleScreen() {
     el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels & footprints: MassGIS · Places: Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
   );
   t.append(card);
-  const go = (mode, scen, year) => () => start(mode, status, btns, scen, year);
+  let preset = 'thesis';
+  const go = (mode, scen, year) => () => start(mode, status, btns, scen, year, preset);
   let year = CFG.START.y;
   const pickTerm = () => {
     btns.innerHTML = '';
@@ -54,6 +55,10 @@ function titleScreen() {
     btns.append(
       el('div', { class: 'tpick' }, 'Start in'),
       el('div', { class: 'tyears' }, yr(CFG.START.y, `${CFG.START.y}`, 'Today, from real data'), ...Object.entries(PAST_STARTS).map(([y, p]) => yr(+y, `${y}`, `${p.label} · reconstructed`))),
+      el('div', { class: 'tpick' }, 'Model'),
+      el('div', { class: 'tyears' },
+        el('button', { class: `tyear${preset === 'thesis' ? ' on' : ''}`, onclick: () => { preset = 'thesis'; pickTerm(); } }, el('b', {}, 'Thesis'), el('small', {}, 'As designed: speculating landlords, chains winning in a hot market, auto lots as dead frontage')),
+        el('button', { class: `tyear${preset === 'neutral' ? ' on' : ''}`, onclick: () => { preset = 'neutral'; pickTerm(); } }, el('b', {}, 'Neutral'), el('small', {}, 'Purer city simulation: those assumptions switched to plain market fundamentals'))),
       el('div', { class: 'tpick' }, 'Choose your term')
     );
     for (const [id, T] of Object.entries(TERMS)) {
@@ -73,10 +78,10 @@ function titleScreen() {
     el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown'),
     el('button', { class: 'tbtn term', onclick: go('live', 'tutorial') }, el('span', { class: 'ticon' }, '🎓'), el('span', {}, el('b', {}, 'Tutorial'), el('small', {}, 'New to Townies? A ten-step guided tour of the real town: looking things up, Main Street, crews, redevelopment and the budget.')))
   );
-  if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox', +params.get('year') || null);
+  if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox', +params.get('year') || null, params.get('model') || 'thesis');
 }
 
-async function start(mode, status, btns, scen = 'sandbox', year = null) {
+async function start(mode, status, btns, scen = 'sandbox', year = null, preset = 'thesis') {
   btns.style.display = 'none';
   const log = (msg) => {
     status.innerHTML = '';
@@ -102,6 +107,7 @@ async function start(mode, status, btns, scen = 'sandbox', year = null) {
         await nextFrame();
         rewindWorld(game.world, year);
       }
+      game.world.preset = preset;
     }
     try {
       const r = await fetch('data/peers.json', { cache: 'no-cache' });
@@ -116,7 +122,7 @@ async function start(mode, status, btns, scen = 'sandbox', year = null) {
     status.append(
       el('div', { class: 'terr' }, `Couldn't load the map: ${e.message || e}`),
       el('p', { class: 'fine' }, 'Check your connection and try again in a minute.'),
-      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns, scen, year) }, 'Try again'))
+      el('div', { class: 'tbtns' }, el('button', { class: 'tbtn primary', onclick: () => start('live', status, btns, scen, year, preset) }, 'Try again'))
     );
   }
 }

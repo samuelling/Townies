@@ -14,6 +14,8 @@ import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { melodiaStatus } from './melodia.js';
+import { ASSUMPTIONS, EVIDENCE, presetOf } from './assumptions.js';
+import { resetGreed } from './storefronts.js';
 import { DESIGNS, DESIGN_ORDER, evaluate as evalJunction, legVolumes, planDesign, ctlAt, adoptCtl, squareCtl } from './junctions.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
@@ -121,7 +123,7 @@ export class UI {
       return m;
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
-    const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], '-', ['About Townies', () => this.aboutWindow()]];
+    const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
@@ -951,6 +953,43 @@ export class UI {
       }
       body.append(list);
     }, { cls: 'paper' });
+  }
+
+  assumptionsWindow() {
+    this.win('assume', 'Model assumptions', (body) => {
+      const s = this.sim;
+      const pr = presetOf(s);
+      body.append(el('p', {}, el('b', {}, pr === 'thesis' ? 'Thesis model' : pr === 'neutral' ? 'Neutral model' : 'Custom model'), pr === 'thesis' ? ': the game as designed, an argument about why Watertown’s retail is hollowing out.' : pr === 'neutral' ? ': the argument-carrying assumptions are switched to plain market fundamentals.' : ': a mix of thesis and neutral settings.'));
+      body.append(el('p', { class: 'fine' }, 'Real data: the map, parcels, assessed values, MassDOT traffic counts, Census commutes, business listings, Prop 2½ rules. Standard methods: the traffic model, Highway Capacity Manual intersections, the Walk Score structure. The settings below are the stylized parts, the ones that carry the thesis. Switch any of them and see which outcomes survive.'));
+      const all = el('div', { class: 'techst' },
+        el('button', { class: pr === 'thesis' ? 'on' : '', onclick: () => this.setAssume(null, 'thesis') }, el('b', {}, 'All thesis'), el('small', {}, 'as designed')),
+        el('button', { class: pr === 'neutral' ? 'on' : '', onclick: () => this.setAssume(null, 'neutral') }, el('b', {}, 'All neutral'), el('small', {}, 'purer simulation')));
+      body.append(all);
+      for (const [k, a] of Object.entries(ASSUMPTIONS)) {
+        const v = s.assume ? s.assume[k] ?? a.thesis : a.thesis;
+        const row = el('div', { class: 'techrow' },
+          el('div', { class: 'techhead' }, el('b', {}, a.label), el('span', { class: 'techpct' }, EVIDENCE[a.evidence])),
+          el('p', { class: 'fine' }, a.fmt(v)),
+          el('div', { class: 'techst' },
+            el('button', { class: v === a.thesis ? 'on' : '', onclick: () => this.setAssume(k, 'thesis') }, el('b', {}, 'Thesis'), el('small', {}, a.fmt(a.thesis))),
+            el('button', { class: v === a.neutral ? 'on' : '', onclick: () => this.setAssume(k, 'neutral') }, el('b', {}, 'Neutral'), el('small', {}, a.fmt(a.neutral)))),
+          el('p', { class: 'fine' }, el('i', {}, a.why)));
+        body.append(row);
+      }
+      body.append(el('p', { class: 'fine' }, 'Changing these mid-game takes effect from next month; outcomes already played out stay as they are.'));
+    }, { cls: 'wide' });
+  }
+  setAssume(k, which) {
+    const s = this.sim;
+    s.assume = s.assume || {};
+    const keys = k ? [k] : Object.keys(ASSUMPTIONS);
+    for (const key of keys) s.assume[key] = ASSUMPTIONS[key][which];
+    s.assume.preset = presetOf(s);
+    if (keys.includes('prospectors')) resetGreed(s);
+    s.computeAll();
+    s.updateApproval();
+    this.refreshStatus();
+    this.wins.get('assume') && this.wins.get('assume').refresh();
   }
 
   techWindow() {

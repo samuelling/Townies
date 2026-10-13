@@ -686,9 +686,25 @@ export function buildWorld(raw, progress = () => {}) {
       });
     if (hit) { nSeg++; if (seg.year) years.push(seg.year); }
   }
+  // Census commute flows (LODES): home and work locations in grid coordinates, other towns by bearing
+  const cm = raw.commute;
+  if (cm && cm.internal) {
+    const [sx, sy] = world.start;
+    const bear = (la, lo) => { const [x, y] = G(la, lo); return [Math.atan2(y - sy, x - sx), Math.hypot(x - sx, y - sy)]; };
+    world.commute = {
+      source: cm.source, year: cm.year, totals: cm.totals,
+      internal: cm.internal.map(([hla, hlo, wla, wlo, n]) => [...G(hla, hlo), ...G(wla, wlo), n]),
+      inBlocks: cm.inBlocks.map(([la, lo, n]) => [...G(la, lo), n]),
+      outBlocks: cm.outBlocks.map(([la, lo, n]) => [...G(la, lo), n]),
+      inTowns: cm.inTowns.map(([name, la, lo, n]) => [townName(name), ...bear(la, lo), n]),
+      outTowns: cm.outTowns.map(([name, la, lo, n]) => [townName(name), ...bear(la, lo), n]),
+    };
+  }
   world.trafficCounts = nSeg ? { segments: nSeg, yearMin: Math.min(...years), yearMax: Math.max(...years), yearMedian: median(years) } : null;
   return world;
 }
+
+const townName = (n) => String(n).replace(/\s*\(.*\)$/, '').replace(/ (Town city|city|town)$/i, '');
 
 export function worldProj(world) {
   return makeProj(world.bbox);

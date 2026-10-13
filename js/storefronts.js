@@ -5,6 +5,7 @@ import { ZONE } from './config.js';
 import { bizCategory, classifyLot, isSignature } from './vibrancy.js';
 import { clamp, hash2 } from './util.js';
 import { techFootfall, techRetailF } from './tech.js';
+import { A } from './assumptions.js';
 
 const STOREFRONT = new Set(['food', 'retail', 'service']);
 
@@ -44,6 +45,15 @@ function indieName(rand) {
   return { n, k: KIND_FOR[type], sig: ['coffee', 'books', 'boutique', 'gallery', 'records', 'bakery'].includes(type) };
 }
 
+// how far above the market this owner prices once buzz builds (see js/assumptions.js)
+export function greedFor(sim, lot) {
+  const g = hash2(lot.id, 91, 7);
+  return g < A(sim, 'prospectors') ? 1.22 + 0.3 * hash2(lot.id, 92, 7) : 1 + 0.08 * g;
+}
+export function resetGreed(sim) {
+  for (const lot of sim.w.lots) if (!lot.dead) lot.greed = greedFor(sim, lot);
+}
+
 export function inProtectedDistrict(sim, lot) {
   const [sx, sy] = sim.w.start;
   return Math.hypot(lot.cx - sx, lot.cy - sy) < 40 || /\b(Main St|Mt Auburn|Mount Auburn|Galen St)\b/i.test(lot.addr || '');
@@ -71,10 +81,7 @@ export function initStorefronts(sim) {
     lot.ask = lot.ask || 1;
     lot.vacant = lot.vacant || 0;
     // about a quarter of owners are "prospectors": they price for the Watertown they expect, not the one they have
-    if (lot.greed == null) {
-      const g = hash2(lot.id, 91, 7);
-      lot.greed = g < 0.27 ? 1.22 + 0.3 * hash2(lot.id, 92, 7) : 1 + 0.08 * g;
-    }
+    if (lot.greed == null) lot.greed = greedFor(sim, lot);
     lot.sf = [];
     // only commercial and mixed-use parcels have storefronts (home businesses on house lots don't)
     if (!(lot.zone === ZONE.C || lot.mixed)) continue;
@@ -156,8 +163,9 @@ export function storefrontsMonthly(sim) {
   const devBuzz = Math.min(0.25, (sim.megaprojects || 0) * 0.06 + (sim.flags.squareDone ? 0.08 : 0));
   // buzz feeds on vibrancy and fades when the place hollows out
   // (before the 2010s life-science boom, nobody was calling Watertown "the next Somerville")
-  sim.hype = clamp((sim.hype || 0) + (sim.y < 2013 ? 0.0012 : 0.0042) + 0.0009 * (sim.vibrancy - sim.base.vib0), 0, 0.8);
-  const hype = sim.hype + devBuzz;
+  const buzzOn = A(sim, 'buzz');
+  sim.hype = buzzOn ? clamp((sim.hype || 0) + (sim.y < 2013 ? 0.0012 : 0.0042) + 0.0009 * (sim.vibrancy - sim.base.vib0), 0, 0.8) : 0;
+  const hype = (sim.hype + devBuzz) * buzzOn;
   let popups = 0, reliefN = 0, vacantOld = 0;
   for (const lot of w.lots) {
     if (lot.dead || !lot.inTown || !lot.storefronts || lot.under) continue;
@@ -237,7 +245,7 @@ export function storefrontsMonthly(sim) {
         const chainOk = !protectedD && lot.ask <= chainCap;
         let shop = null;
         // in a calm market far more independents than chains want the space; speculation tilts it to credit tenants
-        if (indieOk && (!chainOk || rand() > Math.min(0.55, 0.22 + 0.5 * hype))) {
+        if (indieOk && (!chainOk || rand() > Math.min(0.55, 0.22 + 0.5 * hype * A(sim, 'chainTilt')))) {
           const nm = indieName(rand);
           shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: nm.sig, orig: 0, lease: 60, rent: lot.ask, cushion: indieCap - lot.ask > 0 ? Math.min(0.3, 0.45 * (indieCap - lot.ask)) : 0.02, since: sim.t };
         } else if (chainOk) {

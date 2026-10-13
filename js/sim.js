@@ -9,6 +9,7 @@ import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
 import { melodiaMonthly } from './melodia.js';
+import { initAssumptions, A as assumeA } from './assumptions.js';
 import { junctionFactors, squareCtl } from './junctions.js';
 import { buildInput, assignCore, fitToCounts, TP } from './traffic.js';
 import { initTech, techMonthly, techTrafficF, techPollF, techDemand, techApproval } from './tech.js';
@@ -60,7 +61,7 @@ export class Sim {
       this.lvLocal = Float32Array.from(state.lvLocal);
       this.capLocal = Float32Array.from(state.capLocal);
       this.S0 = Float32Array.from(state.S0);
-      if (state.calF) this.calF = Float32Array.from(state.calF);
+      if (state.V0 && state.M0) { this.V0 = Float32Array.from(state.V0); this.M0 = Float32Array.from(state.M0); this.calF = true; }
       this.rand = rng(Date.now() & 0xffffffff);
       if (!this.inc) initIncidents(this);
       refreshBlocks(this);
@@ -84,6 +85,7 @@ export class Sim {
   // ---------------- setup ----------------
   newGame() {
     const w = this.w;
+    initAssumptions(this, w.preset || 'thesis');
     this.y = this.w.startYear || CFG.START.y;
     this.y0 = this.y;
     this.m = CFG.START.m;
@@ -142,6 +144,7 @@ export class Sim {
     if (this.w.roadLines && this.w.roadLines.length) squareCtl(this);
     this.computeAll(true);
     this.computeTraffic(true); // second pass: intersections now see real volumes
+    if (this.calF) this.trafficFit();
     initStorefronts(this);
     initIncidents(this);
     initTech(this);
@@ -296,7 +299,7 @@ export class Sim {
       for (const i of rl) if (road[i] === 1) v1.push(T[i]);
       this.base.capC1 = (percentile(v1, 0.8) || 10) / 0.55;
     }
-    if (!this.calF && this.w.aadt) this.calibrateTraffic(T);
+    if (!(this.calF && this.V0) && this.w.aadt) this.calibrateTraffic(T);
     const capMul = (0.82 + 0.18 * this.roadCond) * (1 + this.capBump);
     const jf = junctionFactors(this);
     let sum = 0, n = 0;
@@ -304,9 +307,12 @@ export class Sim {
     for (const i of rl) {
       const local = capMul * this.capLocal[i] * (this.incBlock ? this.incBlock[i] : 1) * (jf ? jf[i] : 1);
       let c;
-      if (this.calF) {
-        // vehicles per day, pivoted on MassDOT counts; peak-hour volume in the peak direction vs signalized capacity
-        const vol = (T[i] + EPS_T) * this.base.kVeh * this.calF[i];
+      if (this.calF && this.V0) {
+        // vehicles per day, pivoted on MassDOT counts (NCHRP 765 hybrid): where the model already carries a good
+        // share of the counted traffic, scale the count by the model's change; where it barely uses the street,
+        // add the model's change instead. Then peak-hour, peak-direction volume vs signalized capacity.
+        const m = T[i] * this.base.kVeh, m0 = this.M0[i], v0 = this.V0[i];
+        const vol = m0 >= 0.5 * v0 ? v0 * clamp(m / Math.max(1, m0), 0, 3) : Math.max(0.15 * v0, v0 + (m - m0));
         this.vpd[i] = vol;
         const lanes = this.w.lanes[i] || DEFAULT_LANES[road[i]];
         c = (vol * PEAK_K * PEAK_D) / (Math.max(1, lanes / 2) * LANE_VPH * local);
@@ -356,7 +362,7 @@ export class Sim {
   calibrateTraffic(T) {
     const w = this.w, { W, road } = w;
     const rl = this.roadList;
-    const counted = rl.filter((i) => w.aadt[i] > 0 && w.inTown[i]);
+    const counted = rl.filter((i) => w.aadt[i] > 0);
     if (counted.length < 20) { this.calF = null; return; }
     const ratios = counted.filter((i) => T[i] > 0).map((i) => w.aadt[i] / T[i]).sort((a, b) => a - b);
     const k = ratios[Math.floor(ratios.length / 2)];
@@ -367,7 +373,8 @@ export class Sim {
     let sxy = 0, sxx = 0, syy = 0;
     for (let j = 0; j < xs.length; j++) { sxy += (xs[j] - mx) * (ys[j] - my); sxx += (xs[j] - mx) ** 2; syy += (ys[j] - my) ** 2; }
     const F = new Float32Array(this.N), fixed = new Uint8Array(this.N);
-    for (const i of counted) { F[i] = Math.log(w.aadt[i] / ((T[i] + EPS_T) * k)); fixed[i] = 1; }
+    // correction factors on counted streets, capped so a street the model barely uses can't blow up its neighbours
+    for (const i of counted) { F[i] = clamp(Math.log(w.aadt[i] / ((T[i] + EPS_T) * k)), -1.5, 1.5); fixed[i] = 1; }
     const tmp = new Float32Array(this.N);
     for (let it = 0; it < 40; it++) {
       tmp.set(F);
@@ -375,14 +382,37 @@ export class Sim {
         if (fixed[i]) continue;
         const x = i % W;
         let s = 0, m = 0;
-        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < this.N && road[j]) { s += tmp[j]; m++; }
-        F[i] = m ? (0.93 * s) / m : 0;
+        // corrections travel along the same kind of street, not into side streets
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < this.N && road[j] === road[i]) { s += tmp[j]; m++; }
+        F[i] = m ? (0.95 * s) / m : 0;
       }
     }
-    this.calF = new Float32Array(this.N);
-    for (let i = 0; i < this.N; i++) this.calF[i] = Math.exp(F[i]);
+    // base volumes: the real count where there is one, the corrected model elsewhere; and the model's own base
+    this.V0 = new Float32Array(this.N);
+    this.M0 = new Float32Array(this.N);
+    for (const i of rl) {
+      this.M0[i] = T[i] * k;
+      this.V0[i] = w.aadt[i] > 0 ? w.aadt[i] : (T[i] + EPS_T) * k * Math.exp(F[i]);
+    }
+    this.calF = true;
     this.base.kVeh = k;
-    this.base.trafFit = { n: routed.length, r2: sxx && syy ? (sxy * sxy) / (sxx * syy) : 0, routed: !!this.flow };
+    this.trafficFit(T);
+  }
+  // how well the routed model (before correction) explains the counts: R² of log volumes, on all counted
+  // streets and on busy ones (8,000+ a day), where MassDOT figures are most often real counts
+  trafficFit(T = this.traffic) {
+    const w = this.w;
+    const r2 = (minA) => {
+      const a = [], b = [];
+      for (const i of this.roadList) if (w.aadt[i] >= minA && w.inTown[i] && T[i] > 0) { a.push(Math.log(T[i])); b.push(Math.log(w.aadt[i])); }
+      if (a.length < 10) return [0, a.length];
+      const ma = a.reduce((p, q) => p + q, 0) / a.length, mb = b.reduce((p, q) => p + q, 0) / b.length;
+      let s1 = 0, s2 = 0, s3 = 0;
+      for (let j = 0; j < a.length; j++) { s1 += (a[j] - ma) * (b[j] - mb); s2 += (a[j] - ma) ** 2; s3 += (b[j] - mb) ** 2; }
+      return [s2 && s3 ? (s1 * s1) / (s2 * s3) : 0, a.length];
+    };
+    const [rAll, n] = r2(1), [rBusy, nBusy] = r2(8000);
+    this.base.trafFit = { n, r2: rAll, nBusy, r2Busy: rBusy, routed: !!this.flow, commute: !!w.commute };
   }
   computeMaps(init = false) {
     const w = this.w;
@@ -651,7 +681,7 @@ export class Sim {
     for (const lot of w.lots) {
       if (lot.dead || !lot.inTown) continue;
       if (lot.biz && lot.biz.length && !lot.bizCat) classifyLot(lot);
-      const f = frontage(lot, w);
+      const f = frontage(lot, w, assumeA(this, 'frontage'));
       if (f) F[this.cellOf(lot.cx, lot.cy)] += f;
     }
     if (!this.vibKernel) {
@@ -1443,10 +1473,10 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['calF', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
-    return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), calF: this.calF ? Array.from(this.calF) : null };
+    return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), V0: this.V0 || null, M0: this.M0 || null };
   }
 }
 

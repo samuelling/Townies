@@ -11,13 +11,14 @@ import { clamp } from './util.js';
 
 export const TP = {
   zone: 12, // tiles per traffic zone edge
-  homeTrips: 6.5, // daily vehicle trips per home
+  homeTrips: 5, // daily non-commute vehicle trips per home (errands, school, visits)
   jobTrips: 2.2, // per job (commute + visitors)
   thru: 1.4, // through/commuter trips at the town line, relative to all internal trips
-  extPow: 3, // how strongly through traffic favours bigger roads at the town line
-  beta: 0.15, // gravity decay per minute of travel
+  extPow: 2, // for town-line streets without a count: how strongly traffic favours bigger roads
+  beta: 0.3, // gravity decay per minute of travel (errands stay local)
   speeds: [0, 7, 12.5, 17], // m/s by road class (local, collector, arterial): ~16, 28, 38 mph
   iters: 2,
+  vt: 0.7, // vehicle trips per commuter each way (most drive; some carpool, bus or bike)
 };
 
 // binary heap of [cost, node]
@@ -58,7 +59,16 @@ export function buildInput(sim, prm = TP) {
     if (p + a > best[z]) { best[z] = p + a; node[z] = lot.road; }
   }
   const zones = [];
-  for (let z = 0; z < ZW * ZH; z++) if (node[z] >= 0 && prod[z] + attr[z] > 0) zones.push({ n: node[z], P: prod[z], A: attr[z], ext: 0 });
+  const zIx = new Int32Array(ZW * ZH).fill(-1);
+  for (let z = 0; z < ZW * ZH; z++) if (node[z] >= 0 && prod[z] + attr[z] > 0) { zIx[z] = zones.length; zones.push({ n: node[z], P: prod[z], A: attr[z], ext: 0, cx: ((z % ZW) + 0.5) * prm.zone, cy: (Math.floor(z / ZW) + 0.5) * prm.zone }); }
+  const nZint = zones.length;
+  const zoneAt = (x, y) => {
+    const z = Math.min(ZH - 1, Math.max(0, Math.floor(y / prm.zone))) * ZW + Math.min(ZW - 1, Math.max(0, Math.floor(x / prm.zone)));
+    if (zIx[z] >= 0) return zIx[z];
+    let best = -1, bd = Infinity;
+    for (let k = 0; k < nZint; k++) { const d = Math.hypot(zones[k].cx - x, zones[k].cy - y); if (d < bd) { bd = d; best = k; } }
+    return best;
+  };
   const totalInt = zones.reduce((s, z) => s + z.P, 0);
   // ---- external stations: main roads crossing the town line ----
   const ext = [];
@@ -68,12 +78,55 @@ export function buildInput(sim, prm = TP) {
     if ([x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W].some((j) => j < 0 || j >= N || (road[j] && !inTown[j]))) {
       if (ext.some((e) => Math.abs((e.n % W) - x) + Math.abs(((e.n / W) | 0) - ((i / W) | 0)) < 6)) continue;
       const lanes = w.lanes && w.lanes[i] ? w.lanes[i] : road[i] >= 3 ? 4 : 2;
-      ext.push({ n: i, wgt: Math.pow(road[i], prm.extPow) * lanes });
+      // the real count near the town line, if MassDOT has one
+      let cnt = 0;
+      if (w.aadt) for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const j = i + dy * W + dx; if (j >= 0 && j < N && w.aadt[j] > cnt) cnt = w.aadt[j]; }
+      ext.push({ n: i, cnt, wgt: Math.pow(road[i], prm.extPow) * lanes });
     }
+  }
+  // stations with a count are weighted by it; the rest by street size, scaled to match
+  const withC = ext.filter((e) => e.cnt > 0);
+  if (withC.length >= 3) {
+    const ratio = withC.reduce((a, e) => a + e.cnt, 0) / withC.reduce((a, e) => a + e.wgt, 0);
+    for (const e of ext) e.wgt = e.cnt > 0 ? e.cnt : e.wgt * ratio * 0.5;
   }
   const wSum = ext.reduce((s, e) => s + e.wgt, 0) || 1;
   const extTrips = totalInt * prm.thru;
   for (const e of ext) { e.P = (extTrips * e.wgt) / wSum; e.A = e.P; e.ext = 1; zones.push(e); }
+  // ---- commute trips from the Census (LODES): explicit origin -> destination, both directions ----
+  const od = [];
+  const cm = w.commute;
+  if (cm && prm.useCommute !== false) {
+    const vt = prm.vt;
+    const [sx, sy] = w.start;
+    for (const [hx, hy, wx, wy, n] of cm.internal) {
+      const hz = zoneAt(hx, hy), wz = zoneAt(wx, wy);
+      if (hz < 0 || wz < 0 || hz === wz) continue;
+      od.push([hz, wz, n * vt], [wz, hz, n * vt]);
+    }
+    // other towns come and go through the town-line station that points their way
+    const stAng = ext.map((e) => Math.atan2(((e.n / W) | 0) + 0.5 - sy, (e.n % W) + 0.5 - sx));
+    const pick = (ang) => { let b = -1, bd = 9; stAng.forEach((a, k) => { let d = Math.abs(a - ang); if (d > Math.PI) d = 2 * Math.PI - d; const sc = d - 0.04 * Math.log(ext[k].wgt + 1); if (sc < bd) { bd = sc; b = k; } }); return b; };
+    const spread = (towns, blocks, inbound) => {
+      const st = new Float64Array(ext.length);
+      for (const [, ang, , n] of towns) { const k = pick(ang); if (k >= 0) st[k] += n; }
+      const bz = new Map();
+      let bt = 0;
+      for (const [x, y, n] of blocks) { const z = zoneAt(x, y); if (z < 0) continue; bz.set(z, (bz.get(z) || 0) + n); bt += n; }
+      if (!bt) return;
+      st.forEach((ns, k) => {
+        if (!ns) return;
+        const e = nZint + k;
+        for (const [z, n] of bz) { const t = (ns * n * vt) / bt; if (inbound) od.push([e, z, t], [z, e, t]); else od.push([z, e, t], [e, z, t]); }
+      });
+    };
+    spread(cm.inTowns, cm.inBlocks, true);
+    spread(cm.outTowns, cm.outBlocks, false);
+  }
+  od.sort((a, b) => a[0] - b[0]);
+  const odStart = new Int32Array(zones.length + 1), odDest = new Int32Array(od.length), odN = new Float32Array(od.length);
+  od.forEach(([o, d, t], k) => { odStart[o + 1]++; odDest[k] = d; odN[k] = t; });
+  for (let k = 0; k < zones.length; k++) odStart[k + 1] += odStart[k];
   // ---- link costs (seconds per tile) ----
   const base = new Float32Array(N);
   for (const i of rl) base[i] = 16 / prm.speeds[road[i] || 1];
@@ -92,11 +145,11 @@ export function buildInput(sim, prm = TP) {
   for (const i of rl) { const lanes = (w.lanes && w.lanes[i]) || (road[i] >= 3 ? 4 : 2); capDay[i] = (Math.max(1, lanes / 2) * 800) / (0.09 * 0.55); }
   const zn = new Int32Array(zones.length), zP = new Float64Array(zones.length), zA = new Float64Array(zones.length), zE = new Uint8Array(zones.length);
   zones.forEach((z, k) => { zn[k] = z.n; zP[k] = z.P; zA[k] = z.A; zE[k] = z.ext; });
-  return { W, H, N, road: road.slice(), rl: Int32Array.from(rl), base, jdelay, capDay, zn, zP, zA, zE, prm: { beta: prm.beta, iters: prm.iters }, nInt: zones.length - ext.length, ext: ext.length, trips: totalInt };
+  return { W, H, N, road: road.slice(), rl: Int32Array.from(rl), base, jdelay, capDay, zn, zP, zA, zE, odStart, odDest, odN, prm: { beta: prm.beta, iters: prm.iters }, nInt: zones.length - ext.length, ext: ext.length, trips: totalInt, commuteTrips: od.reduce((a, x) => a + x[2], 0) };
 }
 
 export function assignCore(inp) {
-  const { W, N, road, rl, base, jdelay, capDay, zn, zP, zA, prm } = inp;
+  const { W, N, road, rl, base, jdelay, capDay, zn, zP, zA, odStart, odDest, odN, prm } = inp;
   const Z = zn.length;
   let flow = new Float32Array(N);
   const cost = new Float32Array(N);
@@ -108,7 +161,8 @@ export function assignCore(inp) {
     const add = new Float32Array(N);
     for (let oz = 0; oz < Z; oz++) {
       const o = { n: zn[oz], P: zP[oz] };
-      if (!(o.P > 0)) continue;
+      const hasOD = odStart && odStart[oz + 1] > odStart[oz];
+      if (!(o.P > 0) && !hasOD) continue;
       // shortest travel-time tree from this origin (Dijkstra)
       for (const i of rl) { dist[i] = Infinity; settled[i] = 0; }
       const hp = new Heap();
@@ -135,12 +189,13 @@ export function assignCore(inp) {
         if (dz === oz || !(zA[dz] > 0) || !settled[dn]) continue;
         tot += zA[dz] * Math.exp((-prm.beta * dist[dn]) / 60);
       }
-      if (!tot) continue;
-      for (let dz = 0; dz < Z; dz++) {
-        const dn = zn[dz];
-        if (dz === oz || !(zA[dz] > 0) || !settled[dn]) continue;
-        loc[dn] += (o.P * zA[dz] * Math.exp((-prm.beta * dist[dn]) / 60)) / tot;
-      }
+      if (tot && o.P > 0)
+        for (let dz = 0; dz < Z; dz++) {
+          const dn = zn[dz];
+          if (dz === oz || !(zA[dz] > 0) || !settled[dn]) continue;
+          loc[dn] += (o.P * zA[dz] * Math.exp((-prm.beta * dist[dn]) / 60)) / tot;
+        }
+      if (hasOD) for (let k = odStart[oz]; k < odStart[oz + 1]; k++) { const dn = zn[odDest[k]]; if (settled[dn]) loc[dn] += odN[k]; }
       // push trips from destinations back up the tree toward the origin
       for (let k = cnt - 1; k > 0; k--) {
         const u = order[k], v = loc[u];
