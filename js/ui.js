@@ -1,5 +1,6 @@
 // SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
+import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
@@ -128,7 +129,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -864,6 +865,19 @@ export class UI {
           el('button', { class: 'choice', onclick: () => this.g.restart() }, el('b', {}, 'Start a new term')))));
     }
     this.showModal(box);
+  }
+
+  busesWindow() {
+    this.win('buses', 'Buses', (body) => {
+      const s = this.sim, T = s.transit;
+      if (!T) return;
+      body.append(el('p', { class: 'fine' }, 'MBTA routes through town. Ridership is a model estimate: people and jobs within a walk of each route, more when car traffic is bad, less when the bus is stuck in it. Bus lanes and extra service come up on the Council agenda.'));
+      const t = el('table', { class: 'peers' }, el('tr', {}, el('th', {}, 'Route'), el('th', {}, 'Riders/day'), el('th', {}, 'Service')));
+      for (const r of ROUTES) t.append(el('tr', {}, el('td', {}, r.label), el('td', {}, fmtInt(T.riders[r.id] || 0)), el('td', {}, [T.lanes[r.id] ? 'bus lanes' : null, (T.freq[r.id] || 1) > 1.01 ? `${Math.round((T.freq[r.id] - 1) * 100)}% more trips` : null].filter(Boolean).join(' · ') || 'regular')));
+      body.append(t);
+      const d = (T.total || 0) - (T.riders0 || 0);
+      body.append(el('p', {}, `${fmtInt(T.total || 0)} weekday boardings in town${Math.abs(d) >= 50 ? `, ${d > 0 ? 'up' : 'down'} ${fmtInt(Math.abs(d))} since you took office` : ''}. ${T.carF < 0.995 ? `That keeps about ${Math.round((1 - T.carF) * 100)}% of car trips off the road.` : T.carF > 1.005 ? `Lost riders add about ${Math.round((T.carF - 1) * 100)}% more car trips.` : ''}`));
+    });
   }
 
   reportWindow() {

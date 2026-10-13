@@ -1,5 +1,6 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { initTransit, computeTransit, transitCarF } from './transit.js';
 import { eggMonthly } from './eggs.js';
 import { valeMonthly } from './rival.js';
 import { updateMarket, bldgF, setBldgValue } from './market.js';
@@ -166,6 +167,7 @@ export class Sim {
     initStorefronts(this);
     initIncidents(this);
     initTech(this);
+    initTransit(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.base.demR0 = this.demand.R;
@@ -293,7 +295,7 @@ export class Sim {
     if (this.w.roadLines && this.w.roadLines.length) {
       // routed traffic (see js/traffic.js), scaled month to month by how many trips the town makes
       if (!this.flow || this.flow.length !== this.N) this.reassign(true);
-      const scale = (this.tripsNow() / (this.flowTrips || 1)) * tf;
+      const scale = (this.tripsNow() / (this.flowTrips || 1)) * tf * transitCarF(this);
       T.fill(0);
       for (const i of rl) T[i] = this.flow[i] * scale;
     } else {
@@ -830,6 +832,7 @@ export class Sim {
     this.computeAll();
     this.updateDemand();
     projectsMonthly(this);
+    computeTransit(this);
     this.storefrontNews(storefrontsMonthly(this));
     techMonthly(this);
     meloraMonthly(this);

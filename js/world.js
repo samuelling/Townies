@@ -385,7 +385,7 @@ export function buildWorld(raw, progress = () => {}) {
     const sp = r.p.length > 2 ? simplify(r.p, 0.04) : r.p;
     const flat = new Float32Array(sp.length * 2);
     sp.forEach((q, k) => { flat[k * 2] = q[0]; flat[k * 2 + 1] = q[1]; });
-    roadLines.push({ cls: r.cls, pts: flat, bridge: !!r.bridge });
+    roadLines.push({ cls: r.cls, pts: flat, bridge: !!r.bridge, name: r.name || '' });
   }
   for (const r of roads) {
     let ni = 0;

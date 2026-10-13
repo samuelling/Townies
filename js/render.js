@@ -1,5 +1,6 @@
 // SimCity-2000-style isometric renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
+import { ROUTES, routeLines } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
@@ -1201,6 +1202,7 @@ export class Renderer {
     if (this.carsOn && s >= 0.9 && this.sim) {
       carsDrawn = this.drawCars(ctx, s, offX, offY);
       if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
+      carsDrawn = this.drawBuses(ctx, s, offX, offY) || carsDrawn;
     }
     const spooky = this.drawHalloween(ctx, s, offX, offY, 'ground');
     for (const v of vis) blit(fetch(v, 'o'));
@@ -1210,6 +1212,53 @@ export class Renderer {
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // MBTA buses on their real routes; more of them when service is better (js/transit.js)
+  drawBuses(ctx, s, offX, offY) {
+    const w = this.world, sim = this.sim;
+    if (!sim.transit || !w.roadLines) return false;
+    const [vx0, vy0, vx1, vy1] = this.visibleRect();
+    if ((vx1 - vx0) * (vy1 - vy0) > 40000) return false;
+    const t = sim.paused ? this.frozenT2 || this.time : this.time;
+    const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
+    let drew = false;
+    for (const r of ROUTES) {
+      const head = 28 / ((sim.transit.freq[r.id] || 1) * (sim.transit.lanes[r.id] ? 1.15 : 1)); // tiles between buses
+      for (const li of routeLines(w, r)) {
+        const p = w.roadLines[li].pts;
+        let acc = 0;
+        for (let k = 0; k + 3 < p.length; k += 2) {
+          const ax = p[k], ay = p[k + 1], bx = p[k + 2], by = p[k + 3];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (len < 1e-4) continue;
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          if (mx < vx0 - 3 || mx > vx1 + 3 || my < vy0 - 3 || my > vy1 + 3) { acc += len; continue; }
+          const ux = (bx - ax) / len, uy = (by - ay) / len, nx = -uy, ny = ux;
+          for (const dir of [1, -1]) {
+            const phase = ((((t * 0.0008 * dir) + li * 3.7) % head) + head) % head;
+            const j0 = Math.ceil((acc - phase) / head), j1 = Math.floor((acc + len - phase) / head);
+            for (let j = j0; j <= j1; j++) {
+              const u = j * head + phase - acc;
+              const off = 0.2 * dir;
+              const cx = ax + ux * u + nx * off, cy = ay + uy * u + ny * off;
+              const fx = ux * 0.32, fy = uy * 0.32, sx = nx * 0.1, sy = ny * 0.1;
+              const q = [[cx - fx - sx, cy - fy - sy], [cx + fx - sx, cy + fy - sy], [cx + fx + sx, cy + fy + sy], [cx - fx + sx, cy - fy + sy]];
+              const poly = (h, col) => { ctx.fillStyle = col; ctx.beginPath(); q.forEach((c, n) => { const pp = P(c[0], c[1], h); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); }); ctx.closePath(); ctx.fill(); };
+              poly(0, 'rgba(0,0,0,0.35)');
+              poly(2.6, '#e9ebe8');
+              // the yellow MBTA stripe along the side facing the viewer
+              const a = P(q[0][0], q[0][1], 1.6), b2 = P(q[1][0], q[1][1], 1.6);
+              ctx.strokeStyle = '#f2c200'; ctx.lineWidth = Math.max(1, 1.1 * s);
+              ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+              drew = true;
+            }
+          }
+          acc += len;
+        }
+      }
+    }
+    return drew;
   }
 
   // ---- moments: ribbon cuttings, lab openings, plazas, the first big snow ----

@@ -7,6 +7,7 @@ import { TECH_SCENARIOS } from './tech.js';
 import { MELORA_SCENARIOS, meloraRecords } from './melora.js';
 import { BEAT_SCENARIOS } from './beats.js';
 import { VALE_SCENARIOS, VALE_FOLLOWUPS } from './rival.js';
+import { TRANSIT_SCENARIOS } from './transit.js';
 import { DESIGNS, planDesign, squareCtl } from './junctions.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
@@ -510,6 +511,7 @@ export const SCENARIOS = [
   ...MELORA_SCENARIOS,
   ...BEAT_SCENARIOS,
   ...VALE_SCENARIOS,
+  ...TRANSIT_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
