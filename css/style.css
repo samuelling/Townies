@@ -325,3 +325,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .los { font-weight: bold; text-align: center !important; }
 .losA, .losB { color: #1d7a2e; } .losC { color: #7a7a1d; } .losD { color: #b0701a; } .losE, .losF { color: #b02a1a; }
 .jnotes p { font-size: 11px; margin: 0 0 5px; line-height: 1.35; }
+.tlink { background: none; border: 0; color: #c9d3e0; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 2px; align-self: center; }
+.tlink:hover { color: #fff; }
+.tsub2 { color: #c9d3e0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }

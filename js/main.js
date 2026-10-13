@@ -49,35 +49,52 @@ function titleScreen() {
   let preset = 'thesis';
   const go = (mode, scen, year) => () => start(mode, status, btns, scen, year, preset);
   let year = CFG.START.y;
+  const custom = () => year !== CFG.START.y || preset !== 'thesis';
+  const settingsLine = () => `${year === CFG.START.y ? `Starting in ${year}` : `Starting in ${year} (${PAST_STARTS[year].label.toLowerCase()}, reconstructed)`} · ${preset === 'thesis' ? 'thesis model' : 'neutral model'}`;
+  const home = () => {
+    btns.innerHTML = '';
+    btns.append(
+      el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown'),
+      el('button', { class: 'tbtn term', onclick: go('live', 'tutorial') }, el('span', { class: 'ticon' }, '🎓'), el('span', {}, el('b', {}, 'Tutorial'), el('small', {}, 'New to Townies? A ten-step guided tour of the real town: looking things up, Main Street, crews, redevelopment and the budget.'))),
+      el('button', { class: 'tlink', onclick: advanced }, custom() ? `Advanced: ${settingsLine()}` : 'Advanced start options')
+    );
+    if (savedBtn) btns.prepend(savedBtn);
+  };
+  // start year and model assumptions live here, out of the way
+  const advanced = () => {
+    btns.innerHTML = '';
+    const yr = (y, label, sub) => el('button', { class: `tyear${year === y ? ' on' : ''}`, onclick: () => { year = y; advanced(); } }, el('b', {}, label), el('small', {}, sub));
+    btns.append(
+      el('div', { class: 'tpick' }, 'Advanced start'),
+      el('div', { class: 'tsub2' }, 'Start in'),
+      el('div', { class: 'tyears' }, yr(CFG.START.y, `${CFG.START.y}`, 'Today, from real data'), ...Object.entries(PAST_STARTS).map(([y, p]) => yr(+y, `${y}`, `${p.label} · reconstructed`))),
+      year !== CFG.START.y ? el('p', { class: 'fine' }, `Buildings newer than ${year} are removed using each property’s year built. What stood on those sites before is approximated and marked “reconstructed” when you look it up. Businesses and the street grid are today’s.`) : '',
+      el('div', { class: 'tsub2' }, 'Model'),
+      el('div', { class: 'tyears' },
+        el('button', { class: `tyear${preset === 'thesis' ? ' on' : ''}`, onclick: () => { preset = 'thesis'; advanced(); } }, el('b', {}, 'Thesis'), el('small', {}, 'As designed: speculating landlords, chains winning in a hot market, auto lots as dead frontage')),
+        el('button', { class: `tyear${preset === 'neutral' ? ' on' : ''}`, onclick: () => { preset = 'neutral'; advanced(); } }, el('b', {}, 'Neutral'), el('small', {}, 'Purer city simulation: those assumptions switched to plain market fundamentals'))),
+      el('button', { class: 'tbtn primary', onclick: home }, 'Done')
+    );
+  };
   const pickTerm = () => {
     btns.innerHTML = '';
-    const yr = (y, label, sub) => el('button', { class: `tyear${year === y ? ' on' : ''}`, onclick: () => { year = y; pickTerm(); } }, el('b', {}, label), el('small', {}, sub));
-    btns.append(
-      el('div', { class: 'tpick' }, 'Start in'),
-      el('div', { class: 'tyears' }, yr(CFG.START.y, `${CFG.START.y}`, 'Today, from real data'), ...Object.entries(PAST_STARTS).map(([y, p]) => yr(+y, `${y}`, `${p.label} · reconstructed`))),
-      el('div', { class: 'tpick' }, 'Model'),
-      el('div', { class: 'tyears' },
-        el('button', { class: `tyear${preset === 'thesis' ? ' on' : ''}`, onclick: () => { preset = 'thesis'; pickTerm(); } }, el('b', {}, 'Thesis'), el('small', {}, 'As designed: speculating landlords, chains winning in a hot market, auto lots as dead frontage')),
-        el('button', { class: `tyear${preset === 'neutral' ? ' on' : ''}`, onclick: () => { preset = 'neutral'; pickTerm(); } }, el('b', {}, 'Neutral'), el('small', {}, 'Purer city simulation: those assumptions switched to plain market fundamentals'))),
-      el('div', { class: 'tpick' }, 'Choose your term')
-    );
+    btns.append(el('div', { class: 'tpick' }, 'Choose your term'));
+    if (custom()) btns.append(el('button', { class: 'tlink', onclick: advanced }, `${settingsLine()} · change`));
     for (const [id, T] of Object.entries(TERMS)) {
       if (id !== 'sandbox' && (T.start || CFG.START.y) !== year) continue;
       btns.append(el('button', { class: 'tbtn term', onclick: go('live', id, year) }, el('span', { class: 'ticon' }, T.icon), el('span', {}, el('b', {}, T.title), el('small', {}, `${T.years ? T.years + '-year term · ' : ''}${T.blurb}`))));
     }
-    if (year !== CFG.START.y) btns.append(el('p', { class: 'fine' }, `Buildings newer than ${year} are removed using each property’s year built. What stood on those sites before is approximated and marked “reconstructed” when you look it up. Businesses and the street grid are today’s.`));
-    btns.append(el('button', { class: 'tbtn', onclick: () => location.reload() }, '← Back'));
+    btns.append(el('button', { class: 'tbtn', onclick: home }, '← Back'));
   };
+  let savedBtn = null;
   kvGet(CFG.SAVE_KEY).then((sv) => {
     if (sv && sv.world) {
       const when = new Date(sv.at).toLocaleDateString();
-      btns.prepend(el('button', { class: 'tbtn primary', onclick: go('continue') }, `Continue (${sv.label || 'saved'} · ${when})`));
+      savedBtn = el('button', { class: 'tbtn primary', onclick: go('continue') }, `Continue (${sv.label || 'saved'} · ${when})`);
+      if (btns.querySelector('.tlink') && !btns.querySelector('.tpick')) btns.prepend(savedBtn);
     }
   });
-  btns.append(
-    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in Watertown'),
-    el('button', { class: 'tbtn term', onclick: go('live', 'tutorial') }, el('span', { class: 'ticon' }, '🎓'), el('span', {}, el('b', {}, 'Tutorial'), el('small', {}, 'New to Townies? A ten-step guided tour of the real town: looking things up, Main Street, crews, redevelopment and the budget.')))
-  );
+  home();
   if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox', +params.get('year') || null, params.get('model') || 'thesis');
 }
 
