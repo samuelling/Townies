@@ -4,7 +4,7 @@ import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
-import { MELODIA_SCENARIOS, melodiaRecords } from './melodia.js';
+import { MELORA_SCENARIOS, meloraRecords } from './melora.js';
 import { DESIGNS, planDesign, squareCtl } from './junctions.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
@@ -490,7 +490,7 @@ export const SCENARIOS = [
     ],
   },
   ...TECH_SCENARIOS,
-  ...MELODIA_SCENARIOS,
+  ...MELORA_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
@@ -503,7 +503,7 @@ export const FOLLOWUPS = {
   'dam-out': (s) => s.apply({ lvNear: { at: 'river', r: 50, amt: 0.05 }, approval: { all: 2 }, news: ['Dam comes out; herring rush upstream', '300,000 fish thank the Council by swimming past it.', 'big'] }),
   'po-maybe': (s) => (s.rand() < 0.4 ? s.apply({ approval: { seniors: 6 }, news: ['Post office returns to the Square', 'There was a line on opening day. Of course there was.'] }) : s.apply({ news: ['Postal Service "still evaluating" Square location', ''] })),
   ada: (s) => s.apply({ funds: -12e6, approval: { homeowners: -3 }, news: ['Repairs trigger accessibility upgrades', 'The cheap fix turns out to require $12M in accessibility work.', 'big'] }),
-  'melodia-records': (s) => melodiaRecords(s),
+  'melora-records': (s) => meloraRecords(s),
   'junction-done': (s, d) => {
     s.capNear({ at: [d.x, d.y], r: d.r, amt: 1 / 3 });
     const c = (s.w.ctl || []).find((k) => k.id === d.id);

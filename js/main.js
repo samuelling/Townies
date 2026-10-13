@@ -164,6 +164,12 @@ function boot(state, scen = null) {
     },
     comment: () => {},
   };
+  // Older saves name the town's loudest commenter differently; carry them over to Melora.
+  if (state && state.sim && state.sim.sim) {
+    try {
+      state.sim.sim = JSON.parse(JSON.stringify(state.sim.sim).replace(/Melodia/g, 'Melora').replace(/melodia/g, 'melora'));
+    } catch (e) { /* keep the save as it was */ }
+  }
   game.sim = new Sim(game.world, state ? state.sim : null, hooks);
   const canvas = document.getElementById('view');
   document.getElementById('title').style.display = 'none';

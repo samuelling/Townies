@@ -8,7 +8,7 @@ import { initStorefronts, storefrontsMonthly, policyApproval } from './storefron
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
-import { melodiaMonthly } from './melodia.js';
+import { meloraMonthly } from './melora.js';
 import { initAssumptions, A as assumeA } from './assumptions.js';
 import { junctionFactors, squareCtl } from './junctions.js';
 import { buildInput, assignCore, fitToCounts, TP } from './traffic.js';
@@ -800,7 +800,7 @@ export class Sim {
     projectsMonthly(this);
     this.storefrontNews(storefrontsMonthly(this));
     techMonthly(this);
-    melodiaMonthly(this);
+    meloraMonthly(this);
     ambient(this);
     this.updateApproval();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;

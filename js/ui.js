@@ -13,7 +13,7 @@ import { behindScenes } from './bts.js';
 import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
-import { melodiaStatus } from './melodia.js';
+import { meloraStatus } from './melora.js';
 import { ASSUMPTIONS, EVIDENCE, presetOf } from './assumptions.js';
 import { resetGreed } from './storefronts.js';
 import { DESIGNS, DESIGN_ORDER, evaluate as evalJunction, legVolumes, planDesign, ctlAt, adoptCtl, squareCtl } from './junctions.js';
@@ -649,9 +649,9 @@ export class UI {
     this.win('comments', 'Comment Section', (body) => {
       const s = this.sim;
       body.append(el('p', { class: 'fine' }, 'The regulars. Fictional, but you have met them. Comments react to what you do; tap a block with Query to hear from a neighbor.'));
-      const m = melodiaStatus(s);
-      body.append(el('div', { class: 'melcard' }, this.avatar('melodia'), el('div', {},
-        el('div', {}, el('b', {}, 'Melodia'), ` · ${m.label}`),
+      const m = meloraStatus(s);
+      body.append(el('div', { class: 'melcard' }, this.avatar('melora'), el('div', {},
+        el('div', {}, el('b', {}, 'Melora'), ` · ${m.label}`),
         el('div', { class: 'meter', title: `${Math.round(m.steam)} / 100` }, el('i', { style: `width:${Math.round(m.steam)}%` })),
         el('small', {}, [m.delays ? `${m.delays} hearing${m.delays > 1 ? 's' : ''} delayed` : null, m.wins ? `${m.wins} "win${m.wins > 1 ? 's' : ''}"` : null, m.walked ? `${m.walked} project${m.walked > 1 ? 's' : ''} abandoned` : null, m.points ? `${m.points} fair point${m.points > 1 ? 's' : ''}` : null, m.cost > 0 ? `${m.costStr} in staff time` : null, m.warden ? 'Tree Warden' : null, m.pauseUntil > s.t ? `development pause: ${m.pauseUntil - s.t} mo left` : null].filter(Boolean).join(' · ') || 'Watching the agendas. Big projects and being brushed off get her going; feeling heard calms her down.'))));
       const list = el('div', { class: 'cfeed' });
