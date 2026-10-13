@@ -424,16 +424,33 @@ export const FOLLOWUPS = {
   },
 };
 
-// Pick at most one agenda item per month.
+// Pacing: at least AGENDA.minGap months between items, then a AGENDA.chance roll each month.
+// Time-sensitive items (tax hearing, the classification cliff, blizzards) skip the roll.
+export const AGENDA = { minGap: 3, chance: 0.4 };
+const PRIORITY = new Set(['tax-night', 'cap', 'blizzard']);
+
 export function nextScenario(s) {
   if (s.gameOver) return null;
-  if (s.t - (s.lastScenarioT ?? -99) < 2) return null;
+  if (s.t - (s.lastScenarioT ?? -99) < AGENDA.minGap) return null;
+  const eligible = [];
   for (const sc of SCENARIOS) {
     const last = s.seen[sc.id];
     if (last != null && (!sc.cooldown || s.t - last < sc.cooldown)) continue;
     let ok = false;
     try { ok = sc.when(s); } catch (e) { ok = false; }
-    if (!ok) continue;
+    if (ok) eligible.push(sc);
+  }
+  if (!eligible.length) return null;
+  let pool = eligible.filter((sc) => PRIORITY.has(sc.id));
+  if (!pool.length) {
+    if (s.rand() > AGENDA.chance) return null;
+    pool = eligible.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(s.rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+  }
+  for (const sc of pool) {
     let ctx = null;
     if (sc.prep) {
       ctx = sc.prep(s);
