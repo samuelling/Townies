@@ -7,6 +7,7 @@ import { UI } from './ui.js';
 import { Music } from './music.js';
 import { nextScenario, FOLLOWUPS } from './events.js';
 import { makeDemoRaw } from './demo.js';
+import { TERMS, startScenario, scenarioMonthly } from './scenarios.js';
 import { el } from './util.js';
 
 const MONTH_MS = [Infinity, 14000, 6000, 2000];
@@ -45,7 +46,14 @@ function titleScreen() {
     el('p', { class: 'tcred' }, 'Map data © OpenStreetMap contributors · Parcels & footprints: MassGIS · Places: Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis/EA.')
   );
   t.append(card);
-  const go = (mode) => () => start(mode, status, btns);
+  const go = (mode, scen) => () => start(mode, status, btns, scen);
+  const pickTerm = () => {
+    btns.innerHTML = '';
+    btns.append(el('div', { class: 'tpick' }, 'Choose your term'));
+    for (const [id, T] of Object.entries(TERMS))
+      btns.append(el('button', { class: `tbtn term${id === 'sandbox' ? '' : ''}`, onclick: go('live', id) }, el('span', { class: 'ticon' }, T.icon), el('span', {}, el('b', {}, T.title), el('small', {}, `${T.years ? T.years + '-year term · ' : ''}${T.blurb}`))));
+    btns.append(el('button', { class: 'tbtn', onclick: () => location.reload() }, '← Back'));
+  };
   kvGet(CFG.SAVE_KEY).then((sv) => {
     if (sv && sv.world) {
       const when = new Date(sv.at).toLocaleDateString();
@@ -53,13 +61,13 @@ function titleScreen() {
     }
   });
   btns.append(
-    el('button', { class: 'tbtn primary', onclick: go('live') }, 'New term in real Watertown'),
+    el('button', { class: 'tbtn primary', onclick: pickTerm }, 'New term in real Watertown'),
     el('button', { class: 'tbtn', onclick: go('demo') }, 'Demoville (offline demo)')
   );
-  if (params.get('auto')) start(params.get('auto'), status, btns);
+  if (params.get('auto')) start(params.get('auto'), status, btns, params.get('scenario') || 'sandbox');
 }
 
-async function start(mode, status, btns) {
+async function start(mode, status, btns, scen = 'sandbox') {
   btns.style.display = 'none';
   const log = (msg) => {
     status.innerHTML = '';
@@ -87,7 +95,7 @@ async function start(mode, status, btns) {
     } catch (e) {}
     log('Waking up the City Council…');
     await nextFrame();
-    boot(state);
+    boot(state, mode === 'continue' ? null : scen);
   } catch (e) {
     console.error(e);
     status.innerHTML = '';
@@ -99,7 +107,7 @@ async function start(mode, status, btns) {
   }
 }
 
-function boot(state) {
+function boot(state, scen = null) {
   const hooks = {
     invalidateTiles: (t) => game.renderer && game.renderer.invalidateTiles(t),
     invalidateBuilding: (b) => game.renderer && game.renderer.invalidateBuilding(b),
@@ -128,6 +136,9 @@ function boot(state) {
     game.renderer.z = state.z || 1;
   } else game.renderer.z = window.innerWidth < 700 ? 0.75 : 1;
   game.ui = new UI(game);
+  if (!state && !game.world.demo) startScenario(game.sim, scen || 'sandbox', game.peers);
+  else if (!state) startScenario(game.sim, 'sandbox', null);
+  game.ui.refreshHud();
   game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? state.speed : 1);
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
   game.renderer.resize();
@@ -162,6 +173,9 @@ function monthTick() {
   if (game.renderer.overlayMode !== 'none') game.renderer.refreshOverlay();
   game.renderer.needs = true;
   if (s.gameOver) return game.ui.gameOver(s.gameOver);
+  const sev = scenarioMonthly(s);
+  game.ui.refreshHud();
+  if (sev) return game.ui.scenarioEvent(sev);
   const next = nextScenario(s);
   if (next) game.ui.agenda(next.sc, next.ctx);
 }

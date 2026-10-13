@@ -6,6 +6,7 @@ import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
 import { walkLabel } from './walkscore.js';
+import { TERMS, goalStatus } from './scenarios.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 import { makeProj } from './geo.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
@@ -145,7 +146,7 @@ export class UI {
     this.paintGroups();
     tb.append(el('div', { class: 'tsep' }));
     for (const [id, fn, tip] of [['rotl', () => this.r.rotate(-1), 'Rotate left (,)'], ['rotr', () => this.r.rotate(1), 'Rotate right (.)'], ['zin', () => this.r.setZoom(this.r.z * 1.5), 'Zoom in (+)'], ['zout', () => this.r.setZoom(this.r.z / 1.5), 'Zoom out (−)']]) {
-      const b = el('button', { class: `tool${id.startsWith('z') ? ' zoombtn' : ''}`, title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
+      const b = el('button', { class: `tool${id.startsWith('z') ? ' zoombtn' : ''}${id === 'rotl' ? ' rotl' : ''}`, title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
       b.innerHTML = ICON[id];
       tb.append(b);
     }
@@ -166,6 +167,8 @@ export class UI {
     this.tickerTimer = setInterval(() => this.rotateTicker(), 7000);
     sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.sInc, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
+    this.hud = el('button', { class: 'hud', onclick: () => this.termWindow() });
+    document.getElementById('viewport').append(this.hud);
     this.setTool('query');
     this.refreshStatus();
   }
@@ -723,6 +726,56 @@ export class UI {
         body.append(el('div', { class: `projrow ${p.stage}` }, el('span', { class: 'pi' }, PROGRAMS[p.prog].icon), el('button', { class: 'link', onclick: () => this.r.centerOn(p.cx, p.cy) }, p.name), el('small', {}, stage)));
       }
     });
+  }
+
+  refreshHud() {
+    const s = this.sim;
+    if (!s || !this.hud) return;
+    const sc = s.scenario;
+    if (!sc) { this.hud.style.display = 'none'; return; }
+    const T = TERMS[sc.id];
+    this.hud.style.display = '';
+    this.hud.innerHTML = '';
+    const left = sc.deadline != null ? sc.deadline - s.t : null;
+    this.hud.append(el('div', { class: 'hudt' }, `${T.icon} ${T.title}`, el('small', {}, sc.done ? (sc.done.won ? ` · done ${'★'.repeat(sc.done.stars)}` : ' · ended') : left != null ? ` · ${Math.floor(left / 12)}y ${left % 12}m left` : ` · review ${Math.max(0, sc.nextReview - s.t)} mo`)));
+    for (const g of goalStatus(s)) {
+      this.hud.append(el('div', { class: `hudg${g.met ? ' met' : ''}` }, el('span', {}, g.label), el('i', {}, el('em', { style: `width:${Math.round(g.prog * 100)}%` })), el('b', {}, `${g.fmt(g.value)}${g.keep ? ` (≥ ${g.fmt(g.target)})` : g.max ? ` / ${g.target}` : ` / ${g.fmt(g.target)}`}`)));
+    }
+  }
+  termWindow() {
+    this.win('term', 'Your term', (body) => {
+      const s = this.sim;
+      const sc = s.scenario;
+      if (!sc) return;
+      const T = TERMS[sc.id];
+      body.append(el('h3', {}, `${T.icon} ${T.title}`), el('p', {}, T.blurb));
+      if (sc.deadline != null) body.append(el('p', { class: 'fine' }, `Deadline: ${Math.floor((sc.deadline - s.t) / 12)} years ${(sc.deadline - s.t) % 12} months from now.${T.floor ? ` Approval must not stay under ${T.floor.approval}% (now ${sc.lowMonths} month${sc.lowMonths === 1 ? '' : 's'} under).` : ''}`));
+      for (const g of goalStatus(s)) body.append(el('div', { class: 'kvline' }, el('span', {}, `${g.met ? '✅' : '⬜'} ${g.label}`), el('b', {}, `${g.fmt(g.value)} / ${g.fmt(g.target)}`)));
+      body.append(el('h4', {}, 'Contract reviews (every 3 years)'));
+      if (!sc.reviews.length) body.append(el('p', { class: 'fine' }, `First review ${sc.nextReview - s.t} months from now. The Council looks at approval, the budget, and progress on your goals.`));
+      for (const r of sc.reviews) body.append(el('div', { class: 'kvline' }, el('span', {}, r.date), el('b', {}, `Grade ${r.grade} · approval ${r.approval}%`)));
+    });
+  }
+  scenarioEvent(ev) {
+    this.g.music.sfx('alert');
+    const s = this.sim;
+    const T = TERMS[s.scenario.id];
+    let box;
+    if (ev.type === 'review') {
+      box = el('div', { class: 'win modal' }, el('div', { class: 'wbar' }, el('span', {}, 'Contract review')), el('div', { class: 'wbody' },
+        el('h2', {}, `Grade: ${ev.rec.grade}`), el('p', {}, `The Council renewed your contract. Average approval ${ev.rec.approval}% over the last year; reserves ${ev.rec.funds >= 0 ? 'positive' : 'in the red'}.`),
+        el('div', { class: 'choices' }, el('button', { class: 'choice', onclick: () => this.closeModal() }, el('b', {}, 'Back to work')))));
+    } else {
+      const won = ev.type === 'win';
+      box = el('div', { class: 'win modal' }, el('div', { class: 'wbar' }, el('span', {}, won ? 'Mission accomplished' : 'Term over')), el('div', { class: 'wbody' },
+        el('h2', {}, won ? `${T.title} ${'★'.repeat(ev.stars)}${'☆'.repeat(3 - ev.stars)}` : T.title),
+        el('p', {}, won ? 'The Council, the comment section and (most of) Pleasant St agree: you did it.' : ev.why || 'The term ended without every goal met.'),
+        ...ev.goals.map((g) => el('div', { class: 'kvline' }, el('span', {}, `${g.met ? '✅' : '❌'} ${g.label}`), el('b', {}, `${g.fmt(g.value)} / ${g.fmt(g.target)}`))),
+        el('div', { class: 'choices' },
+          el('button', { class: 'choice', onclick: () => { this.closeModal(); this.refreshHud(); } }, el('b', {}, 'Keep governing'), el('small', {}, 'continue in sandbox')),
+          el('button', { class: 'choice', onclick: () => this.g.restart() }, el('b', {}, 'Start a new term')))));
+    }
+    this.showModal(box);
   }
 
   peerTable() {

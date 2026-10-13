@@ -533,6 +533,7 @@ function complete(sim, p) {
   if (o.affordable) ap.renters = Math.min(6, o.affordable / 15);
   if (p.prog === 'plaza') ap.all = 2;
   if (p.prog === 'infill') { ap.renters = (ap.renters || 0) + 2; ap.homeowners = 1; ap.business = 2; }
+  if (p.prog !== 'lab') sim.autoConverted = (sim.autoConverted || 0) + (p.site.auto || 0);
   if (p.prog === 'mega') { ap.business = 3; ap.commuters = -2; }
   sim.apply({ approval: ap });
   sim.hooks.invalidateTiles && sim.hooks.invalidateTiles(touched);

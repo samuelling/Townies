@@ -65,6 +65,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .peers th:first-child, .peers td:first-child { text-align: left; }
 .peers td { text-align: right; padding: 1px 3px; border-bottom: 1px dotted #ccc; }
 .peers tr.home td { font-weight: bold; background: #fffbe0; }
+.hud { position: absolute; right: 8px; top: 8px; max-width: 280px; text-align: left; background: rgba(250,248,238,0.93); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); padding: 4px 8px 6px; font-size: 11px; z-index: 20; box-shadow: 3px 3px 0 rgba(0,0,0,0.3); }
+.hudt { font-weight: bold; font-size: 12px; margin-bottom: 2px; }
+.hudt small { font-weight: normal; color: #555; }
+.hudg { display: grid; grid-template-columns: 1fr 60px auto; gap: 4px; align-items: center; margin-top: 2px; }
+.hudg i { display: block; height: 7px; background: #ddd; border: 1px solid #888; }
+.hudg em { display: block; height: 100%; background: #e0a800; }
+.hudg.met em { background: #2e9e44; }
+.hudg b { font-size: 11px; white-space: nowrap; }
+.tpick { font-family: VT323, monospace; font-size: 22px; color: #ffe680; margin: 4px 0; }
+.tbtn.term { display: flex; gap: 10px; text-align: left; align-items: flex-start; font-weight: normal; }
+.tbtn.term .ticon { font-size: 22px; }
+.tbtn.term b { display: block; font-size: 14px; }
+.tbtn.term small { display: block; font-size: 11px; color: #333; margin-top: 2px; }
 .mstats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
 .mstat { background: #fff; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); padding: 4px 6px; }
 .mstat small { display: block; font-size: 10px; color: #555; text-transform: uppercase; }
@@ -187,7 +200,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tsky { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 60px; border-bottom: 6px solid #5e9134; margin: 0 auto 10px; max-width: 420px; }
 .tsky i { flex: 1; display: block; box-shadow: inset -4px 0 0 rgba(0, 0, 0, 0.18); }
 .tblurb { font-size: 14px; color: #cfd6e6; margin: 10px 0 16px; }
-.tbtns { display: flex; flex-direction: column; gap: 8px; align-items: stretch; max-width: 360px; margin: 0 auto; }
+.tbtns { display: flex; flex-direction: column; gap: 8px; align-items: stretch; max-width: 460px; margin: 0 auto; }
 .tbtn { padding: 11px 14px; font-weight: bold; background: var(--chrome); color: #111; border: 3px solid; border-color: #fff #555 #555 #fff; font-size: 14px; }
 .tbtn.primary { background: #ffe680; }
 .tstatus { margin-top: 16px; min-height: 60px; }
@@ -204,7 +217,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #toolbar { display: flex; grid-template-columns: none; overflow-x: auto; overflow-y: hidden; padding: 3px; padding-bottom: max(3px, env(safe-area-inset-bottom)); gap: 3px; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
   .tool { flex: 0 0 42px; width: 42px; height: 42px; }
   .tsep { flex: 0 0 6px; height: auto; }
-  .tool.zoombtn { display: none; }
+  .tool.zoombtn, .tool.rotl { display: none; }
+  .toast { top: auto; bottom: 96px; max-width: 92vw; }
   .flyout { grid-template-columns: 1fr 1fr; }
   .fitem { min-width: 0; }
   #statusbar { flex-wrap: wrap; gap: 4px; padding: 2px 6px; }
@@ -219,4 +233,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .win.modal { max-width: none; }
   .backdrop { align-items: flex-end; padding: 0; }
   #toolhint { bottom: 4px; font-size: 11px; }
+  .hud { left: 6px; right: 6px; top: 6px; max-width: none; padding: 3px 6px; }
+  .hudg { grid-template-columns: 1fr 50px auto; }
 }
