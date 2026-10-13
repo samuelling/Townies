@@ -35,6 +35,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sdate { font-weight: bold; min-width: 70px; }
 .sfunds { font-weight: bold; color: #145a14; }
 .sfunds.neg, .sappr.neg { color: #b00; }
+.svib { background: none; border: 0; padding: 0; font-weight: bold; color: #8a4a12; text-decoration: underline dotted; }
+.svib.up { color: #145a14; }
+.svib.neg { color: #b00; }
 .sappr { background: none; border: 0; padding: 0; font-weight: bold; text-decoration: underline dotted; }
 .rci { width: 54px; height: 40px; background: #e6e6e6; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); image-rendering: pixelated; }
 .ticker { flex: 1; min-width: 0; text-align: left; background: #fffbe6; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: Georgia, serif; font-style: italic; }

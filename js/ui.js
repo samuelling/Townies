@@ -59,7 +59,7 @@ const TOOL_NOTE = {
   hospital: '$60M · 5×5 · big boost, high upkeep', museum: '$30M · 4×4 · land value, business', stadium: '$120M · 7×7 · pride, but traffic',
 };
 const OVERLAYS = [
-  ['none', 'None'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
+  ['none', 'None'], ['vibrancy', 'Vibrancy (street life)'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
 ];
 const SPEEDS = [['Pause', 0], ['Turtle', 1], ['Llama', 2], ['Cheetah', 3]];
 
@@ -147,10 +147,11 @@ export class UI {
     this.sDate = el('span', { class: 'sdate' });
     this.sFunds = el('span', { class: 'sfunds' });
     this.sPop = el('span', { class: 'spop' });
+    this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for the overlay.', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') });
     this.sAppr = el('button', { class: 'sappr', onclick: () => this.councilWindow() });
     this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Commercial, Industrial' });
     this.ticker = el('button', { class: 'ticker', onclick: () => this.newsWindow() });
-    sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.rci), this.ticker);
+    sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
     this.setTool('query');
     this.refreshStatus();
@@ -252,6 +253,12 @@ export class UI {
     this.sFunds.textContent = fmtMoney(s.funds);
     this.sFunds.classList.toggle('neg', s.funds < 0);
     this.sPop.textContent = `Pop ${fmtInt(s.pop)}`;
+    if (s.vibrancy != null) {
+      const dv = s.vibrancy - (s.base.vib0 ?? s.vibrancy);
+      this.sVib.textContent = `Vibrancy ${Math.round(s.vibrancy)}${Math.abs(dv) >= 1 ? (dv > 0 ? ' ▲' : ' ▼') : ''}`;
+      this.sVib.classList.toggle('up', dv >= 1);
+      this.sVib.classList.toggle('neg', dv <= -1);
+    }
     this.sAppr.textContent = `Approval ${Math.round(s.approval)}%`;
     this.sAppr.classList.toggle('neg', s.approval < 35);
     const g = this.rci.getContext('2d');
@@ -351,7 +358,7 @@ export class UI {
         const v = lot.landVal + lot.bldgVal + (lot.otherVal || 0);
         add(
           row('Landmark', names.length ? names.slice(0, 3).join(', ') : sv && sv.name ? sv.name : ''),
-          row('Use', lot.useDesc || ZONE_NAME[lot.zone]),
+          row('Use', (lot.useDesc || ZONE_NAME[lot.zone]) + (lot.auto ? ' — auto-oriented, dead frontage' : '')),
           row('Zone', `${ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''}${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
           row('Style', lot.style),
           row('Built', lot.year ? String(lot.year) : ''),
@@ -362,12 +369,13 @@ export class UI {
           row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents` : ''),
           row('Jobs', lot.jobs >= 1 ? `~${Math.round(lot.jobs * lot.occ)}` : ''),
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
-          row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')})` : n; }).join(' · ') : '')
+          row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
         if (lot.built > 0 && lot.year >= CFG.START.y) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
+          row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
           row('Land value', `×${s.lvMod[c].toFixed(2)} vs. today`),
           row('Crime', bar(s.crimeC[c] / (s.base.crimeN * 1.3))),
           row('Pollution', bar(s.pollC[c] / (s.base.pollN * 1.3))),
@@ -449,7 +457,7 @@ export class UI {
     this.win('graphs', 'Graphs', (body) => {
       const s = this.sim;
       const H = s.history;
-      const series = [['Population', (h) => h.pop, '#2a7a2a'], ['Jobs', (h) => h.jobs, '#2a4fa8'], ['Reserves', (h) => h.funds, '#a87a00'], ['Approval', (h) => h.approval, '#a82a6a'], ['Res. land $/m²', (h) => h.lv, '#555']];
+      const series = [['Population', (h) => h.pop, '#2a7a2a'], ['Jobs', (h) => h.jobs, '#2a4fa8'], ['Reserves', (h) => h.funds, '#a87a00'], ['Approval', (h) => h.approval, '#a82a6a'], ['Vibrancy', (h) => h.vib || 0, '#c0602a'], ['Res. land $/m²', (h) => h.lv, '#555']];
       for (const [name, f, col] of series) {
         const c = el('canvas', { width: 300, height: 60, class: 'graph' });
         const g = c.getContext('2d');
@@ -720,6 +728,13 @@ export class UI {
     this.refreshStatus();
     this.updateHint();
   }
+}
+
+function streetLife(v) {
+  if (v < -0.15) return 'Dead frontage (auto & parking)';
+  if (v < 0.08) return '○○○○○ quiet';
+  const n = Math.max(1, Math.min(5, Math.round(v * 5)));
+  return '●'.repeat(n) + '○'.repeat(5 - n) + (v > 0.85 ? ' lively' : '');
 }
 
 function bar(v, wide = false) {

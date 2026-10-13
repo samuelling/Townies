@@ -2,6 +2,7 @@
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
 import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
+import { frontage, classifyLot } from './vibrancy.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -348,12 +349,13 @@ export class Sim {
     }
     // halo from special civic structures (hospital, library, museum, …)
     this.computeSpecial();
+    this.computeVibrancy(init);
     // land value modifier relative to the starting city
     const S = new Float32Array(Nc);
     let crimeSum = 0, cn = 0;
     for (let i = 0; i < Nc; i++) {
       const cr = crime[i] / this.base.crimeN, po = poll[i] / this.base.pollN, pk = Math.min(1.5, this.parkC[i] / this.base.parkN), tr = this.trafC[i] / this.base.trafN;
-      S[i] = 0.18 * pk - 0.3 * cr - 0.22 * po - 0.06 * tr + 0.08 * this.polCov[i] + 0.06 * this.fireCov[i] + this.specialC[i];
+      S[i] = 0.18 * pk - 0.3 * cr - 0.22 * po - 0.06 * tr + 0.08 * this.polCov[i] + 0.06 * this.fireCov[i] + this.specialC[i] + 0.22 * this.vibSat[i];
       if (this.popC[i] > 0) { crimeSum += cr; cn++; }
     }
     if (init || !this.S0) this.S0 = S.slice();
@@ -362,6 +364,73 @@ export class Sim {
     const glob = (1 + 0.12 * (this.fund.schools - 1)) * (0.94 + 0.06 * this.roadCond);
     for (let i = 0; i < Nc; i++) this.lvMod[i] = clamp(1 + 0.9 * (S[i] - this.S0[i]), 0.5, 1.8) * glob * this.lvLocal[i];
     void inTown;
+  }
+  // Street-life field: frontage of each lot spread over walking distance, scaled by nearby residents.
+  computeVibrancy(init = false) {
+    const w = this.w;
+    const { Wc, Hc } = this;
+    const Nc = Wc * Hc;
+    if (!this.vibF || this.vibF.length !== Nc) {
+      this.vibF = new Float32Array(Nc);
+      this.vibC = new Float32Array(Nc);
+      this.vibSat = new Float32Array(Nc);
+      this.popNear = new Float32Array(Nc);
+    }
+    const F = this.vibF, V = this.vibC, PN = this.popNear;
+    F.fill(0);
+    V.fill(0);
+    PN.fill(0);
+    for (const lot of w.lots) {
+      if (lot.dead || !lot.inTown) continue;
+      if (lot.biz && lot.biz.length && !lot.bizCat) classifyLot(lot);
+      const f = frontage(lot, w);
+      if (f) F[this.cellOf(lot.cx, lot.cy)] += f;
+    }
+    if (!this.vibKernel) {
+      const R = 6, k = [];
+      for (let dy = -R; dy <= R; dy++)
+        for (let dx = -R; dx <= R; dx++) {
+          const d = Math.hypot(dx, dy);
+          if (d <= R) k.push([dx, dy, 1 - d / (R + 1)]);
+        }
+      this.vibKernel = k;
+    }
+    const spread = (src, dst) => {
+      for (let y = 0; y < Hc; y++)
+        for (let x = 0; x < Wc; x++) {
+          const v = src[y * Wc + x];
+          if (!v) continue;
+          for (const [dx, dy, kw] of this.vibKernel) {
+            const xx = x + dx, yy = y + dy;
+            if (xx < 0 || yy < 0 || xx >= Wc || yy >= Hc) continue;
+            dst[yy * Wc + xx] += v * kw;
+          }
+        }
+    };
+    spread(F, V);
+    spread(this.popC, PN);
+    if (init || !this.base.vibRef) {
+      const pos = [], pops = [];
+      for (let i = 0; i < Nc; i++) {
+        if (V[i] > 0 && this.popC[i] > 0) pos.push(V[i]);
+        if (PN[i] > 0) pops.push(PN[i]);
+      }
+      this.base.vibRef = percentile(pos, 0.75) || 1;
+      this.base.popRef = percentile(pops, 0.6) || 1;
+    }
+    let s = 0, p = 0;
+    for (let i = 0; i < Nc; i++) {
+      const foot = 0.4 + 0.6 * Math.min(1, PN[i] / this.base.popRef);
+      const x = (V[i] * foot) / this.base.vibRef;
+      const sat = x >= 0 ? 1 - Math.exp(-x) : Math.max(-0.6, x * 0.6);
+      this.vibSat[i] = sat;
+      if (this.popC[i] > 0) {
+        s += this.popC[i] * sat;
+        p += this.popC[i];
+      }
+    }
+    this.vibrancy = p ? clamp(100 * (s / p), 0, 100) : 0;
+    if (init || this.base.vib0 == null) this.base.vib0 = this.vibrancy;
   }
   cellOf(x, y) {
     return clamp(Math.floor(y / CC), 0, this.Hc - 1) * this.Wc + clamp(Math.floor(x / CC), 0, this.Wc - 1);
@@ -431,7 +500,7 @@ export class Sim {
     this.hooks.monthly && this.hooks.monthly(this);
   }
   pushHistory(income, expenses) {
-    this.history.push({ t: this.t, pop: this.pop, jobs: this.jobs, funds: this.funds, income, expenses, approval: this.approval, lv: this.avgLV() });
+    this.history.push({ t: this.t, pop: this.pop, jobs: this.jobs, funds: this.funds, income, expenses, approval: this.approval, lv: this.avgLV(), vib: this.vibrancy });
     if (this.history.length > 600) this.history.shift();
   }
   avgLV() {
@@ -482,7 +551,7 @@ export class Sim {
       const c = this.cellOf(lot.cx, lot.cy);
       const crime = this.crimeC[c] / this.base.crimeN;
       const poll = this.pollC[c] / this.base.pollN;
-      const des = (this.lvMod[c] - 1) * 1.5 - 0.3 * crime - (key === 'R' ? 0.35 * poll : 0) + (lot.road < 0 ? -1 : 0);
+      const des = (this.lvMod[c] - 1) * 1.5 - 0.3 * crime - (key === 'R' ? 0.35 * poll : 0) + (lot.road < 0 ? -1 : 0) + (key === 'C' ? 0.5 * this.vibSat[c] : 0.15 * this.vibSat[c]);
       const target = clamp(0.88 + 0.22 * d + 0.12 * des, 0.12, 1);
       const was = lot.occ;
       lot.occ += (target - lot.occ) * 0.12;
@@ -527,7 +596,7 @@ export class Sim {
     const cycle = 0.15 + 0.35 * Math.sin((2 * Math.PI * (this.t + 6)) / 96);
     const raw = {
       R: 0.5 + 1.2 * (this.jobs / this.pop / (b.jobs0 / b.pop0) - 1) - 1.6 * resT + 0.35 * (this.fund.schools - 1) - 0.4 * (this.crimeAvg / b.crimeAvg0 - 1) + this.demandMod.R,
-      C: 0.15 + 1.4 * (this.pop / this.cjobs / (b.pop0 / b.cj0) - 1) - 2.2 * cipT - 0.6 * Math.max(0, this.congAvg - b.cong0) + this.demandMod.C,
+      C: 0.15 + 1.4 * (this.pop / this.cjobs / (b.pop0 / b.cj0) - 1) - 2.2 * cipT - 0.6 * Math.max(0, this.congAvg - b.cong0) + 0.008 * (this.vibrancy - (b.vib0 ?? this.vibrancy)) + this.demandMod.C,
       I: cycle - 2.2 * cipT - 0.8 * (this.ijobs / b.ij0 - 1) + this.demandMod.I - (this.flags.bsl3Ban ? 0.08 : 0),
     };
     if (!this.demand) this.demand = { R: 0, C: 0, I: 0 };
@@ -550,6 +619,11 @@ export class Sim {
       business: 57 - 70 * billC + 15 * d.C - 40 * cong + 6 * (this.roadCond - 1),
       commuters: 56 - 90 * cong + 15 * (this.roadCond - 1),
     };
+    const dv = (this.vibrancy || 0) - (b.vib0 ?? this.vibrancy ?? 0);
+    f.renters += 0.35 * dv;
+    f.homeowners += 0.2 * dv;
+    f.business += 0.25 * dv;
+    f.seniors += 0.1 * dv;
     if (this.funds < 0) for (const k of FACTIONS) f[k] -= 6;
     const sp = this.specialApproval();
     for (const [k, v] of Object.entries(sp)) {
@@ -1025,6 +1099,13 @@ export class Sim {
         return ramp(1 - this.polCov[c]);
       case 'fire':
         return ramp(1 - this.fireCov[c]);
+      case 'vibrancy': {
+        if (w.terrain[i] === 1) return null;
+        const v = this.vibSat[c];
+        if (v < 0) return [70, 40, 34, Math.round(170 + 80 * Math.min(1, -v / 0.6))];
+        if (v < 0.04) return [40, 40, 60, 90];
+        return [255, Math.round(220 - 170 * v), Math.round(70 + 120 * v), Math.round(110 + 140 * v)];
+      }
       case 'growth': {
         const li = w.lotOf[i];
         if (li < 0) return null;
