@@ -2,6 +2,7 @@
 // Draw a site over real parcels -> pick a program -> negotiate -> public hearing -> construction -> ribbon.
 // Land costs come from real assessed values; holdouts, displacement, and politics come from what's there.
 import { ZONE, COVER } from './config.js';
+import { setBldgValue, bldgF } from './market.js';
 import { clamp, hash2, fmtMoney } from './util.js';
 import { developLot, demolish, computeLotMetrics, bldRate, eraStyle } from './world.js';
 import { classifyLot } from './vibrancy.js';
@@ -433,8 +434,7 @@ function rebuildInfillLot(sim, p, lot) {
   lot.units = lot.mixed ? Math.max(1, Math.round(((fa - gf) * 0.82) / 85)) : 0;
   lot.jobs = Math.round(gf / 40) + (p.t.upper === 'offices' ? Math.round((fa - gf) / 25) : 0);
   lot.bldArea = fa;
-  lot.bldgVal = fa * 3000 * sim.market;
-  lot.baseBldg = lot.bldgVal / sim.market;
+  setBldgValue(sim, lot, fa * 3000);
   lot.occ = 0.9;
   lot.under = null;
   lot.year = sim.y;
@@ -537,7 +537,7 @@ function complete(sim, p) {
       main.jobs = o.jobs;
       main.bldArea = o.floorArea;
       main.bldgVal = o.newValue;
-      main.baseBldg = o.newValue / sim.market;
+      main.baseBldg = o.newValue / bldgF(sim);
       main.tripF = p.t.parking != null ? 0.55 + 0.45 * p.t.parking : 1;
       main.useDesc = PROGRAMS[p.prog].label + (o.affordable ? ` (${o.affordable} affordable homes)` : '');
       main.affordable = o.affordable;

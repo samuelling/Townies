@@ -5,12 +5,15 @@
 // Arsenal Yards), clearly flagged as reconstructed. Values are deflated to the start year.
 import { ZONE, COVER } from './config.js';
 import { hash2 } from './util.js';
-import { developLot, demolish, computeLotMetrics, styleBuilding, bldRate } from './world.js';
+import { developLot, demolish, computeLotMetrics, styleBuilding, bldRate, buildingTiles } from './world.js';
 import { classifyLot } from './vibrancy.js';
 import { makeProj } from './geo.js';
 import { PEER_CENTERS } from './peers.js';
+import { sinceYear, BLDG_ELASTICITY } from './market.js';
 
-export const PAST_STARTS = { 2000: { label: 'Before the boom', land: 0.3, bldg: 0.45 } };
+// values deflated to the start year with Watertown's real price history (js/market.js)
+const deflate = (y) => ({ land: 1 / sinceYear(y), bldg: Math.pow(1 / sinceYear(y), BLDG_ELASTICITY) });
+export const PAST_STARTS = { 2000: { label: 'Before the boom', ...deflate(2000) } };
 
 const AUTO_NAMES = ['{S} Auto Body', '{S} Service Center', 'Tire & Brake of {S}', '{S} Transmission', 'Quick Lube', '{S} Motors', 'Collision Experts', '{S} Muffler'];
 const STREETS = ['Arsenal', 'Pleasant', 'Main', 'Galen', 'Coolidge', 'Bacon', 'School', 'Waverley', 'Bridge'];
@@ -32,6 +35,8 @@ export function rewindWorld(world, year) {
   const arsenal = PEER_CENTERS.find((c) => c.id === 'wt-arsenal');
   const [ax, ay] = arsenal ? makeProj(world.bbox).toGrid(arsenal.lat, arsenal.lon) : [-1e9, -1e9];
   const touched = { n: 0 };
+  // what each rewound lot really became, so a replay (tools/validate.mjs) can rebuild history on schedule
+  world.future = new Map();
   for (const lot of lots) {
     // the Arsenal Mall parcel still carries the old mall's year on its assessor card
     const mallSite = /Shopping Centers?\/Malls?/i.test(lot.useDesc || '') && Math.hypot(lot.cx - ax, lot.cy - ay) < 25;
@@ -39,6 +44,12 @@ export function rewindWorld(world, year) {
     if (lot.dead || !lot.inTown || !lot.real || !(lot.year > year) || lot.svc) continue;
     if (lot.zone === ZONE.CIVIC || lot.zone === ZONE.PARK) continue;
     const builtYear = lot.year;
+    world.future.set(lot.id, {
+      year: builtYear, zone: lot.zone, mixed: lot.mixed, units: lot.units, dens: lot.dens, bldArea: lot.bldArea, jobs: lot.jobs,
+      code3: lot.code3, useDesc: lot.useDesc, style: lot.style, stories: lot.stories, dense: lot.dense,
+      biz: (lot.biz || []).slice(), bizKind: (lot.bizKind || []).slice(), bizChain: (lot.bizChain || []).slice(),
+      landVal: lot.landVal, bldgVal: lot.bldgVal, otherVal: lot.otherVal || 0, bldgs: lot.bldgs.slice(),
+    });
     const small = (lot.zone === ZONE.R && !lot.mixed && (lot.units || 0) <= 4) || lot.bldgs.every((id) => world.bldgs[id].kind === 'house');
     if (small) {
       // the house that stood here before; same footprint, older record
@@ -122,4 +133,56 @@ export function rewindWorld(world, year) {
   world.rewound = touched.n;
   void W;
   return world;
+}
+
+// Put back what really got built on a rewound lot (used by the history replay in tools/validate.mjs).
+// Values come back in start-year dollars; the simulated market carries them forward from there.
+export function restoreLot(sim, lot) {
+  const world = sim.w;
+  const f = world.future && world.future.get(lot.id);
+  if (!f || lot.dead) return [];
+  const cfg = PAST_STARTS[world.startYear] || { land: 1, bldg: 1 };
+  const touched = [];
+  const keep = new Set(f.bldgs);
+  for (const id of lot.bldgs) if (!keep.has(id)) touched.push(...demolish(world, world.bldgs[id]));
+  for (const id of f.bldgs) {
+    const b = world.bldgs[id];
+    if (!b.alive) {
+      b.alive = 1;
+      for (const i of buildingTiles(world, b)) {
+        world.bAt[i] = b.id;
+        touched.push(i);
+      }
+    }
+  }
+  lot.bldgs = f.bldgs.slice();
+  for (const k of ['zone', 'mixed', 'units', 'dens', 'bldArea', 'jobs', 'code3', 'useDesc', 'style', 'stories', 'dense']) lot[k] = f[k];
+  lot.bldgZone = lot.zone;
+  lot.year = f.year;
+  lot.hist = null;
+  lot.reconstructed = 0;
+  lot.locked = 1;
+  lot.built = sim.t;
+  lot.occ = Math.max(lot.occ || 0, 0.7);
+  const priceNow = sim.market || 1;
+  lot.baseLand = f.landVal * cfg.land;
+  lot.baseBldg = (f.bldgVal + f.otherVal) * cfg.bldg;
+  const oldVal = lot.landVal + lot.bldgVal + (lot.otherVal || 0);
+  lot.landVal = lot.baseLand * priceNow;
+  lot.bldgVal = lot.baseBldg * priceNow;
+  lot.otherVal = 0;
+  // new construction adds to the levy limit under Prop 2½, like any other new growth
+  const gain = lot.landVal + lot.bldgVal - oldVal;
+  if (gain > 0 && sim.rates) {
+    const r = sim.rates();
+    sim.newGrowth = (sim.newGrowth || 0) + (gain * (lot.zone === ZONE.R && !lot.mixed ? r.rateR : r.rateC)) / 1000;
+  }
+  lot.biz = f.biz.slice();
+  lot.bizKind = f.bizKind.slice();
+  lot.bizChain = f.bizChain.slice();
+  lot.bizCat = null;
+  if (lot.biz.length) classifyLot(lot);
+  else lot.auto = /^33[0-8]$/.test(lot.code3 || '');
+  world.future.delete(lot.id);
+  return touched;
 }

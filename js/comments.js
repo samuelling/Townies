@@ -12,6 +12,7 @@ export const CAST = {
   yimby: { name: 'YIMBYinWatertown', color: '#7b3f99', faction: 'renters', bio: 'Rents a one-bedroom for what her parents paid for a house.' },
   carol: { name: 'CoolidgeSqCarol', color: '#d68910', faction: 'business', bio: 'Owns a little shop near Coolidge Square. Knows exactly what her rent is.' },
   mall: { name: 'ArsenalYardsFan', color: '#1f7a8c', faction: 'commuters', bio: 'Thinks the parking garage is the best thing to happen to Watertown.' },
+  vale: { name: 'PrestonVale_VHP', color: '#2f4f6f', faction: 'business', bio: 'Managing partner, Vale Harbor Partners (Boston). Has a rendering for every parcel in town. Always “excited to be part of the community.”' },
   melora: { name: 'Melora', color: '#b0306a', faction: 'homeowners', bio: 'Has attended every public meeting since 2009. Reads every appendix. Brings a binder. Means well, which is the problem.' },
 };
 
@@ -93,6 +94,30 @@ const T = {
     ['yimby', 'Remember when Melora "saved" that block? Rents within three blocks are up again. Supply and demand did not get the memo.'],
     ['melora', 'The site is still there for the right project. I have some ideas. I have printed them.'],
     ['carol', 'A year of nothing. My landlord says the neighborhood is "in demand."'],
+  ],
+  'vale-pitch': [
+    ['vale', 'Thrilled to bring {name} to Watertown. We heard the community loud and clear, and the community wants a parking garage.'],
+    ['yimby', 'Homes are homes. Approve it, then make the next one better.'],
+    ['melora', 'Who is Preston Vale and why does he have a rendering of my street?'],
+    ['lifer', 'Another box with a garage and a bank in it. Cool. Cool cool cool.'],
+    ['mall', 'Honestly if it has a Sprout Salads I’m in.'],
+  ],
+  'vale-win': [
+    ['vale', 'Proud day for Vale Harbor and for Watertown. We look forward to welcoming our national retail partners.'],
+    ['lifer', 'They named it after a street they couldn’t find on a map a year ago.'],
+    ['yimby', 'Say what you want, that’s a lot of apartments.'],
+    ['melora', 'I counted the parking spaces. They lied about the parking spaces.'],
+  ],
+  'vale-loss': [
+    ['vale', 'Disappointed by tonight’s vote. Our attorneys are reviewing the decision. We remain committed to Watertown.'],
+    ['melora', 'The Board listened for once. I brought a cake. It is a NIMBY cake.'],
+    ['yimby', 'Great, so the site stays a parking lot for another ten years.'],
+  ],
+  'vale-ambient': [
+    ['vale', 'Exciting things coming to Watertown. Can’t say more yet. (Arsenal St. It’s Arsenal St.)'],
+    ['vale', 'Great community conversation tonight! Grateful for all the feedback, especially the yelling.'],
+    ['vale', 'Watertown is the next Somerville. You heard it here first. Also on our investor deck.'],
+    ['vale', 'We’ve optioned a few parcels. Purely exploratory. Love this town.'],
   ],
   'melora-ambient': [
     ['melora', 'Reminder: Planning Board meets Tuesday. Agenda posted on page 6 of the PDF. Bring water, it runs late.'],

@@ -1,5 +1,6 @@
 // Terms of office: scenarios with goals and deadlines, plus Council contract reviews every three years.
 import { CFG } from './config.js';
+import { termSnapshot } from './report.js';
 import { makeProj } from './geo.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 
@@ -26,9 +27,9 @@ export const TERMS = {
   },
   vibrancy: {
     title: 'The Vibrancy Mandate', years: 5, icon: '☕',
-    blurb: 'The Council wants the Square to feel alive again: coffee, books, galleries, people on the sidewalk at 9 p.m. Raise Vibrancy by 6 points, and keep approval above 45 while you do it.',
+    blurb: 'The Council wants the Square to feel alive again: coffee, books, galleries, people on the sidewalk at 9 p.m. Raise Vibrancy by 5 points, and keep approval above 45 while you do it.',
     goals: [
-      { id: 'vib', label: 'Vibrancy gain', target: 6, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
+      { id: 'vib', label: 'Vibrancy gain', target: 5, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
       { id: 'sig', label: 'Signature shops citywide', target: (s) => (s.scenario.start.sig || 50) + 20, measure: (s) => (s.sfStats ? s.sfStats.sig : 0), fmt: (v) => `${v}` },
     ],
     floor: { approval: 45 },
@@ -129,6 +130,7 @@ export function startScenario(sim, id, peers) {
   if (T.setup) T.setup(sim);
   sim.computeAll();
   sim.updateApproval();
+  sim.scenario.snap0 = termSnapshot(sim);
   sim.news(`New term: ${T.title}`, T.blurb, 'big');
 }
 

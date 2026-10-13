@@ -5,6 +5,8 @@ import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
 import { MELORA_SCENARIOS, meloraRecords } from './melora.js';
+import { BEAT_SCENARIOS } from './beats.js';
+import { VALE_SCENARIOS, VALE_FOLLOWUPS } from './rival.js';
 import { DESIGNS, planDesign, squareCtl } from './junctions.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
@@ -29,6 +31,17 @@ function mixedUse(s, lot, dens, local, chains) {
   classifyLot(lot);
   lot.auto = false;
   s.walkDirty = true;
+}
+
+// the real Arsenal Yards has about 400 apartments; keep the forks near real scale however big the parcels are
+function capUnits(s, lots, total) {
+  const sum = lots.reduce((a, l) => a + (l.units || 0), 0);
+  if (sum <= total) return;
+  for (const l of lots) {
+    l.units = Math.max(1, Math.round((l.units * total) / sum));
+    l.dens = l.units < 20 ? 3 : 4;
+  }
+  s.recalc();
 }
 
 const near = (s, lot, at, r) => {
@@ -95,12 +108,16 @@ export const SCENARIOS = [
       'The owner of the aging Arsenal Mall proposes tearing most of it down for apartments, a hotel, a parking garage and a new outdoor shopping street, mostly leased to national chains. It would be the biggest project in town in a generation, and it would pay a fortune in taxes.',
     choices: [
       { label: 'Approve it as proposed', fx: 'huge tax base · chains · garage traffic · Business ↑', run: (s) => {
-        for (const l of histLots(s, 'mall')) mixedUse(s, l, 4, 1, 4);
+        const ls = histLots(s, 'mall');
+        for (const l of ls) mixedUse(s, l, 4, 1, 4);
+        capUnits(s, ls, 400);
         s.megaprojects = (s.megaprojects || 0) + 1;
         s.apply({ approval: { business: 5, renters: 2, commuters: -3, homeowners: -1 }, news: ['Mall redevelopment approved', 'Cranes over Arsenal Street for years. Then: a garage, apartments, and a lot of national brands.', 'big'] });
       } },
       { label: 'Demand a street grid and local shops', fx: '−$6M incentive · local storefronts · Renters ↑', run: (s) => {
-        for (const l of histLots(s, 'mall')) mixedUse(s, l, 3, 3, 1);
+        const ls = histLots(s, 'mall');
+        for (const l of ls) mixedUse(s, l, 3, 3, 1);
+        capUnits(s, ls, 550);
         s.apply({ funds: -6e6, approval: { renters: 4, business: -1, homeowners: 1 }, news: ['Mall to become a neighborhood, with conditions', 'Smaller blocks, local storefronts and a public square. The developer agrees, for a price.', 'big'] });
       } },
       { label: 'Keep the mall', fx: 'nothing changes · Business ↓', run: (s) => s.apply({ approval: { business: -3, seniors: 2 }, news: ['Mall stays a mall', 'The food court celebrates with a two-for-one pretzel.'] }) },
@@ -491,9 +508,12 @@ export const SCENARIOS = [
   },
   ...TECH_SCENARIOS,
   ...MELORA_SCENARIOS,
+  ...BEAT_SCENARIOS,
+  ...VALE_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
+  ...VALE_FOLLOWUPS,
   'square-done': (s) => s.apply({ flag: { squareDone: 1 }, capNear: { at: 'square', r: 8, amt: 1 / 3 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
   'construction-biz': (s) => s.apply({ approval: { business: -4 }, news: ['Bakery remains open, accessible by gravel path and determination', 'Business owners along the construction zone ask for help.'] }),
   'cap-lobby': (s) => {

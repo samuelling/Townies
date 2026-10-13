@@ -1,5 +1,6 @@
 // SimCity-2000-style isometric renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
+import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
 
@@ -1201,12 +1202,153 @@ export class Renderer {
       carsDrawn = this.drawCars(ctx, s, offX, offY);
       if (this.lineIdx) carsDrawn = this.drawLineCars(ctx, s, offX, offY, vis) || carsDrawn;
     }
+    const spooky = this.drawHalloween(ctx, s, offX, offY, 'ground');
     for (const v of vis) blit(fetch(v, 'o'));
+    if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
     const skyAnim = this.drawSky(ctx, s, offX, offY);
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
     this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // Halloween: one yard on Irving Street from September (see js/eggs.js), the neighbors in October.
+  // Drawn live each frame (not cached) so it comes and goes with the season.
+  drawHalloween(ctx, s, offX, offY, pass) {
+    const sim = this.sim;
+    if (!sim || s < 0.7) return false;
+    const home = homeLot(this.world), homeOn = home && irvingSeason(sim), hood = halloweenSeason(sim);
+    if (!homeOn && !hood) return false;
+    const [x0, y0, x1, y1] = this.visibleRect();
+    if ((x1 - x0) * (y1 - y0) > 60000) return false;
+    const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
+    const inView = (x, y) => x > x0 - 2 && x < x1 + 2 && y > y0 - 2 && y < y1 + 4;
+    let drew = false;
+    if (pass === 'glow') {
+      if (homeOn && inView(home.cx, home.cy)) {
+        // red uplights: a pool of light on the yard that washes up the front of the house
+        const [yx, yy] = yardPoint(this.world, home);
+        const flick = 0.9 + 0.1 * Math.sin(this.time * 0.004) * Math.sin(this.time * 0.0017);
+        ctx.save();
+        const pools = [[yx, yy, 0, 30, 0.5], [(yx + home.cx) / 2, (yy + home.cy) / 2, 1.4, 44, 0.42]];
+        for (const [mode, col] of [['source-over', '205,18,22'], ['lighter', '150,10,10']]) {
+          ctx.globalCompositeOperation = mode;
+          for (const [x, y, h, r, a] of pools) {
+            const p = P(x, y, h);
+            const gr = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r * s);
+            gr.addColorStop(0, `rgba(${col},${(mode === 'lighter' ? a * 0.6 : a) * flick})`);
+            gr.addColorStop(1, `rgba(${col},0)`);
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.ellipse(p[0], p[1], r * s, r * s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        ctx.restore();
+        // the display itself sits on top: it's the point of the yard
+        this.skeletonYard(ctx, P, s, home);
+        drew = true;
+      }
+      return drew;
+    }
+    if (hood && s >= 1) {
+      for (const d of decoratedLots(sim)) {
+        const [x, y, ux = 0, uy = 1] = d.yard;
+        if (!inView(x, y)) continue;
+        this.decor(ctx, P, s, d, x, y, -uy, ux);
+        drew = true;
+      }
+    }
+    if (homeOn && inView(home.cx, home.cy)) drew = true; // drawn in the glow pass
+    return drew;
+  }
+  decor(ctx, P, s, d, x, y, px, py) {
+    const k = (n) => hash2(d.seed, n, 7);
+    if (d.kind === 'pumpkins') {
+      for (let n = 0; n < 3; n++) {
+        const p = P(x + px * (n - 1) * 0.16, y + py * (n - 1) * 0.16, 0.25);
+        const r = (1.6 + 0.8 * k(n)) * s;
+        ctx.fillStyle = '#e8741c'; ctx.beginPath(); ctx.ellipse(p[0], p[1], r * 1.2, r, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#4b6b2a'; ctx.fillRect(p[0] - 0.3 * s, p[1] - r - 0.8 * s, 0.7 * s, 0.9 * s);
+        if (n === 1) { ctx.fillStyle = '#ffd34d'; ctx.fillRect(p[0] - 0.8 * s, p[1] - 0.3 * s, 0.5 * s, 0.5 * s); ctx.fillRect(p[0] + 0.3 * s, p[1] - 0.3 * s, 0.5 * s, 0.5 * s); }
+      }
+    } else if (d.kind === 'ghost') {
+      const p = P(x, y, 0);
+      const h = 7 * s, r = 2.6 * s;
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(p[0], p[1], r * 1.2, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+      const lean = (k(1) - 0.5) * 2 * s;
+      ctx.fillStyle = '#f6f6f2';
+      ctx.beginPath(); ctx.moveTo(p[0] - r, p[1]); ctx.quadraticCurveTo(p[0] - r + lean, p[1] - h, p[0] + lean, p[1] - h); ctx.quadraticCurveTo(p[0] + r + lean, p[1] - h, p[0] + r, p[1]); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#222'; ctx.fillRect(p[0] + lean - 1.1 * s, p[1] - h * 0.72, 0.7 * s, 0.9 * s); ctx.fillRect(p[0] + lean + 0.4 * s, p[1] - h * 0.72, 0.7 * s, 0.9 * s);
+    } else if (d.kind === 'tombs') {
+      for (let n = 0; n < 3; n++) {
+        const p = P(x + px * (n - 1) * 0.2, y + py * (n - 1) * 0.2, 0);
+        const w = 1.8 * s, h = (2.6 + 0.8 * k(n)) * s;
+        ctx.fillStyle = '#9aa0a6'; ctx.beginPath(); ctx.moveTo(p[0] - w, p[1]); ctx.lineTo(p[0] - w, p[1] - h + w); ctx.arc(p[0], p[1] - h + w, w, Math.PI, 0); ctx.lineTo(p[0] + w, p[1]); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#6d7378'; ctx.fillRect(p[0] - w * 0.5, p[1] - h * 0.55, w, 0.4 * s);
+      }
+    } else {
+      // orange string lights along the front of the house
+      for (let n = 0; n < 9; n++) {
+        const t = (n - 4) / 4;
+        const p = P(x + px * t * 0.45 - (1 - Math.abs(t)) * 0.02, y + py * t * 0.45, 2.6 - 0.25 * Math.cos(t * 3));
+        ctx.fillStyle = n % 3 === 1 ? '#a46cff' : '#ff9a2e';
+        ctx.beginPath(); ctx.arc(p[0], p[1], 0.8 * s, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  skeletonYard(ctx, P, s0, home) {
+    const s = s0 * 1.6; // drawn a bit larger than life so the yard reads at street zoom
+    const [cx, cy, ux = 0, uy = 1] = yardPoint(this.world, home, 0.42);
+    const px = -uy, py = ux;
+    const at = (a, r, h = 0) => P(cx + Math.cos(a) * r * 0.9, cy + Math.sin(a) * r * 0.9, h);
+    const bone = '#f3eee2', ring = s0 >= 1.2;
+    // the cairn
+    const c = P(cx, cy, 0);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(c[0], c[1], 5 * s, 2.4 * s, 0, 0, Math.PI * 2); ctx.fill();
+    for (const [dy, r, col] of [[0, 4.2, '#77736c'], [-1.6, 3.2, '#8a857c'], [-3, 2.1, '#9b968c']]) { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(c[0], c[1] + dy * s, r * s, r * 0.55 * s, 0, 0, Math.PI * 2); ctx.fill(); }
+    // a skull with antlers on top
+    ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(c[0], c[1] - 4.1 * s, 0.9 * s, 0, Math.PI * 2); ctx.fill();
+    const pole = (a, r) => {
+      const b = at(a, r, 0), t = at(a, r, 4.2);
+      ctx.strokeStyle = '#d9c9a3'; ctx.lineWidth = Math.max(1, 0.6 * s);
+      ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(t[0], t[1]); ctx.stroke();
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.ellipse(t[0], t[1], 0.9 * s, 1.2 * s, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e7dcc4'; ctx.lineWidth = Math.max(0.8, 0.45 * s);
+      ctx.beginPath();
+      for (const sd of [-1, 1]) { ctx.moveTo(t[0], t[1] - 0.8 * s); ctx.lineTo(t[0] + sd * 2.2 * s, t[1] - 3 * s); ctx.lineTo(t[0] + sd * 3.4 * s, t[1] - 3.6 * s); ctx.moveTo(t[0] + sd * 1.4 * s, t[1] - 2.2 * s); ctx.lineTo(t[0] + sd * 1.2 * s, t[1] - 4 * s); }
+      ctx.stroke();
+    };
+    // skeletons kneeling and reaching toward the cairn, in a ring
+    const skel = (a, r) => {
+      const f = at(a, r, 0), hd = at(a, r * 0.82, 1.5);
+      ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1, 0.55 * s);
+      ctx.beginPath();
+      ctx.moveTo(f[0], f[1]); ctx.lineTo(hd[0], hd[1] + 1.2 * s); // spine, leaning in
+      const rib = [(f[0] + hd[0]) / 2, (f[1] + hd[1]) / 2 + 0.6 * s];
+      for (const o of [-0.5, 0.3]) { ctx.moveTo(rib[0] - 1.1 * s, rib[1] + o * s); ctx.lineTo(rib[0] + 1.1 * s, rib[1] + o * s); }
+      const hand = at(a, r * 0.6, 0.6);
+      ctx.moveTo(rib[0], rib[1] - 0.8 * s); ctx.lineTo(hand[0], hand[1]); // arm reaching out
+      ctx.moveTo(f[0], f[1]); ctx.lineTo(f[0] + 1.6 * s, f[1] + 0.4 * s); // folded legs
+      ctx.moveTo(f[0], f[1]); ctx.lineTo(f[0] - 1.4 * s, f[1] + 0.5 * s);
+      ctx.stroke();
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(hd[0], hd[1], 0.95 * s, 0, Math.PI * 2); ctx.fill();
+      if (ring) { ctx.fillStyle = '#222'; ctx.fillRect(hd[0] - 0.5 * s, hd[1] - 0.2 * s, 0.35 * s, 0.35 * s); ctx.fillRect(hd[0] + 0.15 * s, hd[1] - 0.2 * s, 0.35 * s, 0.35 * s); }
+    };
+    // three still figures in pink, behind the cairn (toward the house)
+    const kid = (o) => {
+      const p = P(cx - ux * 0.32 + px * o * 0.17, cy - uy * 0.32 + py * o * 0.17, 0);
+      ctx.fillStyle = '#e9a8b4'; ctx.beginPath(); ctx.moveTo(p[0] - 1.2 * s, p[1] - 0.4 * s); ctx.lineTo(p[0] + 1.2 * s, p[1] - 0.4 * s); ctx.lineTo(p[0] + 0.7 * s, p[1] - 4 * s); ctx.lineTo(p[0] - 0.7 * s, p[1] - 4 * s); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e8c8a8'; ctx.beginPath(); ctx.arc(p[0], p[1] - 4.9 * s, 0.85 * s, 0, Math.PI * 2); ctx.fill();
+    };
+    const back = Math.atan2(-uy, -ux);
+    const items = [];
+    for (let n = 0; n < 8; n++) { const a = back + Math.PI * 0.35 + (n / 7) * Math.PI * 1.3; items.push([a, () => skel(a, 0.42)]); }
+    for (const a of [back - 0.9, back + 0.9, back - 2.3, back + 2.3]) items.push([a, () => pole(a, 0.58)]);
+    // paint back to front so nearer things overlap farther ones
+    const depth = (a) => { const q = at(a, 0.5); return q[1]; };
+    const kids = [-1, 0, 1];
+    const order = items.map(([a, f]) => [depth(a), f]).concat(kids.map((o) => [P(cx - ux * 0.32 + px * o * 0.17, cy - uy * 0.32 + py * o * 0.17, 0)[1], () => kid(o)]));
+    order.sort((p1, p2) => p1[0] - p2[0]);
+    for (const [, f] of order) f();
   }
 
   // robotaxi: white pod with a teal sensor dome

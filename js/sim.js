@@ -1,5 +1,8 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { eggMonthly } from './eggs.js';
+import { valeMonthly } from './rival.js';
+import { updateMarket, bldgF, setBldgValue } from './market.js';
 import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
 import { frontage, classifyLot } from './vibrancy.js';
@@ -19,7 +22,20 @@ const CC = 4;
 // direction (D), and per-lane hourly capacity of a signalized arterial (1,800/h saturation × ~0.5 green)
 const PEAK_K = 0.09, PEAK_D = 0.55, LANE_VPH = 900;
 const DEFAULT_LANES = [0, 2, 2, 4];
-const EPS_T = 1; // so a counted street the model routes nobody onto still carries its count
+// Market redevelopment rates by zone, and how much more often big parcels get rebuilt than small ones.
+// Calibrated by replaying 2000–2026 (tools/validate.mjs): with the real decisions made, the market should add
+// about as many homes and jobs as really appeared, and big parcels should be where it happens.
+export const GROWTH = { R: 1, C: 0.15, I: 0.3, size: 1.5, vacant: 0.06 };
+const sizeW = (lot) => (GROWTH.size ? clamp(Math.pow(lot.area / 1500, GROWTH.size), 0.03, 5) : 1);
+
+export const NEW_GROWTH_BASE = 0.014;
+// department costs per year; with benefits at 4.5%, the whole budget grows about 4% a year, as Watertown's did
+// (roughly ×2.8 from 2000 to FY2025's ~$204M)
+export const COST_GROWTH = 0.036;
+
+// street-class prior for uncounted streets; fitted by 5-fold hold-out on MassDOT counts (tools/validate.mjs)
+export const TRAFFIC_PRIOR = { beta: 0.2, smooth: 2000, decay: 0.99 };
+
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 export const FACTION_LABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
 const FW = { homeowners: 0.3, renters: 0.25, seniors: 0.15, business: 0.15, commuters: 0.15 };
@@ -54,7 +70,7 @@ export class Sim {
     this.lvMod = new Float32Array(Nc).fill(1);
     this.paused = false;
     this.speed = 1;
-    this.rand = rng(Date.now() & 0xffffffff);
+    this.rand = rng(hooks.seed != null ? hooks.seed : Date.now() & 0xffffffff);
     this.rebuildRoadList();
     if (state) {
       Object.assign(this, state.sim);
@@ -102,6 +118,8 @@ export class Sim {
     this.fund = { schools: 1, police: 1, fire: 1, roads: 1, parks: 1 };
     this.roadCond = 1;
     this.market = 1;
+    this.localMkt = 1;
+    this.regional = 1;
     this.lowMonths = 0;
     this.debtMonths = 0;
     this.newGrowth = 0;
@@ -150,6 +168,7 @@ export class Sim {
     initTech(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
+    this.base.demR0 = this.demand.R;
     this.updateApproval(true);
     this.pushHistory(0, 0);
     this.news('Welcome, City Manager', `The City Council has hired you to run Watertown. Population ${Math.round(this.pop).toLocaleString()}, about ${(this.taxBase().V / 1e9).toFixed(1)} billion dollars of taxable property, and a lot of opinions.`, 'big');
@@ -227,7 +246,7 @@ export class Sim {
   }
   budgetLines() {
     const r = this.rates();
-    const infl = Math.pow(1.025, this.t / 12);
+    const infl = Math.pow(1 + COST_GROWTH, this.t / 12); // wages and contracts outpace general inflation
     const scale = {
       schools: Math.pow(this.pop / this.base.pop0, 0.7),
       police: 1 + 0.15 * (this.policeN - this.base.police0),
@@ -372,9 +391,22 @@ export class Sim {
     const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
     let sxy = 0, sxx = 0, syy = 0;
     for (let j = 0; j < xs.length; j++) { sxy += (xs[j] - mx) * (ys[j] - my); sxx += (xs[j] - mx) ** 2; syy += (ys[j] - my) ** 2; }
+    // Prior for a street without a count: the typical count on that class of street, nudged by the routed
+    // model's volume to a small power. Held-out tests (tools/validate.mjs) showed the routed model on its own
+    // predicts unseen counts worse than street class does; a weak blend plus local corrections does best.
+    const med = (a) => (a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0);
+    const smooth = TRAFFIC_PRIOR.smooth / k;
+    const cm = [0], tm = [1];
+    for (const c of [1, 2, 3]) {
+      const a = counted.filter((i) => road[i] === c);
+      cm[c] = med(a.map((i) => w.aadt[i])) || [0, 1500, 4000, 15000][c];
+      tm[c] = med(a.map((i) => T[i] + smooth)) || smooth;
+    }
+    const prior = (i) => cm[road[i]] * Math.pow((T[i] + smooth) / tm[road[i]], TRAFFIC_PRIOR.beta);
+    this.base.trafPrior = { classMedian: cm.slice(1), beta: TRAFFIC_PRIOR.beta };
     const F = new Float32Array(this.N), fixed = new Uint8Array(this.N);
-    // correction factors on counted streets, capped so a street the model barely uses can't blow up its neighbours
-    for (const i of counted) { F[i] = clamp(Math.log(w.aadt[i] / ((T[i] + EPS_T) * k)), -1.5, 1.5); fixed[i] = 1; }
+    // correction factors on counted streets, capped so one odd count can't blow up its neighbours
+    for (const i of counted) { F[i] = clamp(Math.log(w.aadt[i] / prior(i)), -1.5, 1.5); fixed[i] = 1; }
     const tmp = new Float32Array(this.N);
     for (let it = 0; it < 40; it++) {
       tmp.set(F);
@@ -384,7 +416,7 @@ export class Sim {
         let s = 0, m = 0;
         // corrections travel along the same kind of street, not into side streets
         for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < this.N && road[j] === road[i]) { s += tmp[j]; m++; }
-        F[i] = m ? (0.95 * s) / m : 0;
+        F[i] = m ? (TRAFFIC_PRIOR.decay * s) / m : 0;
       }
     }
     // base volumes: the real count where there is one, the corrected model elsewhere; and the model's own base
@@ -392,7 +424,7 @@ export class Sim {
     this.M0 = new Float32Array(this.N);
     for (const i of rl) {
       this.M0[i] = T[i] * k;
-      this.V0[i] = w.aadt[i] > 0 ? w.aadt[i] : (T[i] + EPS_T) * k * Math.exp(F[i]);
+      this.V0[i] = w.aadt[i] > 0 ? w.aadt[i] : prior(i) * Math.exp(F[i]);
     }
     this.calF = true;
     this.base.kVeh = k;
@@ -801,6 +833,8 @@ export class Sim {
     this.storefrontNews(storefrontsMonthly(this));
     techMonthly(this);
     meloraMonthly(this);
+    valeMonthly(this);
+    eggMonthly(this);
     ambient(this);
     this.updateApproval();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;
@@ -831,17 +865,20 @@ export class Sim {
     // annual revaluation and Prop 2½ levy limit
     const r0 = this.rates();
     let added = 0;
-    const mkt = this.market;
-    this.market *= 1 + 0.025 + 0.05 * clamp(this.demand.R, -1, 1);
+    updateMarket(this); // regional market (js/market.js) times a small local factor
+    const bf = bldgF(this);
     for (const lot of this.w.lots) {
       if (lot.dead) continue;
       const c = this.cellOf(lot.cx, lot.cy);
       const lvm = this.lvMod[c];
       lot.landVal = lot.baseLand * lvm * this.market;
-      lot.bldgVal = lot.baseBldg * (0.75 + 0.25 * lot.occ) * (this.market / mkt > 1 ? Math.sqrt(this.market) : 1);
+      lot.bldgVal = lot.baseBldg * (0.75 + 0.25 * lot.occ) * bf;
       void added;
     }
-    const growth = this.newGrowth;
+    // new growth: taxes on what got built this year, plus renovations, additions and business equipment
+    // (personal property), which the game doesn't model building by building. That second part is calibrated
+    // so a replay of 2000–2026 grows the levy about as much as Watertown's really did (to ~$165M by FY2025).
+    const growth = this.newGrowth + this.levyLimit * NEW_GROWTH_BASE;
     this.levyLimit = this.levyLimit * 1.025 + growth;
     this.newGrowth = 0;
     const r1 = this.rates();
@@ -879,26 +916,32 @@ export class Sim {
       if (lot.locked) continue; // finished projects keep their buildings; occupancy still responds
       const hasB = lot.bldgs.some((id) => w.bldgs[id].alive);
       const cap = lot.dense ? 4 : 2;
-      let target2 = 0;
-      if (!hasB && lot.road >= 0 && d > 0.05 && des > -0.6 && this.rand() < 0.25 * d * slow) target2 = lot.dense ? (key === 'R' ? 3 : 3) : key === 'R' ? 1 : 2;
-      else if (hasB && lot.bldgZone !== lot.zone && d > 0.1 && this.rand() < 0.04 * slow) target2 = lot.dense ? 3 : 2;
-      else if (hasB && lot.dens < cap && d > 0.2 && des > -0.1 && lot.area >= 250 && this.t - (lot.built || -999) > 48 && this.rand() < (lot.dense ? 0.05 : 0.025) * d * (1 + des) * slow)
-        target2 = Math.min(cap, lot.dens + 1 + (lot.dense && lot.dens <= 2 ? 1 : 0));
-      if (target2 > 0) {
+      let target2 = 0, why = 'vacant';
+      if (!hasB && lot.road >= 0 && d > 0.05 && des > -0.6 && this.rand() < 0.25 * d * slow * GROWTH.vacant) target2 = lot.dense ? (key === 'R' ? 3 : 3) : key === 'R' ? 1 : 2;
+      else if (hasB && lot.bldgZone !== lot.zone && d > 0.1 && this.rand() < 0.04 * slow) { target2 = lot.dense ? 3 : 2; why = 'rezoned'; }
+      else if (hasB && lot.dens < cap && d > 0.2 && des > -0.1 && lot.area >= 250 && this.t - (lot.built || -999) > 48 && this.rand() < (lot.dense ? 0.05 : 0.025) * d * (1 + des) * slow * GROWTH[key] * sizeW(lot))
+        { target2 = Math.min(cap, lot.dens + 1 + (lot.dense && lot.dens <= 2 ? 1 : 0)); why = 'denser'; }
+      if (target2 > 0 && this.marketBuild !== false) { // marketBuild=false: history replay builds only what really got built
         const oldVal = lot.landVal + lot.bldgVal;
+        const u0 = lot.units || 0, j0 = lot.jobs || 0;
         touched.push(...developLot(w, lot, target2, this.t));
         lot.bldgZone = lot.zone;
         lot.built = this.t;
         lot.occ = 0.6;
         computeLotMetrics(w, lot, false);
-        lot.bldgVal = lot.bldArea * bldRate(lot.zone) * this.market;
-        lot.baseBldg = lot.bldgVal / this.market;
+        setBldgValue(this, lot, lot.bldArea * bldRate(lot.zone));
         lot.year = this.y;
         const r = this.rates();
         const gain = lot.landVal + lot.bldgVal - oldVal;
         if (gain > 0) this.newGrowth += (gain * (key === 'R' ? r.rateR : r.rateC)) / 1000;
         devs++;
         this.devCount = (this.devCount || 0) + 1;
+        // what the market built, by kind (read by tools/validate.mjs)
+        const gl = (this.growthLog = this.growthLog || {});
+        const g = (gl[key + ':' + why] = gl[key + ':' + why] || { n: 0, units: 0, jobs: 0 });
+        g.n++;
+        g.units += (lot.units || 0) - u0;
+        g.jobs += Math.round((lot.jobs || 0) - j0);
         if (target2 >= 3 && this.rand() < 0.5) {
           const what = key === 'R' ? `${lot.units}-unit apartment building` : key === 'C' ? `${Math.round(lot.bldArea / 92.9) * 1000 > 0 ? Math.round(lot.bldArea * 10.76).toLocaleString() + '-square-foot ' : ''}commercial building` : 'lab building';
           const item = this.news(`New ${what} rises`, `Construction wraps up ${streetOf(lot) ? 'on ' + streetOf(lot) : 'in town'}. ${pick(DEV_QUIPS, this.rand())}`);
@@ -1118,8 +1161,7 @@ export class Sim {
     lot.built = this.t;
     lot.occ = 0.7;
     computeLotMetrics(this.w, lot, false);
-    lot.bldgVal = lot.bldArea * bldRate(lot.zone) * this.market;
-    lot.baseBldg = lot.bldgVal / this.market;
+    setBldgValue(this, lot, lot.bldArea * bldRate(lot.zone));
     const gain = lot.landVal + lot.bldgVal - oldVal;
     const r = this.rates();
     if (gain > 0) this.newGrowth += (gain * (lot.zone === ZONE.R ? r.rateR : r.rateC)) / 1000;

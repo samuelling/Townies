@@ -666,13 +666,17 @@ export function buildWorld(raw, progress = () => {}) {
   world.ctl = [];
   let nSeg = 0;
   const years = [];
+  world.aadtDeriv = new Uint8Array(W * H);
   for (const seg of raw.traffic || []) {
     const p = seg.pts.map(([lat, lon]) => G(lat, lon));
+    // MassDOT gives every local street a placeholder AADT (derivation 0, "not applicable", no year) and some
+    // segments an estimate (4); only counts are counts. Lanes are kept either way.
+    const counted = seg.deriv !== 0 && seg.deriv !== 4 && seg.year > 0;
     // NUM_LANES counts both directions on an undivided road; OPP_LANES is only set for divided ones
     const lanes = Math.min(8, Math.max(1, (seg.lanes || 1) + (seg.opp || 0)));
     let hit = 0;
     const put = (i) => {
-      if (seg.aadt > world.aadt[i]) { world.aadt[i] = seg.aadt; world.aadtYear[i] = seg.year || 0; }
+      if (counted && seg.aadt > world.aadt[i]) { world.aadt[i] = seg.aadt; world.aadtYear[i] = seg.year || 0; world.aadtDeriv[i] = seg.deriv; }
       world.lanes[i] = Math.max(world.lanes[i], lanes);
       hit++;
     };
@@ -684,7 +688,7 @@ export function buildWorld(raw, progress = () => {}) {
         // MassDOT and OpenStreetMap centerlines differ by a few metres: snap to the next road tile
         for (const j of [i - 1, i + 1, i - W, i + W]) if (j >= 0 && j < W * H && road[j] >= 2) return put(j);
       });
-    if (hit) { nSeg++; if (seg.year) years.push(seg.year); }
+    if (hit && counted) { nSeg++; years.push(seg.year); }
   }
   // Census commute flows (LODES): home and work locations in grid coordinates, other towns by bearing
   const cm = raw.commute;
@@ -752,6 +756,11 @@ export function computeLotMetrics(world, lot, init = false) {
     if (!hasB && !lot.real) lot.units = 0;
     lot.dens = lot.units <= 0 ? 0 : lot.units === 1 ? 1 : lot.units <= 3 ? 2 : lot.units < 20 ? 3 : 4;
     lot.jobs = lot.mixed ? floor * 0.25 / 30 : 0;
+  } else if (z === ZONE.C && lot.mixed && !init) {
+    // mixed use built in-game: shops on the ground floor, apartments above
+    lot.units = hasB ? Math.max(1, Math.round((floor * 0.7) / 95)) : 0;
+    lot.jobs = (floor * 0.3) / 30;
+    lot.dens = floor <= 0 ? 0 : floor < 900 ? 1 : floor < 4000 ? 2 : floor < 15000 ? 3 : 4;
   } else if (z === ZONE.C || z === ZONE.I || z === ZONE.CIVIC) {
     lot.units = 0;
     lot.jobs = floor / (z === ZONE.C ? 30 : z === ZONE.I ? 45 : 70);

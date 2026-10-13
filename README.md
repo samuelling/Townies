@@ -12,6 +12,9 @@ A SimCity 2000–style city sim set in the real Watertown, Massachusetts. You're
 - **The money.** The budget is calibrated to the real tax base. Massachusetts rules apply: Prop 2½ caps levy growth, the commercial shift is capped, overrides go to the voters, and there's a residential exemption.
 - **The drama.** Council agenda items riff on recurring local storylines: the Square redesign, the garage behind CVS, the lab glut, the tax-shift cliff, rats, the overnight parking ban, Little Greenough and more. They're fictionalised and paraphrased, and no private individuals are named.
 
+## How accurate is it?
+`node tools/validate.mjs` starts the game in 2000, runs it to 2026 several ways (replaying the real buildings, making only the real big decisions, or hands-off), and compares the result with today's real town: homes, jobs, assessed values, storefronts and auto uses. It also hides a fifth of the MassDOT traffic counts and checks how well the model predicts them. The results ship in `data/validation.json` and are explained in-game under Help → Behind the scenes → How accurate is it?, including where the model still misses and what the check says about the game's own thesis.
+
 ## Controls
 Query, pan, bulldoze, road, zone R/C/I (tap again for light/dense), park, police, fire, school, rotate, zoom.
 Keys: `Q H B D 1 2 3 4 P` · `, .` rotate · `+ −` zoom · space pause.

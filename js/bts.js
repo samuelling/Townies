@@ -26,7 +26,7 @@ export const CHAPTERS = [
       P('Townies starts from an opinion, held by the Watertown resident who made it. Decades of planning and zoning decisions left the town with a glut of auto shops, car lots and parking where a main street could be, and very little good retail space. Today, most of what gets built is the big developer project in the ', I('Arsenal Yards'), ' mold: new, shiny and lucrative, but light on character.'),
       P('So the core problem is balance. You need enough growth to pay the bills and house people, but you can’t let developers set the terms. And you have to bring back ', B('vibrancy'), ': streets people actually walk, lined with the shops that make a place feel like itself, like coffee shops, bookstores, boutiques and galleries.'),
       P('Those shops are fragile for a specific reason, and the game models it directly. Once word gets out that a town is “on the rise,” landlords start pricing for the town they expect rather than the one they have. Rents jump, and the independents that created the buzz can’t pay. Storefronts then sit dark while owners wait for a bigger tenant.'),
-      NOTE(B('Doing nothing is not neutral. '), 'Leave the game running untouched for 15 years and the town hollows out: independents drop from about 340 to under 100, chains rise from about 30 to over 200, and the budget drifts into the red. That is the model’s outcome, not a forecast, but it’s the pressure the game is built around.'),
+      NOTE(B('Doing nothing is not neutral. '), 'Leave the game running untouched for 15 years and the town hollows out: independents drop from about 320 to under 100, chains rise from about 50 to over 250, and the budget drifts into the red. That is the thesis model’s outcome, not a forecast. Checked against what really happened from 2000 to 2026, it hollows Main Street out faster than history did (see “How accurate is it?”); with the neutral model, independents slip more gently, to about 240.'),
       P('Think of it less like building a sandcastle and more like tending a garden someone else planted. The beds are already there; your job is deciding what to weed, what to feed, and what to let grow.'),
     ],
   },
@@ -57,9 +57,23 @@ export const CHAPTERS = [
       return [
         P('The default game starts in 2026 with the real town. You can also start in 2000 and play through the decisions that made today’s Watertown: whether to grant one more body-shop permit, what Pleasant Street becomes, what replaces the Arsenal Mall.'),
         P('How far back the data goes decides how honest that can be. Every property record includes the year its building was built, so anything newer than 2000 can be removed. What stood on those sites before isn’t in any dataset, because demolished buildings leave no record. Small houses keep a house; bigger sites get a stand-in (light industry, a parking lot or an auto shop, chosen by chance), and the Arsenal Yards site goes back to being the Arsenal Mall. Everything reconstructed says so when you look it up.'),
-        P('Values are deflated to 2000 dollars, and history plays out on schedule: online shopping and smartphones spread, the 2008 crash freezes lending, Kendall Square spills over the river in the mid-2010s, the pandemic empties the Square in 2020, and the lab boom cools in 2023. Business listings and the street grid are today’s, because there is no usable record of 2000’s storefronts.'),
+        P('Values are deflated to 2000 dollars using Watertown’s real price history, and history plays out on schedule: online shopping and smartphones spread, the 2008 crash freezes lending, Kendall Square spills over the river in the mid-2010s, the pandemic empties the Square in 2020, and the lab boom cools in 2023. Business listings and the street grid are today’s, because there is no usable record of 2000’s storefronts.'),
+        P('The same reconstruction powers the history check: replay 2000 to 2026 and compare the result with today’s real town. See “How accurate is it?” for the scorecard.'),
         P('Earlier than about 2000, too much would be invented, so the game doesn’t go further back. Old maps exist (fire-insurance maps and atlases back to the 1800s), but they’re images that would have to be traced by hand.'),
         w && w.startYear ? NOTE(`This game started in ${w.startYear}. ${fmtInt(w.rewound || 0)} sites were reconstructed. The real town in 2026 has ${fmtInt(w.real ? w.real.units : 0)} homes.`) : null,
+      ];
+    },
+  },
+  {
+    id: 'accuracy', title: 'How accurate is it?',
+    build: () => {
+      const box = el('div', {}, P('Loading the history check…'));
+      fetch('data/validation.json').then((r) => r.json()).then((v) => {
+        box.replaceChildren(...accuracyChapter(v));
+      }).catch(() => box.replaceChildren(P('The history check results aren’t available right now (data/validation.json).')));
+      return [
+        el('p', { class: 'lead' }, 'Start the game in 2000, run it to 2026, and see whether it lands on the Watertown that really exists.'),
+        box,
       ];
     },
   },
@@ -149,8 +163,8 @@ export const CHAPTERS = [
         H('Who drives where'),
         P('On top of the counts sits a small version of the model regional planners use. Homes produce trips and jobs and shops attract them. The arterials at the town line bring in commuters and through traffic, because Watertown sits between Boston, Cambridge, Newton and Waltham. Each trip takes the fastest route over the real street grid, slowed by congestion and by intersection delay. The routing is re-run a few times so traffic spreads out instead of piling onto one street.'),
         w.commute ? P(`Commuting comes from the Census (LEHD LODES ${w.commute.year}): ${fmtInt(w.commute.totals.inbound)} people commute into Watertown jobs, ${fmtInt(w.commute.totals.outbound)} residents commute out, and only ${fmtInt(w.commute.totals.internal)} both live and work here. Their trips enter and leave by the arterial pointing toward their town: Boston and Cambridge to the east, Waltham to the west, Newton to the south.`) : null,
-        P('The model’s settings (how much through traffic, travel speeds by street type, how far people go for errands) were tuned to match the MassDOT counts.' + (fit && fit.r2 ? ` Before any correction, the routed model explains about ${Math.round(fit.r2 * 100)}% of the street-to-street variation in counted traffic across ${fmtInt(fit.n)} counted street tiles${fit.nBusy ? `, and about ${Math.round(fit.r2Busy * 100)}% among busy streets (8,000+ a day), where counts are most reliable` : ''}, on a log scale. The original smoothing model explained almost none. In tuning, adding the Census commute data raised the busy-street fit from roughly a quarter to around 40%.` : '')),
-        P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). Streets without counts inherit corrections from counted neighbours.'),
+        P('The model’s settings (how much through traffic, travel speeds by street type, how far people go for errands) were tuned to match the MassDOT counts.' + (fit && fit.r2 ? ` Before any correction, the routed model explains about ${Math.round(fit.r2 * 100)}% of the street-to-street variation in counted traffic across ${fmtInt(fit.n)} counted street tiles${fit.nBusy ? `, and about ${Math.round(fit.r2Busy * 100)}% among busy streets (8,000+ a day), where counts are most reliable` : ''}, on a log scale. Placeholder figures MassDOT assigns to local streets (marked “not applicable”) are left out; only counts count.` : '')),
+        P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). A street without a count starts from the typical count for its class of street, nudged a little by the routed model and corrected toward counted neighbours. That mix came out of a hold-out test (see “How accurate is it?”): on counts it never saw, it does better than either the routed model or street class alone.'),
         H('From volumes to jams'),
         P('Rush-hour volume is taken as 9% of daily traffic, 55% of it in the peak direction. That is compared with about 900 cars per lane per hour, a typical signalized arterial. Over 100% means queues. Mount Auburn, Main, North Beacon and Watertown Streets all come out near or over capacity, which matches anyone’s commute.'),
         H('Intersections'),
@@ -286,6 +300,69 @@ export const CHAPTERS = [
     ],
   },
 ];
+
+// ---- "How accurate is it?" ----
+const med = (m, k) => (m && m.summary && m.summary[k] ? m.summary[k].median : NaN);
+const rng = (m, k) => (m && m.summary && m.summary[k] ? [m.summary[k].min, m.summary[k].max] : [NaN, NaN]);
+const pct = (x) => `${Math.round(x * 100)}%`;
+const bil = (x) => `$${(x / 1e9).toFixed(1)}B`;
+function accuracyChapter(v) {
+  const real = v.real2026, s0 = v.start2000, T = v.thesis || {}, N = v.neutral || {};
+  const share = (m) => med(m, 'chains') / Math.max(1, med(m, 'chains') + med(m, 'indies'));
+  const realShare = real.chains / (real.chains + real.indies);
+  const span = (m, k, f = fmtInt) => { const [a, b] = rng(m, k); return a === b ? f(a) : `${f(a)}–${f(b)}`; };
+  const grow = (m) => med(m, 'units') - s0.units;
+  const levy = (m) => { const y = m && m.yearly ? m.yearly.find((r) => r.y === 2025) : null; return y && y.levy ? `$${y.levy}M` : '–'; };
+  const rows = [
+    { cells: ['New homes, 2000→2026', `+${fmtInt(real.units - s0.units)}`, `+${fmtInt(grow(T.history))}`, `+${fmtInt(grow(N.history))}`] },
+    { cells: ['Jobs in town', fmtInt(real.jobs), span(T.history, 'jobs'), span(N.history, 'jobs')] },
+    { cells: ['Residential value', bil(real.valR), bil(med(T.history, 'valR')), bil(med(N.history, 'valR'))] },
+    { cells: ['Commercial value', bil(real.valC), bil(med(T.history, 'valC')), bil(med(N.history, 'valC'))] },
+    { cells: ['Storefronts open', fmtInt(real.shops), span(T.replay, 'shops'), span(N.replay, 'shops')] },
+    { cells: ['Chain share of shops', pct(realShare), pct(share(T.replay)), pct(share(N.replay))] },
+    { cells: ['Independents', fmtInt(real.indies), span(T.replay, 'indies'), span(N.replay, 'indies')] },
+    { cells: ['Auto-use lots', fmtInt(real.auto), span(T.history, 'auto'), span(N.history, 'auto')] },
+    { cells: ['Tax levy, FY2025', '$165M', levy(T.replay), levy(N.replay)] },
+  ];
+  const tr = v.traffic;
+  const sp = (T.history && T.history.spatial) || {};
+  return [
+    P('The check runs the game three ways, several times each with different random seeds:'),
+    LIST(
+      [B('Replay'), ': every building that really went up after 2000 appears in the year it was built, and the market builds nothing extra. This tests prices, storefronts and traffic given the real built form.'],
+      [B('Real decisions'), ': only the big real choices are made (body-shop permits granted, Pleasant Street rezoned, the Arsenal Mall redeveloped as proposed). Everything else is up to the simulated market. This tests how much the model builds, and where.'],
+      [B('Hands off'), ': nobody decides anything.']
+    ),
+    P('Then it compares 2026 in the game with 2026 in the data, measured the same way. Values are in each year’s dollars.'),
+    TABLE(['', 'Real 2026', 'Thesis model', 'Neutral model'], rows),
+    el('p', { class: 'fine' }, 'Homes, jobs, values and auto lots: the real-decisions run. Storefronts and the levy: the replay. Ranges are the spread across seeds. Homes are counted from assessor records, which miss about 6–9% of the units the Census counts (15,008 in 2000 and 16,936 in 2020), consistently in both years.'),
+    H('What the first run got wrong, and what was tuned'),
+    P('The first time through, before any tuning, the game missed badly in five places. Each fix uses one or two plain-meaning knobs, set from data the check then doesn’t grade itself on, or from published rates:'),
+    LIST(
+      [B('It built far too much. '), 'The market added about 5,900 homes where reality added about 1,470. Most came from filling Watertown’s ~720 empty parcels; in reality only 36 of them (5%) were built on by 2026, because most are slivers, backlots and protected land. Empty-lot building is now about one-seventeenth as likely, and redevelopment favors big parcels (real redevelopment happened almost entirely on large commercial and industrial sites: lot size alone picks those out with an AUC of 0.94). The Arsenal Mall choice now builds about 400 apartments, like the real Arsenal Yards, instead of thousands.'],
+      [B('Prices rose too slowly. '), 'The old market grew about 4% a year with demand. Values now follow Watertown’s real price history (about ×2.9 since 2000, including the 2008 dip), with local supply and demand nudging around it. That makes prices an input, not a prediction; see Model assumptions for the rate after 2026.'],
+      [B('Chains took over. '), 'Every version of the storefront model drifted toward chains even with the thesis switched off, because chains almost never closed (a 139-year average lifetime). Shops now close near real retail exit rates, about 5–7% a year, and an affordable independent almost always gets a free storefront; chains win where rents outrun what independents can pay. New independents are now the real mix too: mostly restaurants, salons, cleaners and gyms, with about one in seven a café, bakery, bookshop or similar.'],
+      [B('The budget sank. '), 'With growth corrected, the city ran ever-deeper deficits, because the game only counted taxes on new buildings as “new growth.” Real Watertown’s levy roughly tripled from 2000 to about $165M in FY2025, partly from renovations, additions and business equipment that the game doesn’t model one by one. Those now add 1.4% of the levy a year, and department costs grow 3.6% a year (benefits 4.5%), so a replay of 2000–2026 lands near the real levy and roughly balanced, as the real town did.'],
+      [B('Traffic on streets without counts. '), 'The first hold-out test hid a fifth of the MassDOT counts and asked the model to predict them. It did worse than simply guessing the typical count for that kind of street. It also turned out that most of the “counts” on local streets were MassDOT placeholders (1,154 cars a day on every local street, marked “not applicable”), which are no longer treated as data.'],
+    ),
+    H('What the check says about the thesis'),
+    P(`With the neutral model, a replay of 2000–2026 ends with chains at ${pct(share(N.replay))} of storefronts, against ${pct(realShare)} in reality. With the thesis switched on (speculating landlords, “on the rise” buzz, chains favored as rents climb) it ends at ${pct(share(T.replay))}. Even at a tenth of its designed strength, the buzz noticeably raises the chain share (to about 24% in a test run).`),
+    NOTE(B('Honest reading: '), 'Watertown’s storefronts today look more like the neutral model’s 2026 than the thesis model’s. As built, the thesis machinery hollows out Main Street faster than history did. That doesn’t mean speculation isn’t real; the strongest signal in the data is that chains got new, expensive space (about 27% of storefronts in post-2000 buildings are chains, against about 12% in older ones), which the plain rent mechanism already produces. The thesis model stays in the game as an argument to play with, labeled as such.'),
+    H('Traffic'),
+    tr ? P(`Hidden-count test on today’s map (${fmtInt(tr.tiles)} counted street tiles, five folds by count segment). On a log scale the calibrated model explains ${pct(Math.max(0, tr.calibrated.r2))} of the variation in counts it never saw (typical error ${pct(tr.calibrated.medianError)}). Guessing the typical count for that class of street explains ${pct(Math.max(0, tr.classMedian.r2))} (typical error ${pct(tr.classMedian.medianError)}). The routed model alone, without counts nearby, does worse than either, so the game now leans on street class and nearby counts, and uses the routed model mainly for how traffic changes when you change the town.`) : null,
+    H('Where change happens'),
+    P(`Of ${fmtInt(sp.lots || 0)} parcels, ${fmtInt(sp.bigChanged || 0)} really became something big (apartments, labs, the mall site) between 2000 and 2026. Across runs, how often the model rebuilt each parcel predicts which ones with an AUC of ${(sp.aucBig || 0).toFixed(2)} (0.5 is chance; lot size alone gets ${(sp.aucBigLotSize || 0).toFixed(2)}). The model now builds about as much as history did, but not in the right places: real redevelopment followed specific owners and specific deals that no market model of this kind can see.`),
+    H('What this can’t test'),
+    LIST(
+      'There is no record of 2000’s storefronts, so the 2000 shops are today’s minus the ones in newer buildings. The storefront test is really “does churn over 26 years keep the mix stable?”, not “does it reproduce history?”.',
+      'Vacancy: the model ends with about 16% of storefronts empty; there is no good public figure for Watertown to compare.',
+      'Traffic counts are mostly from 2009–2016, so 2000 traffic is borrowed from them, and there is nothing to check traffic change against.',
+      'Prices are now an input through 2026, so the value rows above test the deflating and the local factor, not price prediction.',
+      'Commercial value still comes out too high: new commercial buildings are valued at average construction cost, while real commercial assessments vary hugely.'
+    ),
+    el('p', { class: 'fine' }, `Run ${new Date(v.generated).toLocaleDateString()}, ${v.runs} seeds per mode. Census figures: 2000, 2010 and 2020 decennial counts. Price history: NeighborhoodScout repeat-sales appreciation for Watertown. Reproduce with node tools/validate.mjs.`),
+  ];
+}
 
 export function behindScenes(ui, start = 'why') {
   ui.btsCh = ui.btsCh || start;

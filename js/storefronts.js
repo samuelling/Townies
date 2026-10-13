@@ -8,6 +8,11 @@ import { techFootfall, techRetailF } from './tech.js';
 import { A } from './assumptions.js';
 
 const STOREFRONT = new Set(['food', 'retail', 'service']);
+// Turnover, calibrated in tools/validate.mjs against Watertown's storefronts today: shops close for ordinary
+// reasons (retirement, a better offer, a chain trimming locations) near retail establishment exit rates (roughly
+// 5–7% a year). In a calm market an affordable independent almost always gets the space; chains win where rents
+// have run past what independents can pay. Replaying 2000–2026 with these lands near today's ~15% chain share.
+export const SF = { indieExit: 0.006, chainExit: 0.004, chainFill: 0.01, leaseUp: 0.45 };
 
 export const POLICIES = {
   vacancyFee: { label: 'Vacant storefront fee', blurb: 'Owners pay $2,000/mo per storefront left empty over 6 months. Landlords cut asking rents faster; property owners are not amused.' },
@@ -39,8 +44,16 @@ const CHAINS = [
 function pick(arr, r) {
   return arr[Math.floor(r * arr.length) % arr.length];
 }
+// what kind of independent takes an empty storefront, weighted like Watertown's real independents today
+// (mostly restaurants, salons, barbers, cleaners, gyms; about one in seven is a café, bakery, bookshop or similar)
+const INDIE_MIX = [['restaurant', 0.3], ['service', 0.35], ['retail', 0.2], ['coffee', 0.04], ['bakery', 0.04], ['boutique', 0.03], ['books', 0.015], ['gallery', 0.015], ['records', 0.01]];
+function indieType(r) {
+  let a = 0;
+  for (const [t, p] of INDIE_MIX) if ((a += p) >= r) return t;
+  return 'restaurant';
+}
 function indieName(rand) {
-  const type = pick(Object.keys(NAMES), rand());
+  const type = indieType(rand());
   const n = pick(NAMES[type], rand()).replace('{P}', pick(PLACE, rand())).replace('{N}', String(10 + Math.floor(rand() * 90)));
   return { n, k: KIND_FOR[type], sig: ['coffee', 'books', 'boutique', 'gallery', 'records', 'bakery'].includes(type) };
 }
@@ -82,31 +95,42 @@ export function initStorefronts(sim) {
     lot.vacant = lot.vacant || 0;
     // about a quarter of owners are "prospectors": they price for the Watertown they expect, not the one they have
     if (lot.greed == null) lot.greed = greedFor(sim, lot);
-    lot.sf = [];
-    // only commercial and mixed-use parcels have storefronts (home businesses on house lots don't)
-    if (!(lot.zone === ZONE.C || lot.mixed)) continue;
-    (lot.biz || []).forEach((name, k) => {
-      const cat = lot.bizCat[k];
-      if (!STOREFRONT.has(cat)) return;
-      const chain = !!lot.bizChainF[k];
-      const kind = lot.bizKind ? lot.bizKind[k] : '';
-      const sig = isSignature(kind, name, chain);
-      const h = r(n++);
-      lot.sf.push({
-        n: name, k: kind, cat, chain, sig, orig: 1,
-        lease: 1 + Math.floor(h * 60), // months left on the current lease
-        rent: 1, // rent locked in at signing (index)
-        cushion: chain ? 0.25 + 0.25 * h : sig ? 0.03 + 0.17 * h : 0.07 + 0.25 * h,
-        since: 0,
-      });
-    });
-    if (lot.sf.length) {
-      const c = sim.cellOf(lot.cx, lot.cy);
-      lot.ff0 = footfall(sim, c) || 1;
-      lot.vib0 = sim.vibSat ? sim.vibSat[c] : 0;
-      lot.storefronts = lot.sf.length;
-    }
+    seedLot(sim, lot, () => r(n++));
   }
+  refreshStats(sim);
+}
+
+// A lot's storefronts from its real business list (at game start, or when a historical replay rebuilds it).
+function seedLot(sim, lot, rnd) {
+  lot.sf = [];
+  lot.vacant = lot.vacant || 0;
+  // only commercial and mixed-use parcels have storefronts (home businesses on house lots don't)
+  if (!(lot.zone === ZONE.C || lot.mixed)) return;
+  if (lot.biz && lot.biz.length && !lot.bizCat) classifyLot(lot);
+  (lot.biz || []).forEach((name, k) => {
+    const cat = lot.bizCat[k];
+    if (!STOREFRONT.has(cat)) return;
+    const chain = !!lot.bizChainF[k];
+    const kind = lot.bizKind ? lot.bizKind[k] : '';
+    const sig = isSignature(kind, name, chain);
+    const h = rnd();
+    lot.sf.push({
+      n: name, k: kind, cat, chain, sig, orig: 1,
+      lease: 1 + Math.floor(h * 60), // months left on the current lease
+      rent: 1, // rent locked in at signing (index)
+      cushion: chain ? 0.25 + 0.25 * h : sig ? 0.03 + 0.17 * h : 0.07 + 0.25 * h,
+      since: sim.t || 0,
+    });
+  });
+  if (lot.sf.length) {
+    const c = sim.cellOf(lot.cx, lot.cy);
+    lot.ff0 = footfall(sim, c) || 1;
+    lot.vib0 = sim.vibSat ? sim.vibSat[c] : 0;
+    lot.storefronts = lot.sf.length;
+  }
+}
+export function seedStorefronts(sim, lot) {
+  seedLot(sim, lot, () => sim.rand());
   refreshStats(sim);
 }
 
@@ -220,7 +244,7 @@ export function storefrontsMonthly(sim) {
         reliefN++;
       }
       if (!s.chain && s.orig && P.legacy) margin += 0.06;
-      const retire = s.chain || /bank|credit|financ|insurance/i.test(s.k || s.n) ? 0.0006 : 0.0022;
+      const retire = s.chain || /bank|credit|financ|insurance/i.test(s.k || s.n) ? SF.chainExit : SF.indieExit;
       const pClose = margin < 0 ? Math.min(0.45, 0.06 + 0.6 * -margin) : retire;
       if (rand() < pClose) {
         lot.sf.splice(k, 1);
@@ -239,13 +263,13 @@ export function storefrontsMonthly(sim) {
       // what each kind of tenant can afford, as a rent index
       const indieCap = 1 + (0.1 + 0.5 * (rev - 1)) / 0.45 + (P.rentRelief ? 0.27 : 0);
       const chainCap = 1 + (0.3 + 0.6 * (rev - 1)) / 0.45;
-      const interest = clamp(0.18 * rev, 0.04, 0.35);
+      const interest = clamp(SF.leaseUp * rev, 0.04, 0.5);
       if (rand() < interest) {
         const indieOk = lot.ask <= indieCap;
         const chainOk = !protectedD && lot.ask <= chainCap;
         let shop = null;
         // in a calm market far more independents than chains want the space; speculation tilts it to credit tenants
-        if (indieOk && (!chainOk || rand() > Math.min(0.55, 0.22 + 0.5 * hype * A(sim, 'chainTilt')))) {
+        if (indieOk && (!chainOk || rand() > Math.min(0.55, SF.chainFill + 0.5 * hype * A(sim, 'chainTilt')))) {
           const nm = indieName(rand);
           shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: nm.sig, orig: 0, lease: 60, rent: lot.ask, cushion: indieCap - lot.ask > 0 ? Math.min(0.3, 0.45 * (indieCap - lot.ask)) : 0.02, since: sim.t };
         } else if (chainOk) {

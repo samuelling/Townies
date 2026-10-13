@@ -133,7 +133,7 @@ const yearF = (sim) => sim.y + sim.m / 12;
 
 // Things that happened (they only play out if your game starts before them)
 const HISTORY = [
-  { y: 2008, m: 8, run: (s) => { s.apply({ demand: { R: -0.35, C: -0.3, I: -0.3 }, approval: { all: -2 }, news: ['Wall Street meltdown hits Main Street', 'Lending freezes. Projects stall, shops cut hours, and the For Lease signs multiply.', 'big'] }); s.market *= 0.9; s.hype = 0; } },
+  { y: 2008, m: 8, run: (s) => { s.apply({ demand: { R: -0.35, C: -0.3, I: -0.3 }, approval: { all: -2 }, news: ['Wall Street meltdown hits Main Street', 'Lending freezes. Projects stall, shops cut hours, and the For Lease signs multiply.', 'big'] }); s.hype = 0; } },
   { y: 2014, m: 5, run: (s) => s.apply({ demand: { I: 0.5, R: 0.15 }, news: ['Kendall Square spills over the river', 'Life-science companies priced out of Cambridge are touring Watertown’s old industrial buildings.', 'big'] }) },
   { y: 2020, m: 2, run: (s) => { s.shock = { until: s.t + 10, f: 0.82 }; s.hype = 0; s.apply({ demand: { C: -0.35 }, approval: { business: -4 }, news: ['Pandemic closes the Square', 'Restaurants switch to takeout, offices empty out, and the sidewalks go quiet. Nobody knows for how long.', 'big'] }); s.apply({ funds: 9e6, news: ['Federal relief money arrives', 'Washington sends the town millions for recovery. Everyone has an idea for it.'] }); } },
   { y: 2023, m: 3, run: (s) => s.apply({ demand: { I: -0.6 }, news: ['The lab boom cools', 'Venture funding dries up. New lab buildings open with "Available" banners.', 'big'] }) },

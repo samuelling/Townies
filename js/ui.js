@@ -1,5 +1,7 @@
 // SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
+import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
+import { reportCard, reportText } from './report.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
@@ -15,7 +17,8 @@ import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { NOTICE, DATA_CREDITS, FICTION } from './credits.js';
 import { meloraStatus } from './melora.js';
-import { ASSUMPTIONS, EVIDENCE, presetOf } from './assumptions.js';
+import { valeStatus } from './rival.js';
+import { ASSUMPTIONS, MARKET_ASSUMPTIONS, EVIDENCE, presetOf, A } from './assumptions.js';
 import { resetGreed } from './storefronts.js';
 import { DESIGNS, DESIGN_ORDER, evaluate as evalJunction, legVolumes, planDesign, ctlAt, adoptCtl, squareCtl } from './junctions.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
@@ -125,7 +128,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -460,6 +463,7 @@ export class UI {
     this.win('query', 'Query', (body) => {
       const t = el('table', { class: 'kv' });
       const add = (...rs) => rs.forEach((r) => r && t.append(r));
+      if (lot && lot === homeLot(w) && irvingSeason(s)) add(row('🎃 This fall', EGG_NOTE));
       let head = '';
       if (!w.inTown[i]) head = 'Outside Watertown — neighbouring town';
       else if (w.terrain[i] === 1) head = w.road[i] ? `Bridge — ${w.names[w.roadName[i]] || 'unnamed'}` : 'Water';
@@ -655,6 +659,11 @@ export class UI {
         el('div', {}, el('b', {}, 'Melora'), ` · ${m.label}`),
         el('div', { class: 'meter', title: `${Math.round(m.steam)} / 100` }, el('i', { style: `width:${Math.round(m.steam)}%` })),
         el('small', {}, [m.delays ? `${m.delays} hearing${m.delays > 1 ? 's' : ''} delayed` : null, m.wins ? `${m.wins} "win${m.wins > 1 ? 's' : ''}"` : null, m.walked ? `${m.walked} project${m.walked > 1 ? 's' : ''} abandoned` : null, m.points ? `${m.points} fair point${m.points > 1 ? 's' : ''}` : null, m.cost > 0 ? `${m.costStr} in staff time` : null, m.warden ? 'Tree Warden' : null, m.pauseUntil > s.t ? `development pause: ${m.pauseUntil - s.t} mo left` : null].filter(Boolean).join(' · ') || 'Watching the agendas. Big projects and being brushed off get her going; feeling heard calms her down.'))));
+      const v = valeStatus(s);
+      body.append(el('div', { class: 'melcard valecard' }, this.avatar('vale'), el('div', {},
+        el('div', {}, el('b', {}, 'Preston Vale'), ` · Vale Harbor Partners · ${v.label}`),
+        el('div', { class: 'meter', title: `ambition ${Math.round(v.ambition)} / 100` }, el('i', { style: `width:${Math.round(v.ambition)}%` })),
+        el('small', {}, [v.wins ? `${v.wins} deal${v.wins > 1 ? 's' : ''} won` : null, v.losses ? `${v.losses} turned down` : null, v.homes ? `${v.homes.toLocaleString()} homes built` : null, v.chains ? `${v.chains} chain storefronts` : null, v.legal > 0 ? `${v.legalStr} in legal fees` : null].filter(Boolean).join(' · ') || 'The out-of-town developer. Buzz and approvals bring him back with bigger plans; turning him down cools him off (and sometimes sends him to court).'))));
       const list = el('div', { class: 'cfeed' });
       for (const c of (s.comments || []).slice(0, 40)) {
         list.append(el('div', { class: `cmt${c.who === 'editor' ? ' ed' : ''}` }, this.avatar(c.who),
@@ -826,7 +835,7 @@ export class UI {
     if (ev.type === 'review') {
       box = el('div', { class: 'win modal' }, el('div', { class: 'wbar' }, el('span', {}, 'Contract review')), el('div', { class: 'wbody' },
         el('h2', {}, `Grade: ${ev.rec.grade}`), el('p', {}, `The Council renewed your contract. Average approval ${ev.rec.approval}% over the last year; reserves ${ev.rec.funds >= 0 ? 'positive' : 'in the red'}.`),
-        el('div', { class: 'choices' }, el('button', { class: 'choice', onclick: () => this.closeModal() }, el('b', {}, 'Back to work')))));
+        el('div', { class: 'choices' }, el('button', { class: 'choice', onclick: () => this.closeModal() }, el('b', {}, 'Back to work')), el('button', { class: 'choice', onclick: () => { this.closeModal(); this.reportWindow(); } }, el('b', {}, 'See your report card')))));
     } else {
       const won = ev.type === 'win';
       box = el('div', { class: 'win modal' }, el('div', { class: 'wbar' }, el('span', {}, won ? 'Mission accomplished' : 'Term over')), el('div', { class: 'wbody' },
@@ -834,10 +843,38 @@ export class UI {
         el('p', {}, won ? 'The Council, the comment section and (most of) Pleasant St agree: you did it.' : ev.why || 'The term ended without every goal met.'),
         ...ev.goals.map((g) => el('div', { class: 'kvline' }, el('span', {}, `${g.met ? '✅' : '❌'} ${g.label}`), el('b', {}, `${g.fmt(g.value)} / ${g.fmt(g.target)}`))),
         el('div', { class: 'choices' },
+          el('button', { class: 'choice', onclick: () => { this.closeModal(); this.refreshHud(); this.reportWindow(); } }, el('b', {}, 'See your report card'), el('small', {}, 'the Watertown you built')),
           el('button', { class: 'choice', onclick: () => { this.closeModal(); this.refreshHud(); } }, el('b', {}, 'Keep governing'), el('small', {}, 'continue in sandbox')),
           el('button', { class: 'choice', onclick: () => this.g.restart() }, el('b', {}, 'Start a new term')))));
     }
     this.showModal(box);
+  }
+
+  reportWindow() {
+    this.win('report', 'Report card', (body) => {
+      const rc = reportCard(this.sim);
+      const cls = (g) => (g > 0 ? 'rc-up' : g < 0 ? 'rc-down' : '');
+      const card = el('div', { class: 'rc' },
+        el('div', { class: 'rc-top' },
+          el('div', {}, el('div', { class: 'rc-mast' }, 'The Watertown Townie'), el('div', { class: 'rc-sub' }, `${rc.title} · ${rc.from ? rc.from + ' – ' : ''}${rc.to}${rc.years >= 1 ? ` · ${Math.round(rc.years)} years` : ''}`)),
+          el('div', { class: `rc-grade g${rc.grade}`, title: 'Overall grade: goals, street life, independents, the budget and approval' }, rc.grade)),
+        el('div', { class: 'rc-heads' }, ...rc.headlines.map((h, k) => el(k ? 'p' : 'h3', {}, h))),
+        el('table', { class: 'rc-tab' },
+          el('tr', {}, el('th', {}, ''), el('th', {}, 'Start'), el('th', {}, 'Now'), el('th', {}, 'Change')),
+          ...rc.rows.map((r) => el('tr', {}, el('td', {}, r.label), el('td', {}, r.from), el('td', {}, r.to), el('td', { class: cls(r.good) }, r.delta)))),
+        rc.goals.length ? el('div', { class: 'rc-goals' }, ...rc.goals.map((g) => el('span', { class: g.met ? 'met' : '' }, `${g.met ? '✓' : '✗'} ${g.label} ${g.fmt(g.value)}/${g.fmt(g.target)}`))) : null,
+        rc.projects.length ? el('p', { class: 'rc-built' }, el('b', {}, 'Built: '), rc.projects.map((p) => `${p.name}${p.homes ? ` (${p.homes.toLocaleString()} homes)` : p.jobs ? ` (${p.jobs.toLocaleString()} jobs)` : ''}`).join(' · ')) : null,
+        rc.moved.length ? el('p', { class: 'rc-built' }, el('b', {}, 'Who moved: '), rc.moved.slice(0, 3).map((m) => `${FACTION_LABEL[m.f]} ${m.d > 0 ? '+' : m.d < 0 ? '−' : '±'}${Math.abs(m.d)}`).join(' · ')) : null,
+        el('div', { class: 'rc-foot' }, 'Townies · a city sim of Watertown, MA'));
+      body.append(card,
+        el('div', { class: 'choices' },
+          el('button', { class: 'choice', onclick: (e) => {
+            const t = reportText(rc);
+            const btn = e.currentTarget;
+            const done = () => { btn.querySelector('b').textContent = 'Copied'; this.toast('Summary copied'); };
+            try { navigator.clipboard.writeText(t).then(done, () => this.toast('Copy failed: select the text instead')); } catch (er) { this.toast('Copy not available here'); }
+          } }, el('b', {}, 'Copy summary'), el('small', {}, 'as text, to paste anywhere'))));
+    }, { cls: 'wide' });
   }
 
   peerTable() {
@@ -977,6 +1014,15 @@ export class UI {
           el('p', { class: 'fine' }, el('i', {}, a.why)));
         body.append(row);
       }
+      body.append(el('h4', {}, 'Outside the thesis'));
+      for (const [k, a] of Object.entries(MARKET_ASSUMPTIONS)) {
+        const v = A(s, k);
+        body.append(el('div', { class: 'techrow' },
+          el('div', { class: 'techhead' }, el('b', {}, a.label), el('span', { class: 'techpct' }, EVIDENCE[a.evidence])),
+          el('p', { class: 'fine' }, a.fmt(v)),
+          el('div', { class: 'techst' }, ...a.options.map((o) => el('button', { class: v === o.v ? 'on' : '', onclick: () => { s.assume[k] = o.v; this.wins.get('assume') && this.wins.get('assume').refresh(); } }, el('b', {}, o.label), el('small', {}, o.small)))),
+          el('p', { class: 'fine' }, el('i', {}, a.why))));
+      }
       body.append(el('p', { class: 'fine' }, 'Changing these mid-game takes effect from next month; outcomes already played out stay as they are.'));
     }, { cls: 'wide' });
   }
@@ -1098,7 +1144,8 @@ export class UI {
     const box = el('div', { class: 'win modal agenda' });
     box.append(el('div', { class: 'wbar' }, el('span', {}, 'City Council Agenda')));
     const body = el('div', { class: 'wbody' });
-    body.append(el('div', { class: 'agdate' }, this.sim.dateStr()), el('h2', {}, sc.title), el('p', {}, sc.text(this.sim, ctx)));
+    const title = typeof sc.title === 'function' ? sc.title(this.sim, ctx) : sc.title;
+    body.append(el('div', { class: 'agdate' }, this.sim.dateStr()), el('h2', {}, title), el('p', {}, sc.text(this.sim, ctx)));
     if (ctx && ctx.cx != null) {
       body.append(el('button', { class: 'link', onclick: () => { this.r.centerOn(ctx.cx, ctx.cy); this.r.selLot = ctx.id; } }, '📍 Show me where'));
       this.r.selLot = ctx.id;
@@ -1111,14 +1158,14 @@ export class UI {
         try { ch.run(this.sim, ctx); } catch (e) { console.error(e); }
         const delta = {};
         for (const k of Object.keys(this.sim.approvalOff)) delta[k] = this.sim.approvalOff[k] - (before[k] || 0);
-        try { reactAgenda(this.sim, sc.title, delta); } catch (e) { console.error(e); }
+        try { reactAgenda(this.sim, title, delta); } catch (e) { console.error(e); }
         this.closeModal();
         this.refreshStatus();
         this.refreshWins();
         this.r.refreshOverlay();
         this.r.selLot = null;
         this.g.music.sfx('build');
-      } }, el('b', {}, ch.label), ch.fx ? el('small', {}, ch.fx) : null));
+      } }, el('b', {}, ch.label), ch.fx ? el('small', {}, typeof ch.fx === 'function' ? ch.fx(this.sim, ctx) : ch.fx) : null));
     }
     body.append(choices);
     box.append(body);
