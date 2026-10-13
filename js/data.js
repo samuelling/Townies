@@ -1,4 +1,5 @@
 import { CFG } from './config.js';
+import { overpassQuery, PARCEL_FIELDS as PF, expandSnapshot, SNAPSHOT_PATH } from './snapshot.js';
 
 // ---------- tiny IndexedDB key/value store ----------
 let dbp = null;
@@ -52,36 +53,7 @@ export async function kvDel(k) {
   } catch (e) {}
 }
 
-// ---------- OpenStreetMap via Overpass ----------
-function overpassQuery(b) {
-  const bb = `${b.s},${b.w},${b.n},${b.e}`;
-  return `[out:json][timeout:180][maxsize:1073741824];
-(
-  rel["boundary"="administrative"]["admin_level"="8"]["name"="${CFG.TOWN_NAME}"](${bb});
-  way["building"](${bb});
-  rel["building"](${bb});
-  way["highway"](${bb});
-  way["waterway"](${bb});
-  way["natural"~"^(water|wood|wetland|scrub|grassland)$"](${bb});
-  rel["natural"="water"](${bb});
-  rel["waterway"="riverbank"](${bb});
-  way["landuse"](${bb});
-  rel["landuse"](${bb});
-  way["leisure"](${bb});
-  rel["leisure"](${bb});
-  way["amenity"](${bb});
-  node["amenity"](${bb});
-  node["shop"](${bb});
-  way["shop"](${bb});
-  node["office"](${bb});
-  node["craft"](${bb});
-  node["tourism"](${bb});
-  node["healthcare"](${bb});
-  node["natural"="tree"](${bb});
-);
-out geom;`;
-}
-
+// ---------- OpenStreetMap via Overpass (live fallback) ----------
 async function readWithProgress(resp, onBytes) {
   if (!resp.body || !resp.body.getReader) return await resp.text();
   const reader = resp.body.getReader();
@@ -129,12 +101,8 @@ export async function fetchOSM(progress) {
   throw lastErr || new Error('Overpass unavailable');
 }
 
-// ---------- MassGIS property tax parcels ----------
-const PARCEL_FIELDS = [
-  'OBJECTID', 'LOC_ID', 'MAP_PAR_ID', 'TOWN_ID', 'BLDG_VAL', 'LAND_VAL', 'OTHER_VAL', 'TOTAL_VAL', 'FY',
-  'LOT_SIZE', 'LOT_UNITS', 'USE_CODE', 'USE_DESC', 'SITE_ADDR', 'ZONING', 'YEAR_BUILT', 'BLD_AREA',
-  'UNITS', 'RES_AREA', 'STYLE', 'STORIES', 'NUM_ROOMS',
-].join(',');
+// ---------- MassGIS property tax parcels (live fallback) ----------
+const PARCEL_FIELDS = PF.join(',');
 
 export async function fetchParcels(progress) {
   const wheres = [`TOWN_ID=${CFG.TOWN_ID}`, `TOWN_ID='${CFG.TOWN_ID}'`];
@@ -174,7 +142,49 @@ export async function fetchParcels(progress) {
   throw lastErr;
 }
 
+// ---------- pre-built snapshot (data/watertown.json.gz, refreshed by a GitHub Action) ----------
+export async function fetchSnapshot(progress) {
+  progress('Unfolding the map of Watertown…');
+  const r = await fetch(SNAPSHOT_PATH, { cache: 'no-cache' });
+  if (!r.ok) throw new Error('No map snapshot (' + r.status + ')');
+  const total = +r.headers.get('content-length') || 0;
+  let bytes;
+  if (r.body && r.body.getReader) {
+    const reader = r.body.getReader();
+    const chunks = [];
+    let n = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      n += value.length;
+      progress(`Unfolding the map of Watertown… ${(n / 1e6).toFixed(1)}${total ? ' / ' + (total / 1e6).toFixed(1) : ''} MB`);
+    }
+    bytes = new Uint8Array(n);
+    let o = 0;
+    for (const c of chunks) {
+      bytes.set(c, o);
+      o += c.length;
+    }
+  } else bytes = new Uint8Array(await r.arrayBuffer());
+  let text;
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot unzip the map');
+    const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    text = await new Response(ds).text();
+  } else text = new TextDecoder().decode(bytes); // server already decompressed it
+  return expandSnapshot(JSON.parse(text));
+}
+
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
+  const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');
+  if (!forceLive) {
+    try {
+      return await fetchSnapshot(progress);
+    } catch (e) {
+      console.warn('Snapshot unavailable, falling back to live download', e);
+    }
+  }
   if (!refresh) {
     const cached = await kvGet(CFG.RAW_KEY);
     if (cached && cached.osm && cached.osm.length) {

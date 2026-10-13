@@ -1,0 +1,9 @@
+{
+  "name": "townies",
+  "private": true,
+  "type": "module",
+  "description": "SimCity 2000-style city sim of Watertown, MA. No build step; served as static files.",
+  "scripts": {
+    "fetch-data": "node tools/fetch-data.mjs"
+  }
+}

@@ -1,0 +1,46 @@
+name: Refresh Watertown map data
+
+# Downloads OpenStreetMap + MassGIS parcel data on GitHub's servers and commits a
+# trimmed snapshot (data/watertown.json.gz) that the game loads instead of hitting
+# the map servers from every player's browser.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 9 1 */2 *' # 09:17 UTC on the 1st of every other month
+  push:
+    branches: [main]
+    paths:
+      - 'tools/fetch-data.mjs'
+      - 'js/snapshot.js'
+      - '.github/workflows/refresh-data.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch and trim map data
+        id: fetch
+        run: node tools/fetch-data.mjs
+      - name: Commit snapshot and run log
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/refresh-log.txt
+          if [ "${{ steps.fetch.outcome }}" = "success" ]; then git add data/watertown.json.gz; fi
+          if git diff --cached --quiet; then echo "Nothing to commit"; exit 0; fi
+          git commit -m "Refresh Watertown map data (${{ steps.fetch.outcome }})"
+          git pull --rebase origin main
+          git push
