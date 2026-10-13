@@ -35,6 +35,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sdate { font-weight: bold; min-width: 70px; }
 .sfunds { font-weight: bold; color: #145a14; }
 .sfunds.neg, .sappr.neg { color: #b00; }
+.mstats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.mstat { background: #fff; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); padding: 4px 6px; }
+.mstat small { display: block; font-size: 10px; color: #555; text-transform: uppercase; }
+.mstat b { font-size: 18px; }
+.mstat i { display: block; font-size: 11px; color: #444; font-style: normal; }
+.policy { display: grid; grid-template-columns: 22px 1fr; gap: 4px; padding: 4px 0; border-bottom: 1px dotted #999; cursor: pointer; }
+.policy input { margin-top: 3px; }
+.policy em { font-style: normal; font-size: 11px; color: #7a3a00; }
+.policy small { display: block; font-size: 11px; color: #333; }
+.sflog { font-size: 12px; }
+.sfl { padding: 2px 0; border-bottom: 1px dotted #bbb; }
+.sfl small { color: #666; }
+.sfl.close-rent { color: #8a1f1f; }
+.sfl.open-indie { color: #145a14; }
 .svib { background: none; border: 0; padding: 0; font-weight: bold; color: #8a4a12; text-decoration: underline dotted; }
 .svib.up { color: #145a14; }
 .svib.neg { color: #b00; }

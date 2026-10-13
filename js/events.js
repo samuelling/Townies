@@ -396,7 +396,7 @@ export const SCENARIOS = [
 ];
 
 export const FOLLOWUPS = {
-  'square-done': (s) => s.apply({ capNear: { at: 'square', r: 14, amt: 0.1 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
+  'square-done': (s) => s.apply({ flag: { squareDone: 1 }, capNear: { at: 'square', r: 14, amt: 0.1 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
   'construction-biz': (s) => s.apply({ approval: { business: -4 }, news: ['Bakery remains open, accessible by gravel path and determination', 'Business owners along the construction zone ask for help.'] }),
   'cap-lobby': (s) => {
     if (s.rand() < 0.75) s.apply({ capShare: 0.05, approval: { homeowners: 6, seniors: 3 }, news: ['Governor signs Watertown tax relief bill', 'The House vote was unanimous. Homeowners are spared; commercial property takes one for the team.', 'big'] });

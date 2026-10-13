@@ -2,6 +2,7 @@
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
+import { POLICIES } from './storefronts.js';
 
 const ICON = {
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
@@ -99,7 +100,7 @@ export class UI {
       return m;
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)], ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -147,7 +148,7 @@ export class UI {
     this.sDate = el('span', { class: 'sdate' });
     this.sFunds = el('span', { class: 'sfunds' });
     this.sPop = el('span', { class: 'spop' });
-    this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for the overlay.', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') });
+    this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for Main Street.', onclick: () => this.mainStreetWindow() });
     this.sAppr = el('button', { class: 'sappr', onclick: () => this.councilWindow() });
     this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Commercial, Industrial' });
     this.ticker = el('button', { class: 'ticker', onclick: () => this.newsWindow() });
@@ -369,6 +370,7 @@ export class UI {
           row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents` : ''),
           row('Jobs', lot.jobs >= 1 ? `~${Math.round(lot.jobs * lot.occ)}` : ''),
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
+          row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs 2027${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
         if (lot.built > 0 && lot.year >= CFG.START.y) add(row('Note', 'Built during your term'));
@@ -444,6 +446,47 @@ export class UI {
     }, { cls: 'wide' });
   }
 
+  mainStreetWindow() {
+    this.win('main', 'Main Street', (body) => {
+      const s = this.sim;
+      const st = s.sfStats || {};
+      const dv = s.vibrancy - (s.base.vib0 ?? s.vibrancy);
+      const total = (st.open || 0) + (st.vacant || 0);
+      const stat = (label, val, sub) => el('div', { class: 'mstat' }, el('small', {}, label), el('b', {}, val), sub ? el('i', {}, sub) : null);
+      body.append(
+        el('div', { class: 'mstats' },
+          stat('Vibrancy', `${Math.round(s.vibrancy)}`, `${dv >= 0 ? '+' : ''}${dv.toFixed(1)} since you took office`),
+          stat('Storefronts open', `${st.open || 0}`, `${st.vacant || 0} for lease (${total ? Math.round((100 * (st.vacant || 0)) / total) : 0}%)`),
+          stat('Independents', `${st.indie || 0}`, `${st.chain || 0} chains · ${st.sig || 0} signature`),
+          stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs 2027 · buzz ${Math.round((s.hype || 0) * 100)}`)
+        ),
+        el('p', { class: 'fine' }, 'Signature independents (coffee, books, boutiques, galleries, bakeries) make a street feel alive and are the first to go when landlords chase the "Watertown is on the rise" rents. Chains and bank branches can pay more, and add less.'),
+        el('button', { class: 'btn', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') }, this.overlay === 'vibrancy' ? 'Hide vibrancy map' : 'Show vibrancy map'),
+        el('h4', {}, 'Policies')
+      );
+      s.policies = s.policies || {};
+      for (const [k, p] of Object.entries(POLICIES)) {
+        const rec = s.recurring['pol:' + { vacancyFee: 'vacfee', rentRelief: 'relief', legacy: 'legacy', formulaRetail: 'formula', popups: 'popups' }[k]];
+        const cost = rec ? (rec.monthly < 0 ? `+${fmtMoney(-rec.monthly * 12)}/yr` : `${fmtMoney(rec.monthly * 12)}/yr`) : '';
+        const cb = el('input', { type: 'checkbox' });
+        cb.checked = !!s.policies[k];
+        cb.addEventListener('change', () => {
+          s.policies[k] = cb.checked;
+          s.news(cb.checked ? `Council adopts ${p.label.toLowerCase()}` : `Council repeals ${p.label.toLowerCase()}`, '');
+          s.updateApproval();
+          this.refreshStatus();
+          this.g.music.sfx('zone');
+        });
+        body.append(el('label', { class: 'policy' }, cb, el('span', {}, el('b', {}, p.label), cost ? el('em', {}, ` ${cost}`) : null, el('small', {}, p.blurb))));
+      }
+      body.append(el('h4', {}, 'Recent openings & closings'));
+      const log = el('div', { class: 'sflog' });
+      for (const l of (s.sfLog || []).slice(0, 12)) log.append(el('div', { class: `sfl ${l.type}` }, el('small', {}, l.date), ' ', l.text));
+      if (!(s.sfLog || []).length) log.append(el('p', { class: 'fine' }, 'Nothing yet. Leases turn over every few years.'));
+      body.append(log);
+    }, { cls: 'wide' });
+  }
+
   councilWindow() {
     this.win('council', 'City Council', (body) => {
       const s = this.sim;
@@ -457,7 +500,7 @@ export class UI {
     this.win('graphs', 'Graphs', (body) => {
       const s = this.sim;
       const H = s.history;
-      const series = [['Population', (h) => h.pop, '#2a7a2a'], ['Jobs', (h) => h.jobs, '#2a4fa8'], ['Reserves', (h) => h.funds, '#a87a00'], ['Approval', (h) => h.approval, '#a82a6a'], ['Vibrancy', (h) => h.vib || 0, '#c0602a'], ['Res. land $/m²', (h) => h.lv, '#555']];
+      const series = [['Population', (h) => h.pop, '#2a7a2a'], ['Jobs', (h) => h.jobs, '#2a4fa8'], ['Reserves', (h) => h.funds, '#a87a00'], ['Approval', (h) => h.approval, '#a82a6a'], ['Vibrancy', (h) => h.vib || 0, '#c0602a'], ['Empty storefronts', (h) => h.vac || 0, '#7a2a2a'], ['Res. land $/m²', (h) => h.lv, '#555']];
       for (const [name, f, col] of series) {
         const c = el('canvas', { width: 300, height: 60, class: 'graph' });
         const g = c.getContext('2d');

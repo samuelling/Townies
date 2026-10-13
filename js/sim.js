@@ -3,6 +3,7 @@ import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
 import { clamp, hash2, rng, percentile, MONTHS } from './util.js';
 import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, bldRate, buildingTiles } from './world.js';
 import { frontage, classifyLot } from './vibrancy.js';
+import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
 
 const CC = 4;
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
@@ -122,6 +123,7 @@ export class Sim {
     };
     this.funds = budget * 0.1;
     this.computeAll(true);
+    initStorefronts(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.updateApproval(true);
@@ -365,6 +367,42 @@ export class Sim {
     for (let i = 0; i < Nc; i++) this.lvMod[i] = clamp(1 + 0.9 * (S[i] - this.S0[i]), 0.5, 1.8) * glob * this.lvLocal[i];
     void inTown;
   }
+  // Turn storefront-economy events into news and the Main Street log.
+  storefrontNews(ev) {
+    this.sfLog = this.sfLog || [];
+    let posted = 0;
+    const st = (lot) => streetOf(lot) || 'a side street';
+    for (const e of ev) {
+      const s = e.shop;
+      let line = null, title = null, body = '';
+      if (e.type === 'close-rent') {
+        line = `${s.n} closed on ${st(e.lot)}${e.jump > 0.05 ? ` after a ${Math.round(e.jump * 100)}% rent increase` : ' — sales could not keep up with the rent'}`;
+        if (s.sig || s.orig) {
+          title = `${s.n} to close${s.orig ? ' after years on ' + st(e.lot) : ''}`;
+          body = pick(CLOSE_BODIES, this.rand());
+        }
+      } else if (e.type === 'close-retire') {
+        line = `${s.n} on ${st(e.lot)} closed (owner retiring)`;
+        if (s.orig && this.rand() < 0.3) { title = `${s.n} closing as owner retires`; body = 'No one wanted to take it over at the new rent.'; }
+      } else if (e.type === 'open-indie') {
+        line = `${s.n} opened on ${st(e.lot)}${s.sig ? ' ★' : ''}`;
+        if (s.sig) { title = `${s.n} opens on ${st(e.lot)}`; body = pick(OPEN_BODIES, this.rand()); }
+      } else if (e.type === 'open-chain') {
+        line = `${s.n} (chain) signed a lease on ${st(e.lot)}`;
+        if (this.rand() < 0.5) { title = `${s.n} signs a ten-year lease on ${st(e.lot)}`; body = pick(CHAIN_BODIES, this.rand()); }
+      } else if (e.type === 'holdout') {
+        line = `Storefront at ${e.lot.addr || st(e.lot)} still empty after 9 months`;
+        title = `Storefront at ${e.lot.addr || st(e.lot)} sits empty for nine months`;
+        body = 'The owner is asking well above what the last tenant paid. A sign in the window promises "Coming soon."';
+      } else if (e.type === 'popup') line = `Pop-up gallery moved into an empty storefront on ${st(e.lot)}`;
+      if (line) this.sfLog.unshift({ date: this.dateStr(), t: this.t, text: line, type: e.type });
+      if (title && posted < 2) {
+        this.news(title, body);
+        posted++;
+      }
+    }
+    if (this.sfLog.length > 40) this.sfLog.length = 40;
+  }
   // Street-life field: frontage of each lot spread over walking distance, scaled by nearby residents.
   computeVibrancy(init = false) {
     const w = this.w;
@@ -375,11 +413,13 @@ export class Sim {
       this.vibC = new Float32Array(Nc);
       this.vibSat = new Float32Array(Nc);
       this.popNear = new Float32Array(Nc);
+      this.jobsNear = new Float32Array(Nc);
     }
-    const F = this.vibF, V = this.vibC, PN = this.popNear;
+    const F = this.vibF, V = this.vibC, PN = this.popNear, JN = this.jobsNear;
     F.fill(0);
     V.fill(0);
     PN.fill(0);
+    JN.fill(0);
     for (const lot of w.lots) {
       if (lot.dead || !lot.inTown) continue;
       if (lot.biz && lot.biz.length && !lot.bizCat) classifyLot(lot);
@@ -409,6 +449,7 @@ export class Sim {
     };
     spread(F, V);
     spread(this.popC, PN);
+    spread(this.jobsC, JN);
     if (init || !this.base.vibRef) {
       const pos = [], pops = [];
       for (let i = 0; i < Nc; i++) {
@@ -485,6 +526,7 @@ export class Sim {
     this.growth();
     this.computeAll();
     this.updateDemand();
+    this.storefrontNews(storefrontsMonthly(this));
     this.updateApproval();
     for (const k of FACTIONS) this.approvalOff[k] *= 0.985;
     for (const k of Object.keys(this.demandMod)) this.demandMod[k] *= 0.99;
@@ -500,7 +542,7 @@ export class Sim {
     this.hooks.monthly && this.hooks.monthly(this);
   }
   pushHistory(income, expenses) {
-    this.history.push({ t: this.t, pop: this.pop, jobs: this.jobs, funds: this.funds, income, expenses, approval: this.approval, lv: this.avgLV(), vib: this.vibrancy });
+    this.history.push({ t: this.t, pop: this.pop, jobs: this.jobs, funds: this.funds, income, expenses, approval: this.approval, lv: this.avgLV(), vib: this.vibrancy, vac: this.sfStats ? this.sfStats.vacant : 0 });
     if (this.history.length > 600) this.history.shift();
   }
   avgLV() {
@@ -620,12 +662,13 @@ export class Sim {
       commuters: 56 - 90 * cong + 15 * (this.roadCond - 1),
     };
     const dv = (this.vibrancy || 0) - (b.vib0 ?? this.vibrancy ?? 0);
-    f.renters += 0.35 * dv;
-    f.homeowners += 0.2 * dv;
-    f.business += 0.25 * dv;
-    f.seniors += 0.1 * dv;
+    f.renters += 0.6 * dv;
+    f.homeowners += 0.35 * dv;
+    f.business += 0.4 * dv;
+    f.seniors += 0.2 * dv;
     if (this.funds < 0) for (const k of FACTIONS) f[k] -= 6;
     const sp = this.specialApproval();
+    for (const [k, v] of Object.entries(policyApproval(this))) sp[k] = (sp[k] || 0) + v;
     for (const [k, v] of Object.entries(sp)) {
       if (k === 'all') for (const g of FACTIONS) f[g] += v;
       else if (f[k] != null) f[k] += v;
@@ -1138,6 +1181,22 @@ function pick(arr, r) {
   return arr[Math.floor(r * arr.length) % arr.length];
 }
 
+const CLOSE_BODIES = [
+  'The owner says the landlord\'s new asking rent made the numbers impossible. Regulars are leaving notes on the door.',
+  '"We kept hearing Watertown is on the rise," the owner said. "Apparently we\'re not invited."',
+  'The listing already describes the space as "ideal for a national tenant."',
+  'A handwritten sign thanks customers for the years. Someone has added a heart.',
+];
+const OPEN_BODIES = [
+  'The owners say they picked Watertown because it "still has storefronts you can almost afford."',
+  'There was a line on opening day. Of course there was.',
+  'Neighbors report the smell alone has raised property values.',
+];
+const CHAIN_BODIES = [
+  'Commenters are already counting the bank branches within a block.',
+  'The landlord says the national tenant "simply offered more." The previous tenant agrees.',
+  'It will have the same menu as the one in Waltham, which some consider a feature.',
+];
 const DEV_QUIPS = [
   'Neighbors describe the design as "rectangular."',
   'The comment section has already declared it the end of an era.',

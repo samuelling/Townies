@@ -31,6 +31,9 @@ export function bizCategory(kind = '', name = '') {
   return 'office';
 }
 export const isChain = (name = '', brand = '') => !!brand || CHAIN_RE.test(name);
+// "Signature" independents: coffee, books, boutiques, galleries, records, bakeries… the places people mean by vibrancy.
+const SIG_RE = /cafe|coffee|tea_|book|boutique|cloth|apparel|fashion|gift|vintage|second_hand|thrift|art|gallery|record|music|bakery|florist|flower|wine|cheese|toy|craft|antique|bistro|dessert|ice_cream|chocolate|bicycle/i;
+export const isSignature = (kind, name, chain) => !chain && (SIG_RE.test(kind || '') || /books|bakery|café|cafe|coffee|gallery|records|vintage/i.test(name || ''));
 
 // MA DOR auto-oriented commercial use codes: 330 sales, 331 supplies, 332 repair, 333 fuel, 334 service station,
 // 335 car wash, 336 parking garage, 337 parking lot, 338 other motor vehicle.
@@ -41,9 +44,12 @@ export function classifyLot(lot) {
   const n = lot.biz ? lot.biz.length : 0;
   lot.bizCat = new Array(n);
   lot.bizChainF = new Array(n);
+  lot.bizSig = new Array(n);
   for (let k = 0; k < n; k++) {
-    lot.bizCat[k] = bizCategory(lot.bizKind && lot.bizKind[k], lot.biz[k]);
+    const kind = lot.bizKind && lot.bizKind[k];
+    lot.bizCat[k] = bizCategory(kind, lot.biz[k]);
     lot.bizChainF[k] = (lot.bizChain && lot.bizChain[k]) || isChain(lot.biz[k]) ? 1 : 0;
+    lot.bizSig[k] = ['food', 'retail', 'service'].includes(lot.bizCat[k]) && isSignature(kind, lot.biz[k], lot.bizChainF[k]) ? 1 : 0;
   }
   lot.auto = autoUse(lot.code3) || (n > 0 && lot.bizCat.filter((c) => c === 'auto').length * 2 > lot.bizCat.filter((c) => c !== 'none').length);
 }
@@ -57,9 +63,10 @@ export function frontage(lot, world) {
   for (let k = 0; k < n && cnt < 5; k++) {
     const c = lot.bizCat[k];
     if (c === 'none') continue;
-    f += CAT_WEIGHT[c] * (lot.bizChainF[k] && CAT_WEIGHT[c] > 0 ? 0.45 : 1);
+    f += CAT_WEIGHT[c] * (lot.bizChainF[k] && CAT_WEIGHT[c] > 0 ? 0.45 : 1) * (lot.bizSig && lot.bizSig[k] ? 1.6 : 1);
     cnt++;
   }
+  if (lot.vacant) f -= 0.35 * Math.min(3, lot.vacant); // dark storefronts
   if (lot.auto && !n) f -= lot.code3 === '337' ? 0.9 : 1.2;
   else if (lot.auto) f -= 0.4;
   if (lot.zone === ZONE.C && lot.occ < 0.5) f -= 0.35; // empty storefronts

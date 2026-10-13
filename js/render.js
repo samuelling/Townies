@@ -664,6 +664,14 @@ export class Renderer {
       const k = wl.k, k2 = (k + 1) % n;
       this.fillPoly(g, [G0[k], G0[k2], T0[k2], T0[k]], shade(wall, wl.f, mix, mixAmt), stroke);
       if (L >= 0.5 && !aband) this.facade(g, P, b, pts[k], pts[k2], L, wl.f, k === b.front, st);
+      if (L >= 1 && k === b.front && b.kind !== 'shop') {
+        const lt = b.lot >= 0 ? this.world.lots[b.lot] : null;
+        if (lt && lt.vacant > 0) {
+          this.wallQuad(g, P, pts[k], pts[k2], 0.3, 0.7, 0.5, 2.6, 'rgba(28,28,30,0.9)');
+          this.wallQuad(g, P, pts[k], pts[k2], 0.36, 0.64, 1.1, 2.0, '#f4f1e6');
+          if (L >= 1.5) this.wallQuad(g, P, pts[k], pts[k2], 0.4, 0.6, 1.4, 1.7, '#c0392b');
+        }
+      }
       if (corniced && L >= 0.5) this.wallQuad(g, P, pts[k], pts[k2], 0, 1, h - 0.7, h, shade(b.arch === 'modern' ? (c2 || wall) : trim, wl.f * 0.92, mix, mixAmt));
     }
     this.fillPoly(g, T0, shade(roofC, 1.02, mix, mixAmt), stroke);
@@ -763,8 +771,15 @@ export class Renderer {
     const trimCol = shade(b._trim, f, mix, mixAmt);
     for (let fl = 0; fl < floors; fl++) {
       if ((shop || (arch === 'modern' && b.kind !== 'apt')) && fl === 0) {
-        Q(0.06, 0.94, 0.15 * fh, 0.72 * fh, glass);
-        if (b.awning && front) Q(0.04, 0.96, 0.74 * fh, 0.9 * fh, b.awning);
+        const lt = b.lot >= 0 ? this.world.lots[b.lot] : null;
+        const vac = lt && lt.vacant > 0;
+        const allVac = vac && !(lt.sf && lt.sf.length);
+        Q(0.06, 0.94, 0.15 * fh, 0.72 * fh, allVac ? 'rgba(28,28,30,0.9)' : glass);
+        if (b.awning && front && !allVac) Q(0.04, 0.96, 0.74 * fh, 0.9 * fh, b.awning);
+        if (vac && front) {
+          Q(allVac ? 0.3 : 0.62, allVac ? 0.7 : 0.9, 0.36 * fh, 0.6 * fh, '#f4f1e6');
+          if (L >= 1.5) Q(allVac ? 0.35 : 0.65, allVac ? 0.65 : 0.87, 0.45 * fh, 0.52 * fh, '#c0392b');
+        }
         continue;
       }
       if (nWin * floors > 300) {
