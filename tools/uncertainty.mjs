@@ -51,7 +51,7 @@ function apply(p) {
 }
 const metrics = (sim) => ({
   vib: +sim.vibrancy.toFixed(2), indies: sim.sfStats.indie, chains: sim.sfStats.chain, funds: Math.round(sim.funds / 1e5) / 10,
-  approval: +sim.approval.toFixed(1), homes: sim.units,
+  approval: +sim.approval.toFixed(1), homes: sim.units, walk: sim.streetLife ? sim.streetLife.trips : 0,
 });
 
 function run(p, strategy, years, k) {
@@ -102,7 +102,7 @@ if (args.includes('--merge')) {
   const ends = {};
   for (const r of runs) (ends[r.draw] = ends[r.draw] || {})[r.strategy] = r.traj[r.traj.length - 1];
   const pairs = {};
-  for (const st of ['mainstreet', 'build']) for (const key of ['vib', 'indies', 'funds', 'approval', 'homes']) {
+  for (const st of ['mainstreet', 'build']) for (const key of ['vib', 'walk', 'indies', 'funds', 'approval', 'homes']) {
     const ds = Object.values(ends).filter((e) => e[st] && e.handsoff);
     pairs[`${st}:${key}`] = +(ds.filter((e) => e[st][key] > e.handsoff[key]).length / Math.max(1, ds.length)).toFixed(2);
   }
@@ -117,7 +117,7 @@ if (args.includes('--merge')) {
   const knobs = Object.keys(RANGES);
   const X = knobs.map((p) => z(rank(ho.map((r) => r.params[p]))));
   const drivers = {};
-  for (const key of ['vib', 'indies', 'funds']) {
+  for (const key of ['vib', 'walk', 'indies', 'funds']) {
     const y = z(rank(ho.map((r) => r.traj[r.traj.length - 1][key])));
     const XtX = knobs.map((_, i) => knobs.map((_, j) => X[i].reduce((s, v, k) => s + v * X[j][k], 0) + (i === j ? 0.5 : 0))); // a touch of ridge for 9 knobs and few runs
     const Xty = knobs.map((_, i) => X[i].reduce((s, v, k) => s + v * y[k], 0));

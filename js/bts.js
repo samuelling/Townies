@@ -105,7 +105,7 @@ export const CHAPTERS = [
       const s = g.sim;
       const pct = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
       return [
-        P('Vibrancy is the game’s measure of street life: how much worth walking to there is near where people live, and whether enough people are around to use it. It’s built in four steps.'),
+        P('Vibrancy is the game’s measure of what’s on the street: how much worth walking to there is near where people live, and whether enough people are around to use it. It’s built in four steps.'),
         H('1 · Frontage'),
         P('Every lot gets a frontage score from what’s in it, using each business’s category from OpenStreetMap or Overture:'),
         TABLE(['Use', 'Weight'], [
@@ -121,6 +121,13 @@ export const CHAPTERS = [
         P('Finally it passes through a saturating curve (1 − e⁻ˣ). A first café on a block matters enormously; a ninth barely registers. Your city’s Vibrancy is the average of that over every resident, so it measures what people experience from their own front door, not the best block in town.'),
         NOTE(`Today: ${s.vibrancy.toFixed(1)} (started at ${s.base.vib0.toFixed(1)}). The number is relative: it’s calibrated to the starting city, and what matters is which way it moves.`),
         P('Vibrancy feeds back into land values, which raise rents, which is where the next chapter starts.'),
+        H('A built-in circularity, and the check on it'),
+        P('In the thesis model, auto uses and parking are scored as dead frontage. That is the game’s premise, not something it finds out: remove an auto shop and vibrancy rises by definition, even if nothing replaces it. Measured on the 12 auto parcels nearest the Square, just clearing them raises vibrancy about 0.6 points, about half of what converting them to two ordinary shops each does. In the neutral model there is no penalty, and clearing them alone changes nothing.'),
+        P('Two things keep that honest. The Main Street window splits any change in vibrancy into its sources: shops and storefronts, dark storefronts, people within a walk, and (in the thesis model) the auto-and-parking scoring, labeled as true by definition. And there is a second, outcome measure, ', B('walking trips a day'), ', that doesn’t score land uses at all.'),
+        H('Walking trips'),
+        P('A standard accessibility model, the kind transport planners use: each resident and worker walks more when more places worth walking to are within a short walk, with each destination counting less the farther away it is (fading over about 250 m). Restaurants, shops, services, civic buildings and parks are destinations. An auto shop or a parking lot simply isn’t one: it earns nothing and costs nothing. So the number only moves when something worth walking to opens or closes, or when more people live and work nearby. It is scaled so that about one in ten residents’ trips are on foot at the start, near what travel surveys find for older inner suburbs. It is an estimate, not a count.'),
+        P('The Auto Row mission now asks for walking trips to rise, not vibrancy, so converting lots only counts if people then walk there. It still doesn’t test the thesis against the real world: that would take pedestrian counts or foot-traffic data, and none is public for Watertown.'),
+        s.streetLife ? NOTE(`Today: about ${fmtInt(s.streetLife.trips)} walking trips a day (${s.streetLife.change >= 0 ? '+' : '−'}${Math.abs(s.streetLife.change * 100).toFixed(1)}% since the start).`) : null,
       ];
     },
   },
@@ -431,24 +438,27 @@ function fanChart(u, key, title, fmt) {
 function uncertaintyChapter(u) {
   const pct = (x) => `${Math.round(x * 100)}%`;
   const R = u.ranges;
-  const name = { vib: 'Vibrancy', indies: 'independent shops', funds: 'reserves' };
+  const name = { vib: 'Vibrancy', walk: 'walking trips', indies: 'independent shops', funds: 'reserves' };
   const top = (k) => (u.drivers[k] || []).slice(0, 2).map(([p, c]) => `${R[p] ? R[p].label.toLowerCase() : p} (${c > 0 ? 'more → higher' : 'more → lower'})`).join(' and ');
   return [
     P(`Each of ${u.draws} runs draws its own values for the knobs below, then plays ${u.years} years from ${u.startY} under three simple strategies, reusing the same draws for each strategy so they're compared fairly. Bands show the middle 80% of outcomes (10th to 90th percentile); lines are medians. No Council agenda, no Melora, no Vale: just the model's slow forces.`),
     el('div', { class: 'fanlegend' }, ...Object.entries(u.strategies).map(([k, d]) => el('span', {}, el('i', { style: `background:${STRAT_COL[k]}` }), d.label))),
     el('div', { class: 'fans' },
       fanChart(u, 'vib', 'Vibrancy', (v) => v.toFixed(0)),
+      u.strategies.handsoff.bands.walk ? fanChart(u, 'walk', 'Walking trips a day', (v) => `${(v / 1000).toFixed(1)}k`) : null,
       fanChart(u, 'indies', 'Independent shops', (v) => fmtInt(v)),
       fanChart(u, 'funds', 'City reserves ($M)', (v) => v.toFixed(0)),
       fanChart(u, 'approval', 'Approval (%)', (v) => v.toFixed(0))),
     H('Which choices hold up?'),
     LIST(
       `Main Street policies end with more independent shops than doing nothing in ${pct(u.pairs['mainstreet:indies'])} of draws, higher vibrancy in ${pct(u.pairs['mainstreet:vib'])}, and more money in the bank in ${pct(u.pairs['mainstreet:funds'])}.`,
-      `Rebuilding auto lots ends with higher vibrancy than doing nothing in ${pct(u.pairs['build:vib'])} of draws, more homes in ${pct(u.pairs['build:homes'])}, and more money in the bank in ${pct(u.pairs['build:funds'])}.`
+      `Rebuilding auto lots ends with higher vibrancy than doing nothing in ${pct(u.pairs['build:vib'])} of draws, more homes in ${pct(u.pairs['build:homes'])}, and more money in the bank in ${pct(u.pairs['build:funds'])}.`,
+      ...(u.pairs['build:walk'] != null ? [`Walking trips, which don't score auto uses at all: rebuilding auto lots ends higher in ${pct(u.pairs['build:walk'])} of draws, Main Street policies in ${pct(u.pairs['mainstreet:walk'])}.`] : [])
     ),
+    el('p', { class: 'fine' }, 'Vibrancy comparisons involving auto lots are partly true by definition in the thesis model (auto uses are scored as dead frontage); walking trips is the cleaner test. See the Vibrancy chapter.'),
     P('A choice that wins in nearly every draw is robust: it holds up even if the model is wrong in any of these ways. One that wins about half the time depends on things nobody knows yet. (With this many runs, “every draw” means roughly 9 in 10 or better, not certainty.)'),
     H('What the spread depends on'),
-    LIST(...['vib', 'indies', 'funds'].map((k) => `${name[k][0].toUpperCase() + name[k].slice(1)} (hands off) depends most on ${top(k)}.`)),
+    LIST(...['vib', 'walk', 'indies', 'funds'].filter((k) => u.drivers[k]).map((k) => `${name[k][0].toUpperCase() + name[k].slice(1)} (hands off) depends most on ${top(k)}.`)),
     el('p', { class: 'fine' }, 'Measured with a standardized rank regression across the runs, so each knob gets credit only for its own effect.'),
     H('The ranges'),
     TABLE(['Uncertain knob', 'Low', 'High'], Object.values(R).map((d) => ({ cells: [d.label, rangeFmt(d, d.lo), rangeFmt(d, d.hi)] }))),

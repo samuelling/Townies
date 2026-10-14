@@ -610,6 +610,24 @@ export class UI {
     }, { cls: 'wide' });
   }
 
+  // where the change in vibrancy came from, so a gain that is only the scoring of auto uses shows as such
+  vibBreakdown() {
+    const s = this.sim;
+    if (!s.vibrancyParts) return null;
+    const v = s.vibrancyParts();
+    if (Math.abs(v.total) < 0.05) return el('p', { class: 'fine' }, 'Vibrancy measures what’s on the street (shops, dark storefronts, auto uses) where people live. Walking trips is the outcome check: how many people actually walk somewhere.');
+    const f = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}`;
+    const row = (k, x, note) => el('div', { class: 'kvline vbrk' }, el('span', {}, k, note ? el('small', {}, ` ${note}`) : null), el('b', { class: x > 0.05 ? 'up' : x < -0.05 ? 'down' : '' }, f(x)));
+    const thesis = !!(s.assume ? s.assume.frontage ?? 1 : 1);
+    return el('div', { class: 'vbreak' },
+      el('h4', {}, `Why vibrancy moved (${f(v.total)})`),
+      row('Shops and storefronts', v.shops),
+      row('Dark storefronts', v.dark),
+      row('People within a walk', v.people),
+      thesis ? row('Fewer or more auto & parking uses', v.auto, '(scored as dead frontage: true by definition, not observed)') : null,
+      el('p', { class: 'fine' }, thesis ? `Without the auto-and-parking scoring, vibrancy would be ${f(v.total - v.auto)}. Walking trips, which don't score auto uses at all, moved ${s.streetLife ? `${s.streetLife.change >= 0 ? '+' : '−'}${Math.abs(s.streetLife.change * 100).toFixed(1)}%` : 'n/a'}.` : 'In the neutral model auto uses carry no penalty, so all of this change comes from shops and people.'));
+  }
+
   mainStreetWindow() {
     this.win('main', 'Main Street', (body) => {
       const s = this.sim;
@@ -622,8 +640,10 @@ export class UI {
           stat('Vibrancy', `${Math.round(s.vibrancy)}`, `${dv >= 0 ? '+' : ''}${dv.toFixed(1)} since you took office`),
           stat('Storefronts open', `${st.open || 0}`, `${st.vacant || 0} for lease (${total ? Math.round((100 * (st.vacant || 0)) / total) : 0}%)`),
           stat('Independents', `${st.indie || 0}`, `${st.chain || 0} chains · ${st.sig || 0} signature`),
-          stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs ${s.y0} · buzz ${Math.round((s.hype || 0) * 100)}`)
+          stat('Asking rents', `${(st.askAvg || 1) >= 1 ? '+' : ''}${Math.round(((st.askAvg || 1) - 1) * 100)}%`, `vs ${s.y0} · buzz ${Math.round((s.hype || 0) * 100)}`),
+          s.streetLife ? stat('Walking trips a day', fmtInt(s.streetLife.trips), `${s.streetLife.change >= 0 ? '+' : '−'}${Math.abs(s.streetLife.change * 100).toFixed(1)}% · street life, an estimate`) : null
         ),
+        this.vibBreakdown(),
         el('div', { class: 'kvline' }, el('span', {}, 'Walkability where people live'), el('b', {}, `${Math.round(s.walkIndex || 0)} · ${walkLabel(s.walkIndex || 0)}`)),
         this.peerTable(),
         el('p', { class: 'fine' }, 'Signature independents (coffee, books, boutiques, galleries, bakeries) make a street feel alive and are the first to go when landlords chase the "Watertown is on the rise" rents. Chains and bank branches can pay more, and add less.'),

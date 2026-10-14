@@ -25,6 +25,7 @@ export function termSnapshot(sim) {
     melWins: sim.mel ? sim.mel.wins || 0 : 0,
     autoConverted: sim.autoConverted || 0,
     apl: patternsNow(sim).score,
+    walkTrips: sim.streetLife ? sim.streetLife.trips : null,
   };
 }
 
@@ -55,6 +56,7 @@ export function reportCard(sim) {
   row('Homes', a.units, now.units, int, up);
   row('Jobs', a.jobs, now.jobs, int, up);
   row('Vibrancy', a.vib, now.vib, (v) => v.toFixed(1), up);
+  row('Walking trips a day (estimate)', a.walkTrips, now.walkTrips, int, up);
   row('Walkability at the Square', a.walk, now.walk, int, up);
   row('Independent shops', a.indies, now.indies, int, up);
   row('Signature shops', a.sig, now.sig, int, up);

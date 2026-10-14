@@ -1,5 +1,6 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { computeStreetLife } from './streetlife.js';
 import { computePatterns } from './patterns.js';
 import { weatherCapF, weatherMonthly } from './weather.js';
 import { initTransit, computeTransit, transitCarF } from './transit.js';
@@ -172,6 +173,8 @@ export class Sim {
     initTech(this);
     initTransit(this);
     computePatterns(this);
+    computeStreetLife(this);
+    this.vibrancyParts(); // records the starting point for the vibrancy breakdown
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.base.demR0 = this.demand.R;
@@ -771,6 +774,52 @@ export class Sim {
     }
     this.vibrancy = p ? clamp(100 * (s / p), 0, 100) : 0;
     if (init || this.base.vib0 == null) this.base.vib0 = this.vibrancy;
+    if (init || !this.base.pn0) {
+      this.base.pn0 = Array.from(PN);
+      this.base.vibParts0 = null;
+    }
+  }
+  // Vibrancy recomputed with some of its terms switched off, and optionally with the starting population
+  vibVariant(opts, pn = null) {
+    const w = this.w, { Wc, Hc } = this;
+    const Nc = Wc * Hc;
+    const F = new Float32Array(Nc), V = new Float32Array(Nc);
+    for (const lot of w.lots) {
+      if (lot.dead || !lot.inTown) continue;
+      const f = frontage(lot, w, assumeA(this, 'frontage'), opts);
+      if (f) F[this.cellOf(lot.cx, lot.cy)] += f;
+    }
+    for (let y = 0; y < Hc; y++) for (let x = 0; x < Wc; x++) {
+      const v = F[y * Wc + x];
+      if (!v) continue;
+      for (const [dx, dy, kw] of this.vibKernel) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < Wc && yy < Hc) V[yy * Wc + xx] += v * kw; }
+    }
+    const PN = pn || this.popNear;
+    let s = 0, p = 0;
+    for (let i = 0; i < Nc; i++) {
+      const foot = 0.4 + 0.6 * Math.min(1, PN[i] / this.base.popRef);
+      const x = (V[i] * foot) / this.base.vibRef;
+      const sat = x >= 0 ? 1 - Math.exp(-x) : Math.max(-0.6, x * 0.6);
+      if (this.popC[i] > 0) { s += this.popC[i] * sat; p += this.popC[i]; }
+    }
+    return p ? 100 * (s / p) : 0;
+  }
+  // Where the change in vibrancy since the start came from. Exact by construction (each step switches one
+  // thing on): auto & parking uses (a scoring penalty in the thesis model, i.e. partly by definition), dark
+  // storefronts, the shops themselves, and how many people live within a walk.
+  vibrancyParts() {
+    const now = { V: this.vibrancy, Vna: this.vibVariant({ noAuto: 1 }), Vp: this.vibVariant({ noAuto: 1, noDark: 1 }) };
+    if (!this.base.vibParts0) {
+      this.base.vibParts0 = now;
+      return { auto: 0, dark: 0, shops: 0, people: 0, total: 0 };
+    }
+    const a = this.base.vibParts0;
+    const VpFixed = this.base.pn0 ? this.vibVariant({ noAuto: 1, noDark: 1 }, this.base.pn0) : now.Vp;
+    const auto = (now.V - now.Vna) - (a.V - a.Vna);
+    const dark = (now.Vna - now.Vp) - (a.Vna - a.Vp);
+    const shops = VpFixed - a.Vp;
+    const people = now.Vp - VpFixed;
+    return { auto, dark, shops, people, total: now.V - a.V };
   }
   cellOf(x, y) {
     return clamp(Math.floor(y / CC), 0, this.Hc - 1) * this.Wc + clamp(Math.floor(x / CC), 0, this.Wc - 1);
@@ -841,6 +890,7 @@ export class Sim {
     projectsMonthly(this);
     computeTransit(this);
     this.storefrontNews(storefrontsMonthly(this));
+    computeStreetLife(this);
     techMonthly(this);
     meloraMonthly(this);
     valeMonthly(this);
@@ -1659,7 +1709,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'slKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), V0: this.V0 || null, M0: this.M0 || null };

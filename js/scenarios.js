@@ -18,10 +18,11 @@ export const TERMS = {
   },
   autorow: {
     title: 'Auto Row to Main Street', years: 6, icon: '🚗',
-    blurb: 'Decades of zoning left Watertown with a glut of repair shops, car lots and parking where a main street should be. Turn at least eight auto-oriented parcels into places people walk to — without losing the room.',
+    blurb: 'Decades of zoning left Watertown with a glut of repair shops, car lots and parking where a main street should be. Turn at least eight auto-oriented parcels into places people walk to, and make sure they do: walking trips in town have to rise 4% — without losing the room.',
     goals: [
       { id: 'auto', label: 'Auto-oriented parcels converted', target: 8, measure: (s) => s.autoConverted || 0, fmt: (v) => `${v}` },
-      { id: 'vib', label: 'Vibrancy gain', target: 5, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
+      // the outcome, not the scoring: converting a lot only counts if people then walk there (js/streetlife.js)
+      { id: 'walk', label: 'Walking trips', target: 0.04, measure: (s) => walkGain(s), fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%` },
     ],
     floor: { approval: 45 },
   },
@@ -97,6 +98,10 @@ export const TERMS = {
 };
 
 const fmtK = (v) => Math.round(v).toLocaleString();
+function walkGain(s) {
+  const a = s.scenario && s.scenario.snap0 && s.scenario.snap0.walkTrips;
+  return a && s.streetLife ? s.streetLife.trips / a - 1 : 0;
+}
 function autoCount(s) {
   if (s._autoT === s.t) return s._autoN;
   let n = 0;

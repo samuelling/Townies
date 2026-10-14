@@ -55,7 +55,8 @@ export function classifyLot(lot) {
 }
 
 // Frontage score for one lot: positive = street life, negative = dead frontage.
-export function frontage(lot, world, thesis = 1) {
+// opts.noAuto drops the auto/parking penalties and opts.noDark the empty-storefront ones (for the vibrancy breakdown)
+export function frontage(lot, world, thesis = 1, opts = null) {
   if (lot.dead || lot.under) return lot.under ? -0.2 : 0;
   let f = 0, cnt = 0;
   const n = lot.biz ? lot.biz.length : 0;
@@ -65,16 +66,17 @@ export function frontage(lot, world, thesis = 1) {
   if (lot.mural) f += 0.35; // a painted wall is something to walk past
   for (let k = 0; k < n && cnt < 5; k++) {
     const c = lot.bizCat[k];
-    if (c === 'none') continue;
+    if (c === 'none' || (c === 'auto' && opts && opts.noAuto)) continue;
     // neutral weights: every open business counts the same, auto uses are just quiet (see js/assumptions.js)
     if (!thesis) f += c === 'auto' ? CAT_WEIGHT.office : CAT_WEIGHT[c];
     else f += CAT_WEIGHT[c] * (lot.bizChainF[k] && CAT_WEIGHT[c] > 0 ? 0.45 : 1) * (lot.bizSig && lot.bizSig[k] ? 1.6 : 1);
     cnt++;
   }
-  if (lot.vacant) f -= 0.35 * Math.min(3, lot.vacant); // dark storefronts
-  if (thesis && lot.auto && !n) f -= lot.code3 === '337' ? 0.9 : 1.2;
-  else if (thesis && lot.auto) f -= 0.4;
-  if (lot.zone === ZONE.C && lot.occ < 0.5) f -= 0.35; // empty storefronts
-  if (thesis && lot.zone === ZONE.C && !lot.bldgs.length && world.cover[lot.tiles[0]] === COVER.PAVED) f -= 0.3;
+  const noAuto = opts && opts.noAuto, noDark = opts && opts.noDark;
+  if (lot.vacant && !noDark) f -= 0.35 * Math.min(3, lot.vacant); // dark storefronts
+  if (thesis && !noAuto && lot.auto && !n) f -= lot.code3 === '337' ? 0.9 : 1.2;
+  else if (thesis && !noAuto && lot.auto) f -= 0.4;
+  if (lot.zone === ZONE.C && lot.occ < 0.5 && !noDark) f -= 0.35; // empty storefronts
+  if (thesis && !noAuto && lot.zone === ZONE.C && !lot.bldgs.length && world.cover[lot.tiles[0]] === COVER.PAVED) f -= 0.3;
   return f * (lot.zone === ZONE.C || lot.zone === ZONE.I || lot.mixed || n ? 1 : 0.5) * Math.max(0.3, lot.occ);
 }
