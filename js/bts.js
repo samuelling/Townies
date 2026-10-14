@@ -377,7 +377,7 @@ function accuracyChapter(v) {
     H('Traffic'),
     tr ? P(`Hidden-count test on today’s map (${fmtInt(tr.tiles)} counted street tiles, five folds by count segment). On a log scale the calibrated model explains ${pct(Math.max(0, tr.calibrated.r2))} of the variation in counts it never saw (typical error ${pct(tr.calibrated.medianError)}). Guessing the typical count for that class of street explains ${pct(Math.max(0, tr.classMedian.r2))} (typical error ${pct(tr.classMedian.medianError)}). The routed model alone, without counts nearby, does worse than either, so the game now leans on street class and nearby counts, and uses the routed model mainly for how traffic changes when you change the town.`) : null,
     H('Where change happens'),
-    P(`Of ${fmtInt(sp.lots || 0)} parcels, ${fmtInt(sp.bigChanged || 0)} really became something big (apartments, labs, the mall site) between 2000 and 2026. Across runs, how often the model rebuilt each parcel predicts which ones with an AUC of ${(sp.aucBig || 0).toFixed(2)} (0.5 is chance; lot size alone gets ${(sp.aucBigLotSize || 0).toFixed(2)}). The model now builds about as much as history did, but not in the right places: real redevelopment followed specific owners and specific deals that no market model of this kind can see.`),
+    P(`Of ${fmtInt(sp.lots || 0)} parcels, ${fmtInt(sp.bigChanged || 0)} really became something big (apartments, labs, the mall site) between 2000 and 2026. Across runs, how often the model rebuilt each parcel predicts which ones with an AUC of ${(sp.aucBig || 0).toFixed(2)} (0.5 is chance; lot size alone gets ${(sp.aucBigLotSize || 0).toFixed(2)}). The model now builds about the right amount (a bit less than history did), but not in the right places: real redevelopment followed specific owners and specific deals that no market model of this kind can see.`),
     H('What this can’t test'),
     LIST(
       'There is no record of 2000’s storefronts, so the 2000 shops are today’s minus the ones in newer buildings. The storefront test is really “does churn over 26 years keep the mix stable?”, not “does it reproduce history?”.',
@@ -408,7 +408,7 @@ function fanChart(u, key, title, fmt) {
     const v = lo + (hi - lo) * f, y = Y(v);
     svg.append(sv('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'fan-grid' }), sv('text', { x: L - 4, y: y + 3, class: 'fan-ax', 'text-anchor': 'end' }, fmt(v)));
   }
-  for (const i of [0, years / 2, years]) svg.append(sv('text', { x: X(i), y: H - 6, class: 'fan-ax', 'text-anchor': 'middle' }, String(y0 + i)));
+  for (const i of [0, years / 2, years]) svg.append(sv('text', { x: X(i), y: H - 6, class: 'fan-ax', 'text-anchor': i === 0 ? 'start' : i === years ? 'end' : 'middle' }, String(y0 + i)));
   for (const [st, d] of Object.entries(u.strategies)) {
     const b = d.bands[key];
     const top = b.map((q, i) => `${X(i)},${Y(q[2])}`), bot = b.map((q, i) => `${X(i)},${Y(q[0])}`).reverse();
@@ -435,9 +435,10 @@ function uncertaintyChapter(u) {
       `Main Street policies end with more independent shops than doing nothing in ${pct(u.pairs['mainstreet:indies'])} of draws, higher vibrancy in ${pct(u.pairs['mainstreet:vib'])}, and more money in the bank in ${pct(u.pairs['mainstreet:funds'])}.`,
       `Rebuilding auto lots ends with higher vibrancy than doing nothing in ${pct(u.pairs['build:vib'])} of draws, more homes in ${pct(u.pairs['build:homes'])}, and more money in the bank in ${pct(u.pairs['build:funds'])}.`
     ),
-    P('A choice that wins in nearly every draw is robust: it holds up even if the model is wrong in any of these ways. One that wins about half the time depends on things nobody knows yet.'),
+    P('A choice that wins in nearly every draw is robust: it holds up even if the model is wrong in any of these ways. One that wins about half the time depends on things nobody knows yet. (With this many runs, “every draw” means roughly 9 in 10 or better, not certainty.)'),
     H('What the spread depends on'),
     LIST(...['vib', 'indies', 'funds'].map((k) => `${name[k][0].toUpperCase() + name[k].slice(1)} (hands off) depends most on ${top(k)}.`)),
+    el('p', { class: 'fine' }, 'Measured with a standardized rank regression across the runs, so each knob gets credit only for its own effect.'),
     H('The ranges'),
     TABLE(['Uncertain knob', 'Low', 'High'], Object.values(R).map((d) => ({ cells: [d.label, rangeFmt(d, d.lo), rangeFmt(d, d.hi)] }))),
     el('p', { class: 'fine' }, `Run ${new Date(u.generated).toLocaleDateString()}. Reproduce with node tools/uncertainty.mjs. Ranges are judgment calls around the calibrated values, wide on purpose.`),
@@ -448,6 +449,7 @@ function rangeFmt(d, v) {
   if (/renovations/i.test(d.label)) return `${(v * 100).toFixed(1)}% of levy`;
   if (/closures/i.test(d.label)) return `${(v * 1200).toFixed(1)}%/yr`;
   if (/homebuilding/i.test(d.label)) return `×${v.toFixed(2)}`;
+  if (/warming/i.test(d.label)) return `${v.toFixed(1)}°F/decade`;
   return `${Math.round(v * 100)}%`;
 }
 
