@@ -7,6 +7,7 @@ import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
+import { SPEEDS, DEFAULT_SPEED, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
@@ -96,7 +97,6 @@ const TOOL_NOTE = {
 const OVERLAYS = [
   ['none', 'None'], ['vibrancy', 'Vibrancy (street life)'], ['walk', 'Walkability'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
 ];
-const SPEEDS = [['Pause', 0], ['Turtle', 1], ['Llama', 2], ['Cheetah', 3]];
 
 export class UI {
   constructor(game) {
@@ -137,9 +137,9 @@ export class UI {
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
-    const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
+    const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
-    this.speedBtn = el('button', { class: 'mbtn', title: 'Speed', onclick: () => this.cycleSpeed() }, '▶');
+    this.speedBtn = el('button', { class: 'mbtn', title: 'Speed', onclick: (e) => this.cycleSpeed(e.shiftKey ? -1 : 1) }, '▶');
     mb.append(
       el('div', { class: 'logo' }, 'TOWNIES'),
       menu('File', fileItems),
@@ -184,6 +184,7 @@ export class UI {
     const sb = document.getElementById('statusbar');
     sb.innerHTML = '';
     this.sDate = el('span', { class: 'sdate' });
+    this.sClock = el('span', { class: 'sclock' });
     this.sFunds = el('span', { class: 'sfunds' });
     this.sPop = el('span', { class: 'spop' });
     this.sInc = el('button', { class: 'sinc', title: 'Open problems around town. Tap for Crews.', onclick: () => this.crewsWindow() });
@@ -194,7 +195,7 @@ export class UI {
     this.tickerFlip = 0;
     clearInterval(this.tickerTimer);
     this.tickerTimer = setInterval(() => this.rotateTicker(), 7000);
-    sb.append(el('div', { class: 'srow' }, this.sDate, this.sFunds, this.sPop, this.sAppr, this.sVib, this.sInc, this.rci), this.ticker);
+    sb.append(el('div', { class: 'srow' }, this.sDate, this.sClock, this.sFunds, this.sPop, this.sAppr, this.sVib, this.sInc, this.rci), this.ticker);
     this.hint = document.getElementById('toolhint');
     this.legendEl = el('div', { class: 'legend', style: 'display:none' });
     this.hint.parentNode.append(this.legendEl);
@@ -285,15 +286,23 @@ export class UI {
     if (mw) mw.refresh();
   }
   setSpeed(v) {
+    v = clamp(Math.round(v) || 0, 0, SPEEDS.length - 1);
+    if (this.g.speed > 0) this.g.lastSpeed = this.g.speed; // pausing at night keeps the night
     this.g.speed = v;
     this.sim.paused = v === 0;
-    this.speedBtn.textContent = ['❚❚', '▶', '▶▶', '▶▶▶'][v];
-    this.speedBtn.title = SPEEDS[v][0];
+    this.speedBtn.textContent = SPEEDS[v][1];
+    this.speedBtn.title = `Speed: ${SPEEDS[v][0]}${SPEEDS[v][3] ? ' (day and night)' : ''}. Click for the next speed; Shift-click for the previous one.`;
+    if (!cycles(v) && !(v === 0 && cycles(this.g.lastSpeed)) && this.sClock) this.sClock.textContent = '';
     this.r.needs = true;
   }
-  cycleSpeed() {
-    this.setSpeed((this.g.speed + 1) % 4);
-    this.toast(SPEEDS[this.g.speed][0]);
+  cycleSpeed(d = 1) {
+    this.setSpeed((this.g.speed + d + SPEEDS.length) % SPEEDS.length);
+    this.toast(`${SPEEDS[this.g.speed][1]} ${SPEEDS[this.g.speed][0]}${SPEEDS[this.g.speed][3] ? ': watch the day go by' : ''}`);
+  }
+  refreshClock(hour, day) {
+    if (!this.sClock) return;
+    const txt = clock(hour);
+    if (txt !== this.sClockTxt) { this.sClockTxt = txt; this.sClock.textContent = `${sunHeight(hour, this.sim.m) > 0 ? '☀' : '☾'} ${txt}`; this.sClock.title = `Day ${day} of the month, ${txt}`; }
   }
   async toggleMusic() {
     const on = await this.g.music.toggle();
@@ -1419,7 +1428,7 @@ export class UI {
       else if (k === '.') this.r.rotate(1);
       else if (k === '+' || k === '=') this.r.setZoom(this.r.z * 1.4);
       else if (k === '-' || k === '_') this.r.setZoom(this.r.z / 1.4);
-      else if (k === ' ') { e.preventDefault(); this.setSpeed(this.g.speed ? 0 : 1); }
+      else if (k === ' ') { e.preventDefault(); this.setSpeed(this.g.speed ? 0 : this.g.lastSpeed || DEFAULT_SPEED); }
       else if (k === 'ArrowLeft') this.r.panBy(120, 0);
       else if (k === 'ArrowRight') this.r.panBy(-120, 0);
       else if (k === 'ArrowUp') this.r.panBy(0, 120);

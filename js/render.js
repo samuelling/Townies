@@ -5,6 +5,7 @@ import { ROUTES, routeLines } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
+import { sunHeight, skyTint, lightsOn, lateness } from './daynight.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
 const CACHE_PX = 48e6; // chunk cache budget in pixels (~190 MB of canvas)
@@ -29,6 +30,17 @@ const C = {
   dirt: hexRgb('#9c7b55'),
 };
 const ZONE_RGB = ZONE_COLOR.map(hexRgb);
+
+// convex hull of screen points (monotone chain), for building silhouettes
+function hull(pts) {
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
 
 export class Renderer {
   constructor(canvas, world, sim) {
@@ -55,6 +67,9 @@ export class Renderer {
     this.time = 0;
     this.needs = true;
     this.carsOn = true;
+    this.tod = 12; // hour of the day, set by the main loop
+    this.dayCycle = false; // true at the slow speeds
+    this.cyc = 0; // how far the day/night look is faded in
     this.resize();
   }
 
@@ -289,15 +304,16 @@ export class Renderer {
       return e;
     }
     if (!allowRender) return e || null; // stale is better than nothing
-    if (e && e.c) this.cachePx -= e.c.width * e.c.height;
-    e = layer === 'g' ? this.renderGround(cx, cy, L) : this.renderObjects(cx, cy, L);
+    const px = (q) => (q.c ? q.c.width * q.c.height : 0) + (q.c2 ? q.c2.width * q.c2.height : 0);
+    if (e) this.cachePx -= px(e);
+    e = layer === 'g' ? this.renderGround(cx, cy, L) : layer === 'n' ? this.renderNight(cx, cy, L) : this.renderObjects(cx, cy, L);
     e.ver = this.ver[ci];
     this.cache.set(key, e);
-    this.cachePx += e.c ? e.c.width * e.c.height : 0;
+    this.cachePx += px(e);
     while (this.cachePx > CACHE_PX && this.cache.size > 8) {
       const [k0, v0] = this.cache.entries().next().value;
       this.cache.delete(k0);
-      this.cachePx -= v0.c ? v0.c.width * v0.c.height : 0;
+      this.cachePx -= px(v0);
     }
     return e;
   }
@@ -659,6 +675,221 @@ export class Renderer {
       else this.drawTree(g, P, o.t, L);
     }
     return { c, ox, oy, L };
+  }
+
+  // ---------- night ----------
+  // The town after dark, cached per chunk like the buildings: lit windows (c) and street lamps (c2), drawn far to
+  // near so a building in front hides the lights behind it. Added on top of the darkened scene with 'lighter'.
+  // Rendered at half the detail level: the glow is soft anyway, and it keeps the cache small.
+  renderNight(cx, cy, L) {
+    const w = this.world;
+    const { bldgs, lots } = w;
+    const ci = cy * this.ncx + cx;
+    const cc = this.chunkCorners(cx, cy, L);
+    const items = [];
+    for (const id of this.anchors[ci]) {
+      const b = bldgs[id];
+      if (!b.alive) continue;
+      const [rx, ry] = this.rxy(b.cx, b.cy);
+      items.push({ d: rx + ry, b });
+    }
+    const RW = [0, 0.55, 0.75, 0.95];
+    if (this.lineIdx)
+      for (const li of this.lineIdx[ci]) {
+        const ln = w.roadLines[li];
+        const p = ln.pts;
+        const gap = ln.cls >= 2 ? 2.4 : 3.2;
+        let acc = 0;
+        for (let k = 0; k + 3 < p.length; k += 2) {
+          const ax = p[k], ay = p[k + 1], bx = p[k + 2], by = p[k + 3];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (len < 1e-4) continue;
+          const ux = (bx - ax) / len, uy = (by - ay) / len;
+          for (let j = Math.ceil(acc / gap); j * gap <= acc + len; j++) {
+            const u = j * gap - acc, side = j % 2 ? 1 : -1;
+            const x = ax + ux * u - uy * RW[ln.cls || 1] * 0.45 * side, y = ay + uy * u + ux * RW[ln.cls || 1] * 0.45 * side;
+            if (Math.floor(x / CH) !== cx || Math.floor(y / CH) !== cy) continue;
+            const [rx, ry] = this.rxy(x, y);
+            items.push({ d: rx + ry, lamp: [x, y, ln.cls] });
+          }
+          acc += len;
+        }
+      }
+    if (!items.length) return { c: null };
+    items.sort((a, b) => a.d - b.d);
+    let mnx = cc.mnx - 40 * L, mny = cc.mny - 20 * L, mxx = cc.mxx + 40 * L, mxy = cc.mxy + 20 * L;
+    for (const o of items) {
+      if (!o.b) continue;
+      const hpx = (o.b.h + 10) * HS * L;
+      for (const q of o.b.pts) {
+        const [rx, ry] = this.rxy(q[0], q[1]);
+        const sx = (rx - ry) * 16 * L, sy = (rx + ry) * 8 * L;
+        mnx = Math.min(mnx, sx - 8 * L); mxx = Math.max(mxx, sx + 8 * L);
+        mny = Math.min(mny, sy - hpx); mxy = Math.max(mxy, sy + 4);
+      }
+    }
+    const ox = mnx - 4, oy = mny - 4;
+    const c = this.mkCanvas(mxx - mnx + 8, mxy - mny + 8), c2 = this.mkCanvas(c.width, c.height);
+    const g = c.getContext('2d'), g2 = c2.getContext('2d');
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * L - ox, (rx + ry) * 8 * L - oy - hm * HS * L];
+    };
+    const WIN = ['#ffd27f', '#ffd27f', '#ffe1a4', '#ffc98a', '#ffd27f', '#cddfff'];
+    for (const o of items) {
+      if (o.lamp) {
+        const [x, y, cls] = o.lamp;
+        const [px, py] = P(x, y, 0);
+        const rr = (cls >= 2 ? 1.5 : 1.15) * 22 * L;
+        g2.save();
+        g2.translate(px, py);
+        g2.scale(1, 0.5);
+        const gr = g2.createRadialGradient(0, 0, 0, 0, 0, rr);
+        gr.addColorStop(0, 'rgba(255,200,130,0.5)');
+        gr.addColorStop(0.45, 'rgba(255,176,96,0.17)');
+        gr.addColorStop(1, 'rgba(255,160,80,0)');
+        g2.fillStyle = gr;
+        g2.beginPath(); g2.arc(0, 0, rr, 0, Math.PI * 2); g2.fill();
+        g2.restore();
+        const hd = P(x, y, 6), r = Math.max(0.6, 1.1 * L);
+        g2.fillStyle = 'rgba(255,238,205,0.95)';
+        g2.fillRect(hd[0] - r, hd[1] - r, 2 * r, 2 * r);
+        continue;
+      }
+      const b = o.b;
+      const house = b.kind === 'house' && b.obb;
+      const pts = house ? b.obb : b.pts;
+      const G0 = pts.map((q) => P(q[0], q[1], 0));
+      const T0 = pts.map((q) => P(q[0], q[1], b.h));
+      const sil = G0.concat(T0);
+      if (house) sil.push(P(b.cx, b.cy, b.h + 4));
+      // whatever this building stands in front of is hidden
+      for (const gg of [g, g2]) {
+        gg.globalCompositeOperation = 'destination-out';
+        this.fillPoly(gg, hull(sil), '#000');
+        gg.globalCompositeOperation = 'source-over';
+      }
+      const lot = b.lot >= 0 ? lots[b.lot] : null;
+      if (lot && lot.occ < 0.3) continue; // abandoned: dark
+      const z = lot ? lot.zone : -1;
+      let lit = house ? 0.55 : b.kind === 'lab' || b.arch === 'lab' ? 0.4 : b.kind === 'garage' || b.arch === 'warehouse' ? 0.06
+        : z === ZONE.R || (lot && lot.mixed) ? 0.5 : z === ZONE.C ? 0.3 : z === ZONE.I ? 0.12 : b.kind === 'church' ? 0.15 : 0.3;
+      if (!lot && !w.inTown[Math.floor(b.cy) * w.W + Math.floor(b.cx)]) lit *= 0.8;
+      const floors = Math.max(1, Math.round(b.levels || 1));
+      const fh = b.h / floors;
+      const shopFront = lot && lot.storefronts && (lot.sf || []).length > 0;
+      for (const wl of this.visibleWalls(G0)) {
+        if (!wl.v) continue;
+        const k = wl.k, a = pts[k], cE = pts[(k + 1) % pts.length];
+        const lenM = Math.hypot(cE[0] - a[0], cE[1] - a[1]) * CFG.TILE_M;
+        if (lenM < 2) continue;
+        const front = k === (house ? 0 : b.front);
+        const cols = clamp(Math.floor(lenM / (house ? 3.2 : 3.4)), 1, 30);
+        let fl0 = 0;
+        if (front && (shopFront || b.kind === 'shop') && !house) {
+          // a lit shop window along the street
+          this.wallQuad(g, P, a, cE, 0.06, 0.94, 0.4, Math.min(2.9, fh * 0.85), 'rgba(255,208,140,0.8)');
+          fl0 = 1;
+        }
+        if (front && b.arch === 'bigbox' && b.sign) this.wallQuad(g, P, a, cE, 0.3, 0.7, b.h - 2.6, b.h - 0.6, b.sign);
+        for (let fl = fl0; fl < floors; fl++) {
+          const z0 = fl * fh + fh * 0.32, z1 = fl * fh + fh * 0.78;
+          const step = L < 0.5 ? 2 : 1; // zoomed out, neighbouring windows would land on the same pixel
+          for (let col = 0; col < cols; col += step) {
+            const hv = hash2(b.id * 31 + k, col, fl);
+            if (hv >= lit) continue;
+            const wc = WIN[Math.floor((hv / lit) * WIN.length)];
+            if (L < 0.5) {
+              // too small for a window shape: a pinprick of light
+              const t = (col + 0.5) / cols, q = P(a[0] + (cE[0] - a[0]) * t, a[1] + (cE[1] - a[1]) * t, (z0 + z1) / 2);
+              g.fillStyle = wc;
+              g.fillRect(q[0] - 0.5, q[1] - 0.5, 1, 1);
+            } else this.wallQuad(g, P, a, cE, (col + 0.3) / cols, (col + 0.7) / cols, z0, z1, wc);
+          }
+        }
+      }
+    }
+    // bloom: a soft halo around every lit window
+    if (typeof g.filter === 'string') {
+      const t = this.mkCanvas(c.width, c.height), tg = t.getContext('2d');
+      tg.filter = `blur(${Math.max(1.5, 3 * L).toFixed(1)}px)`;
+      tg.drawImage(c, 0, 0);
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = L < 0.5 ? 0.5 : 0.85;
+      g.drawImage(t, 0, 0);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+    }
+    this.nid = (this.nid || 0) + 1;
+    return { c, c2, ox, oy, L, id: this.nid };
+  }
+
+  // headlights coming toward you, taillights going away; zoomed in they sit on the cars, zoomed out they stream
+  drawNightCars(ctx, s, offX, offY, vis) {
+    const w = this.world, cong = this.sim.congestion;
+    if (!this.lineIdx || !cong) return false;
+    const { W, H } = w;
+    const t = this.sim.paused ? this.frozenT4 || (this.frozenT4 = this.time) : ((this.frozenT4 = 0), this.time);
+    const [vx0, vy0, vx1, vy1] = this.visibleRect();
+    const near = s >= 0.9, minCls = s < 0.45 ? 2 : 1;
+    const late = near ? 1 : 1 - 0.55 * lateness(this.tod);
+    const RW = [0, 0.55, 0.75, 0.95];
+    const sp = 1.3;
+    const P = (x, y, hm = 0) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s];
+    };
+    const dot = Math.max(1, (near ? 0.9 : 1.4) * s);
+    const seen = new Set();
+    let drew = false;
+    for (const v of vis)
+      for (const li of this.lineIdx[v.cy * this.ncx + v.cx]) {
+        if (seen.has(li)) continue;
+        seen.add(li);
+        const ln = w.roadLines[li];
+        if ((ln.cls || 1) < minCls) continue;
+        const p = ln.pts;
+        const speed = 0.0011 * (ln.cls === 3 ? 1.3 : 1);
+        let acc = 0;
+        for (let k = 0; k + 3 < p.length; k += 2) {
+          const ax = p[k], ay = p[k + 1], bx = p[k + 2], by = p[k + 3];
+          const len = Math.hypot(bx - ax, by - ay);
+          if (len < 1e-4) continue;
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          if (mx < vx0 - 2 || mx > vx1 + 2 || my < vy0 - 2 || my > vy1 + 2) { acc += len; continue; }
+          const ux = (bx - ax) / len, uy = (by - ay) / len, nx = -uy, ny = ux;
+          const sy0 = P(ax, ay)[1], sy1 = P(bx, by)[1];
+          for (const dir of [1, -1]) {
+            const toward = (sy1 - sy0) * dir > 0;
+            ctx.fillStyle = toward ? 'rgba(255,246,222,0.95)' : 'rgba(255,58,40,0.9)';
+            const off = RW[ln.cls] * 0.24 * dir;
+            const phase = (((t * speed * dir) % sp) + sp) % sp;
+            const j0 = Math.ceil((acc - phase) / sp), j1 = Math.floor((acc + len - phase) / sp);
+            for (let j = j0; j <= j1; j++) {
+              const u = j * sp + phase - acc;
+              const cxp = ax + ux * u + nx * off, cyp = ay + uy * u + ny * off;
+              if (cxp < 0 || cyp < 0 || cxp >= W || cyp >= H) continue;
+              const ti = Math.floor(cyp) * W + Math.floor(cxp);
+              const dens = clamp((cong[ti] || 0) * 0.8 + 0.06, 0, 0.9) * late;
+              if (hash2(li * 7 + j, k, dir + 5) > dens) continue;
+              if (near) {
+                // a pair of lamps at the front (or back) of the car
+                const e = toward ? 0.15 : -0.15;
+                for (const sd of [-0.045, 0.045]) {
+                  const q = P(cxp + ux * dir * e + nx * sd, cyp + uy * dir * e + ny * sd, 0.8);
+                  ctx.fillRect(q[0] - dot / 2, q[1] - dot / 2, dot, dot);
+                }
+              } else {
+                const q = P(cxp, cyp, 0.8);
+                ctx.fillRect(q[0] - dot / 2, q[1] - dot / 2, dot, dot);
+              }
+              drew = true;
+            }
+          }
+          acc += len;
+        }
+      }
+    return drew && !this.sim.paused;
   }
 
   drawTree(g, P, [tx, ty, i], L) {
@@ -1175,6 +1406,7 @@ export class Renderer {
   draw(dt) {
     this.time += dt;
     this.registerBuildings();
+    const dn = this.dayNight(dt);
     const ctx = this.ctx;
     const s = this.scale();
     let L = LEVELS[LEVELS.length - 1];
@@ -1199,7 +1431,9 @@ export class Renderer {
     // Pick a detail level whose visible chunks all fit in the cache at once. Otherwise, zoomed out on a
     // high-DPI screen, chunks evict each other forever and squares keep re-rendering across the map.
     const PX_PER_CHUNK = 2.6 * (32 * CH) * (16 * CH); // ground + buildings at L = 1, in pixels
-    const fits = (lv) => vis.length * PX_PER_CHUNK * lv * lv < CACHE_PX * (lv === this.lastL ? 0.7 : 0.6);
+    // after dark each chunk also keeps a canvas of lights (at half detail from L = 1 up)
+    const pxc = (lv) => PX_PER_CHUNK * lv * lv * (1 + (dn.lights > 0.01 || dn.prep ? (lv >= 1 ? 0.25 : 1) : 0));
+    const fits = (lv) => vis.length * pxc(lv) < CACHE_PX * (lv === this.lastL ? 0.7 : 0.6);
     while (L > LEVELS[0] && !fits(L)) L = LEVELS[LEVELS.indexOf(L) - 1];
     this.lastL = L;
     const k = s / L;
@@ -1213,19 +1447,21 @@ export class Renderer {
       ctx.drawImage(e.c, e.ox * kk + offX, e.oy * kk + offY, e.c.width * kk, e.c.height * kk);
     };
     const fetch = (v, layer) => {
-      const fresh = this.getChunk(v.cx, v.cy, L, layer, false);
+      const lvls = layer === 'n' ? [0.25, 0.5, 1] : LEVELS; // night lights: half detail when zoomed in
+      const LL = layer === 'n' ? (L >= 1 ? L / 2 : L) : L;
+      const fresh = this.getChunk(v.cx, v.cy, LL, layer, false);
       const ci = v.cy * this.ncx + v.cx;
       if (fresh && fresh.ver === this.ver[ci]) return fresh;
       let any = fresh;
-      if (!any) for (const lv of LEVELS) { const e = this.cache.get(`${layer}${lv}:${ci}`); if (e) { any = e; break; } }
+      if (!any) for (const lv of lvls) { const e = this.cache.get(`${layer}${lv}:${ci}`); if (e) { any = e; break; } }
       if (budget > 0 || performance.now() < deadline) {
         budget--;
         // nothing to show yet: a quick low-detail pass first, so the map never has holes; refine next frames
-        if (!any && L > LEVELS[0]) {
+        if (!any && LL > lvls[0]) {
           incomplete = true;
-          return this.getChunk(v.cx, v.cy, LEVELS[0], layer, true);
+          return this.getChunk(v.cx, v.cy, lvls[0], layer, true);
         }
-        return this.getChunk(v.cx, v.cy, L, layer, true);
+        return this.getChunk(v.cx, v.cy, LL, layer, true);
       }
       incomplete = true;
       return any || null;
@@ -1249,17 +1485,73 @@ export class Renderer {
     }
     const spooky = this.drawHalloween(ctx, s, offX, offY, 'ground');
     for (const v of vis) blit(fetch(v, 'o'));
-    if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
     // snow on the ground: a light white wash while the snowpack lasts
     if (this.sim && this.sim.wxc && this.sim.wxc.month && this.sim.wxc.month.pack >= 1) {
       ctx.fillStyle = `rgba(245,248,255,${Math.min(0.16, 0.05 + this.sim.wxc.month.pack * 0.01)})`;
       ctx.fillRect(0, 0, this.cw, this.ch);
     }
+    // day and night (slow speeds only): tint the scene by the sun, then add the town's own lights
+    if (dn.tint) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgb(${dn.tint.join(',')})`;
+      ctx.fillRect(0, 0, this.cw, this.ch);
+      ctx.restore();
+    }
+    if (dn.prep && dn.lights <= 0.01) for (const v of vis) if (performance.now() < deadline) fetch(v, 'n');
+    if (dn.lights > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // the chunks' lights are gathered into one screen-sized layer, redone only when the view, the chunks or
+      // the hour's window count change; each frame then adds that layer once
+      const es = vis.map((v) => fetch(v, 'n')).filter((e) => e && e.c);
+      const win = Math.round(dn.win * 20) / 20;
+      const key = `${Math.round(offX)},${Math.round(offY)},${s},${this.cw}x${this.ch},${win},${es.map((e) => e.id).join('.')}`;
+      if (key !== this.nightKey) {
+        this.nightKey = key;
+        const nc = this.nightComp && this.nightComp.width === this.cw && this.nightComp.height === this.ch ? this.nightComp : (this.nightComp = this.mkCanvas(this.cw, this.ch));
+        const ng = nc.getContext('2d');
+        ng.clearRect(0, 0, this.cw, this.ch);
+        ng.globalCompositeOperation = 'lighter';
+        for (const e of es) {
+          const kk = s / e.L;
+          ng.globalAlpha = 1;
+          ng.drawImage(e.c2, e.ox * kk + offX, e.oy * kk + offY, e.c2.width * kk, e.c2.height * kk);
+          ng.globalAlpha = win;
+          ng.drawImage(e.c, e.ox * kk + offX, e.oy * kk + offY, e.c.width * kk, e.c.height * kk);
+        }
+      }
+      ctx.globalAlpha = dn.lights;
+      ctx.drawImage(this.nightComp, 0, 0);
+      ctx.globalAlpha = Math.min(1, dn.lights * 1.2);
+      if (this.carsOn && this.sim) carsDrawn = this.drawNightCars(ctx, s, offX, offY, vis) || carsDrawn;
+      ctx.restore();
+    }
+    if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
     const skyAnim = this.drawSky(ctx, s, offX, offY) || this.drawMoments(ctx, s, offX, offY);
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
-    this.needs = incomplete || carsDrawn || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
+    this.needs = incomplete || carsDrawn || dn.moving || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // the lighting for this frame; fades in and out over a second or so when the speed changes
+  dayNight(dt) {
+    const want = this.dayCycle && this.overlayMode === 'none' && this.sim ? 1 : 0;
+    const was = this.cyc;
+    this.cyc = clamp(this.cyc + clamp(want - this.cyc, -dt / 1200, dt / 1200), 0, 1);
+    const out = { tint: null, lights: 0, win: 1, prep: false, moving: this.cyc !== was };
+    if (this.cyc < 0.002) { this.lastLights = 0; return out; }
+    const h = sunHeight(this.tod, this.sim.m);
+    const t = skyTint(h).map((v) => Math.round(255 + (v - 255) * this.cyc));
+    if (t.some((v) => v < 255)) out.tint = t;
+    out.lights = lightsOn(h) * this.cyc;
+    out.prep = h < 0.4; // evening's coming (or it's still early): get the lights ready ahead of time
+    this.lastLights = out.lights;
+    out.win = 1 - 0.45 * lateness(this.tod);
+    // keep drawing while the clock runs; a paused night holds still
+    if (this.dayCycle && !this.sim.paused) out.moving = true;
+    return out;
   }
 
   // People on the sidewalks, as many as the street life there supports (the same field that drives vibrancy):
@@ -1272,7 +1564,7 @@ export class Renderer {
     if ((vx1 - vx0) * (vy1 - vy0) > 14000) return false;
     const t = sim.paused ? this.frozenT2 || this.time : this.time;
     const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
-    const wf = sim.wxc && sim.wxc.month ? clamp(weatherFoot(sim) / WF_AVG, 0.75, 1.15) : 1;
+    const wf = (sim.wxc && sim.wxc.month ? clamp(weatherFoot(sim) / WF_AVG, 0.75, 1.15) : 1) * (1 - 0.65 * (this.lastLights || 0) * (0.5 + 0.5 * lateness(this.tod))); // fewer people out after dark
     const bikes = Math.min(0.5, 0.06 + 0.5 * this.techA('ebike') + (sim.flags && sim.flags.bikeLane ? 0.1 : 0));
     const shirts = ['#c0392b', '#2b5fb8', '#f1c40f', '#27ae60', '#8e44ad', '#ecf0f1', '#e67e22', '#34495e'];
     const RW = [0, 0.55, 0.75, 0.95];

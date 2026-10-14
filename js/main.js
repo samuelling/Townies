@@ -10,8 +10,8 @@ import { nextScenario, FOLLOWUPS } from './events.js';
 import { TERMS, startScenario, scenarioMonthly } from './scenarios.js';
 import { el } from './util.js';
 import { rewindWorld, PAST_STARTS } from './history.js';
+import { SPEEDS, DEFAULT_SPEED, OLD_SPEED, cycles } from './daynight.js';
 
-const MONTH_MS = [Infinity, 14000, 6000, 2000];
 const QUIPS = [
   'Reticulating splines…',
   'Counting triple-deckers…',
@@ -24,7 +24,7 @@ const QUIPS = [
   'Teaching herring to climb ladders…',
 ];
 
-const game = { world: null, sim: null, renderer: null, ui: null, music: new Music(), speed: 1 };
+const game = { world: null, sim: null, renderer: null, ui: null, music: new Music(), speed: DEFAULT_SPEED, frac: 0 };
 window.townies = game;
 const params = new URLSearchParams(location.search);
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -186,7 +186,8 @@ function boot(state, scen = null) {
   const tutorial = scen === 'tutorial';
   if (!state) startScenario(game.sim, tutorial ? 'sandbox' : scen || 'sandbox', game.peers);
   game.ui.refreshHud();
-  game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? state.speed : 1);
+  if (state && state.frac != null) game.frac = state.frac;
+  game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? (state.speedV === 2 ? state.speed : OLD_SPEED[state.speed] ?? DEFAULT_SPEED) : DEFAULT_SPEED);
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
   game.renderer.resize();
   if (tutorial) game.ui.startTutorial();
@@ -195,18 +196,26 @@ function boot(state, scen = null) {
 }
 
 let last = performance.now();
-let acc = 0;
 function frame(now) {
   const dt = Math.min(250, now - last);
   last = now;
   const s = game.sim;
+  // game.frac: how far through the month we are (kept as a fraction so changing speed doesn't jump the clock)
   if (s && !game.ui.modal && game.speed > 0 && !s.gameOver) {
-    s.realtime((dt / MONTH_MS[game.speed]) * 30);
-    acc += dt;
-    if (acc >= MONTH_MS[game.speed]) {
-      acc = 0;
+    const ms = SPEEDS[game.speed][2];
+    s.realtime((dt / ms) * 30);
+    game.frac += dt / ms;
+    if (game.frac >= 1) {
+      game.frac = 0;
       monthTick();
     }
+  }
+  if (game.renderer) {
+    // time of day: each month starts a little after 7 a.m. on the 1st
+    const r = game.renderer;
+    r.tod = ((game.frac * 30 + 0.3) % 1) * 24;
+    r.dayCycle = cycles(game.speed) || (game.speed === 0 && cycles(game.lastSpeed));
+    if (game.ui && r.dayCycle) game.ui.refreshClock(r.tod, Math.floor(game.frac * 30 + 0.3) + 1);
   }
   if (game.renderer && game.renderer.needs) game.renderer.draw(dt);
   else if (game.renderer) game.renderer.idle();
@@ -244,6 +253,8 @@ async function save(manual) {
     rot: r.rot,
     z: r.z,
     speed: game.speed,
+    speedV: 2,
+    frac: game.frac,
     at: Date.now(),
     label: `Watertown ${game.sim.dateStr()}`,
   };
