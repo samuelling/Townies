@@ -5,6 +5,7 @@ import { NOTICE, FICTION } from './credits.js';
 import { WALK_WEIGHTS } from './walkscore.js';
 import { CAT_WEIGHT } from './vibrancy.js';
 import { CFG } from './config.js';
+import { PATTERNS } from './patterns.js';
 
 const P = (...k) => el('p', {}, ...k);
 const H = (t) => el('h4', {}, t);
@@ -172,7 +173,7 @@ export const CHAPTERS = [
         P('On top of the counts sits a small version of the model regional planners use. Homes produce trips and jobs and shops attract them. The arterials at the town line bring in commuters and through traffic, because Watertown sits between Boston, Cambridge, Newton and Waltham. Each trip takes the fastest route over the real street grid, slowed by congestion and by intersection delay. The routing is re-run a few times so traffic spreads out instead of piling onto one street.'),
         w.commute ? P(`Commuting comes from the Census (LEHD LODES ${w.commute.year}): ${fmtInt(w.commute.totals.inbound)} people commute into Watertown jobs, ${fmtInt(w.commute.totals.outbound)} residents commute out, and only ${fmtInt(w.commute.totals.internal)} both live and work here. Their trips enter and leave by the arterial pointing toward their town: Boston and Cambridge to the east, Waltham to the west, Newton to the south.`) : null,
         P('The model’s settings (how much through traffic, travel speeds by street type, how far people go for errands) were tuned to match the MassDOT counts.' + (fit && fit.r2 ? ` Before any correction, the routed model explains about ${Math.round(fit.r2 * 100)}% of the street-to-street variation in counted traffic across ${fmtInt(fit.n)} counted street tiles${fit.nBusy ? `, and about ${Math.round(fit.r2Busy * 100)}% among busy streets (8,000+ a day), where counts are most reliable` : ''}, on a log scale. Placeholder figures MassDOT assigns to local streets (marked “not applicable”) are left out; only counts count.` : '')),
-        P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). A street without a count starts from the typical count for its class of street, nudged a little by the routed model and corrected toward counted neighbours. That mix came out of a hold-out test (see “How accurate is it?”): on counts it never saw, it does better than either the routed model or street class alone.'),
+        P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). A street without a count starts from the typical count for its class of street (for ordinary side streets, MassDOT’s own default of about 1,150 a day, because the few local streets it does count are the busy ones), nudged a little by the routed model and corrected toward counted neighbours. That mix came out of a hold-out test (see “How accurate is it?”): on counts it never saw, it does better than either the routed model or street class alone.'),
         H('Buses'),
         P('Watertown has no subway, so its transit is the MBTA bus: the 57 down Galen Street, the 70 along Main and Arsenal Streets, the 71 up Mount Auburn Street and the 73 on Belmont Street. Ridership on each is modeled from the people and jobs within a short walk of the route; it rises when car traffic gets worse (people switch) and falls when the buses are stuck in that same traffic, unless they have their own lane. The total is scaled to a round assumption of about 9,000 weekday boardings in town, not measured stop by stop (the only published route figure found was the 57’s 10,094 weekday boardings in 2012, most of them outside Watertown). Riders gained or lost change the number of car trips the traffic model routes.'),
         H('From volumes to jams'),
@@ -183,6 +184,16 @@ export const CHAPTERS = [
         NOTE(B('Limits: '), 'the counts are from the mid-2010s; the bus model is crude; trips are daily averages, not real turning-movement counts; and roundabout flows assume trips spread evenly to the other streets. Good for comparing options, not for designing a real intersection.'),
       ];
     },
+  },
+  {
+    id: 'apl', title: 'A Pattern Language',
+    build: () => [
+      P('In 1977 Christopher Alexander, Sara Ishikawa and Murray Silverstein published A Pattern Language: 253 patterns for building towns, neighborhoods and houses that people find alive and comfortable. Much of what this game calls vibrancy is in there: shops owned by the people who run them, corner groceries, greens close to every home, housing mixed in with work.'),
+      P('The book is qualitative, so the game turns eleven of its town- and neighborhood-scale patterns into one plain test each, measured on the real map every year (Windows → A Pattern Language):'),
+      LIST(...PATTERNS.map((p) => [B(`${p.n}. ${p.name}: `), `${p.idea} `, I(`Test: ${p.test}.`)])),
+      P('Each score is the share of homes (or shops, or land, or local streets) that pass, from 0 to 100, and the overall score is their average. It is a side measure: it changes nothing in the simulation, it just tells you how your Watertown reads to someone who carries the book around.'),
+      NOTE(B('Today’s Watertown '), 'passes most tests easily (it is mostly two- and three-story houses, close to buses and parks) and does worst on activity nodes and corner groceries: shops are spread along a few corridors rather than gathered in walkable clusters, and many neighborhoods are a long walk from food.'),
+    ],
   },
   {
     id: 'peers', title: 'Peer towns',

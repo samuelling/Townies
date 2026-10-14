@@ -1,5 +1,6 @@
 // SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
+import { PATTERNS, patternsNow } from './patterns.js';
 import { monthWeather, WX_ICON, NORMALS } from './weather.js';
 import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
@@ -130,7 +131,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
     const spItems = SPEEDS.map(([l, v]) => [l, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -868,6 +869,26 @@ export class UI {
           el('button', { class: 'choice', onclick: () => this.g.restart() }, el('b', {}, 'Start a new term')))));
     }
     this.showModal(box);
+  }
+
+  patternsWindow() {
+    this.win('apl', 'A Pattern Language', (body) => {
+      const s = this.sim;
+      const a = patternsNow(s), a0 = s.apl0 || a;
+      const d = a.score - a0.score;
+      body.append(el('div', { class: 'aplhead' }, el('div', { class: 'big' }, String(a.score)), el('div', {},
+        el('b', {}, 'How the town squares with A Pattern Language'),
+        el('p', { class: 'fine' }, `Eleven town- and neighborhood-scale patterns from Alexander, Ishikawa and Silverstein's 1977 book, each turned into one checkable test on the real map. 100 means every home (or shop, or acre) passes. ${a0 !== a && Math.abs(d) >= 1 ? `${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)} since you took office.` : 'Updated once a year.'} A side measure: it doesn't affect approval or the budget.`))));
+      for (const p of PATTERNS) {
+        const it = a.items.find((x) => x.id === p.id), it0 = a0.items.find((x) => x.id === p.id);
+        const dd = it0 ? it.score - it0.score : 0;
+        body.append(el('div', { class: 'aplrow' },
+          el('div', { class: 'aplname' }, el('span', { class: 'apln' }, String(p.n)), el('b', {}, p.name), el('span', { class: `aplscore${dd > 0 ? ' up' : dd < 0 ? ' down' : ''}` }, `${it.score}${dd ? ` (${dd > 0 ? '+' : '−'}${Math.abs(dd)})` : ''}`)),
+          el('div', { class: 'aplbar' }, el('i', { style: `width:${it.score}%` })),
+          el('p', { class: 'fine' }, p.idea, ' ', el('i', {}, `Test: ${p.test}.`))));
+      }
+      body.append(el('p', { class: 'fine' }, 'The book itself is qualitative; these tests are this game’s reading of the patterns, using its numbers only where the book gives one (9% parking, four stories, a three-minute walk to green). See Help → Behind the scenes → A Pattern Language.'));
+    }, { cls: 'wide' });
   }
 
   weatherWindow() {

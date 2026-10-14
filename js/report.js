@@ -1,6 +1,7 @@
 // End-of-term report card: "the Watertown you built", one screen, easy to screenshot or copy.
 import { TERMS, goalStatus } from './scenarios.js';
 import { autoUse } from './vibrancy.js';
+import { patternsNow } from './patterns.js';
 
 const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 const FLABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
@@ -23,6 +24,7 @@ export function termSnapshot(sim) {
     sqDelay: sq && sq.last ? Math.round(sq.last.delay) : null, sqLos: sq && sq.last ? sq.last.los : null,
     melWins: sim.mel ? sim.mel.wins || 0 : 0,
     autoConverted: sim.autoConverted || 0,
+    apl: patternsNow(sim).score,
   };
 }
 
@@ -60,6 +62,7 @@ export function reportCard(sim) {
   row('Empty storefronts', a.vacant, now.vacant, int, down);
   row('Auto-oriented parcels', a.auto, now.auto, int, down);
   row('Rush-hour delay at the Square (s)', a.sqDelay, now.sqDelay, int, down);
+  row('Pattern Language fit (0–100)', a.apl, now.apl, int, up);
   row('City reserves', a.funds, now.funds, money, up);
   row('Approval', a.approval, now.approval, (v) => `${int(v)}%`, up);
 

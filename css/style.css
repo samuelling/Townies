@@ -368,3 +368,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .fan-grid { stroke: #ddd; stroke-width: 1; }
 .fanlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
 .fanlegend i { display: inline-block; width: 14px; height: 4px; margin-right: 5px; vertical-align: middle; }
+
+/* A Pattern Language */
+.aplhead { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
+.aplhead .big { font-size: 40px; font-weight: 700; min-width: 64px; text-align: center; border: 2px solid #000; background: #fffbe6; box-shadow: 2px 2px 0 #000; }
+.aplrow { margin: 6px 0 8px; }
+.aplname { display: flex; align-items: baseline; gap: 6px; }
+.apln { font: 600 10px sans-serif; background: #333; color: #fff; padding: 1px 4px; border-radius: 2px; }
+.aplscore { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.aplscore.up { color: #1c7a2e; } .aplscore.down { color: #b3261e; }
+.aplbar { height: 7px; background: #ddd; border: 1px solid #888; margin: 2px 0; }
+.aplbar i { display: block; height: 100%; background: linear-gradient(90deg, #8fbf6a, #4c8a3a); }

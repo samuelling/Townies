@@ -1,5 +1,6 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { computePatterns } from './patterns.js';
 import { weatherCapF, weatherMonthly } from './weather.js';
 import { initTransit, computeTransit, transitCarF } from './transit.js';
 import { eggMonthly } from './eggs.js';
@@ -37,7 +38,7 @@ const sizeW = (lot) => (GROWTH.size ? clamp(Math.pow(lot.area / 1500, GROWTH.siz
 export const FISCAL = { newGrowth: 0.014, costGrowth: 0.036 };
 
 // street-class prior for uncounted streets; fitted by 5-fold hold-out on MassDOT counts (tools/validate.mjs)
-export const TRAFFIC_PRIOR = { beta: 0.2, smooth: 2000, decay: 0.99 };
+export const TRAFFIC_PRIOR = { beta: 0.2, smooth: 2000, decay: 0.99, local: 1154 };
 
 export const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 export const FACTION_LABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
@@ -170,6 +171,7 @@ export class Sim {
     initIncidents(this);
     initTech(this);
     initTransit(this);
+    computePatterns(this);
     this.demand = { R: 0, C: 0, I: 0 };
     for (let k = 0; k < 6; k++) this.updateDemand();
     this.base.demR0 = this.demand.R;
@@ -406,6 +408,9 @@ export class Sim {
       cm[c] = med(a.map((i) => w.aadt[i])) || [0, 1500, 4000, 15000][c];
       tm[c] = med(a.map((i) => T[i] + smooth)) || smooth;
     }
+    // the few local streets MassDOT counts are the busy ones; an ordinary side street starts from MassDOT's own
+    // default for local roads instead
+    cm[1] = Math.min(cm[1], TRAFFIC_PRIOR.local);
     const prior = (i) => cm[road[i]] * Math.pow((T[i] + smooth) / tm[road[i]], TRAFFIC_PRIOR.beta);
     this.base.trafPrior = { classMedian: cm.slice(1), beta: TRAFFIC_PRIOR.beta };
     const F = new Float32Array(this.N), fixed = new Uint8Array(this.N);
@@ -896,6 +901,7 @@ export class Sim {
       `Assessors finished the annual revaluation. Under Prop 2½ the levy limit grew 2.5% plus ${(growth / 1e6).toFixed(1)}M in new growth, to ${(this.levyLimit / 1e6).toFixed(1)}M. Residential rate ${r1.rateR.toFixed(2)} (was ${r0.rateR.toFixed(2)}), commercial ${r1.rateC.toFixed(2)} per $1,000.`,
       'big'
     );
+    computePatterns(this); // A Pattern Language side measure, once a year
     this.hooks.yearly && this.hooks.yearly(this);
   }
 
