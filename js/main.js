@@ -164,7 +164,21 @@ function boot(state, scen = null) {
       if (game.renderer) game.renderer.needs = true;
     },
     comment: () => {},
-    moment: (kind, x, y, label) => game.renderer && game.renderer.addMoment(kind, x, y, label),
+    moment: (kind, x, y, label) => {
+      if (game.renderer) game.renderer.addMoment(kind, x, y, label);
+      if (game.music.ctx) game.music.sfx(kind === 'snow' ? 'snow' : 'ribbon'); // only once the player has made a sound
+    },
+    // the market put up a building: if it's on screen and the game isn't racing, a few hammer taps
+    built: (lot) => {
+      const r = game.renderer;
+      if (!r || !game.ui || !game.music.ctx || game.speed > 4 || game.ui.modal) return;
+      const [x0, y0, x1, y1] = r.visibleRect();
+      if (lot.cx < x0 || lot.cx > x1 || lot.cy < y0 || lot.cy > y1 || r.scale() < 0.5) return;
+      const now = performance.now();
+      if (now - (game.lastHammer || 0) < 2500) return;
+      game.lastHammer = now;
+      game.music.sfx('hammer');
+    },
   };
   // Older saves name the town's loudest commenter differently; carry them over to Melora.
   if (state && state.sim && state.sim.sim) {

@@ -1741,7 +1741,9 @@ export class Renderer {
   drawHalloween(ctx, s, offX, offY, pass) {
     const sim = this.sim;
     if (!sim || s < 0.7) return false;
-    const home = homeLot(this.world), homeOn = home && irvingSeason(sim), hood = halloweenSeason(sim);
+    // the skeleton yard only comes out after dark, so it's only seen at the slow, day-and-night speeds
+    const dark = clamp(((this.lastLights || 0) - 0.2) / 0.5, 0, 1);
+    const home = homeLot(this.world), homeOn = home && irvingSeason(sim) && dark > 0, hood = halloweenSeason(sim);
     if (!homeOn && !hood) return false;
     const [x0, y0, x1, y1] = this.visibleRect();
     if ((x1 - x0) * (y1 - y0) > 60000) return false;
@@ -1754,6 +1756,7 @@ export class Renderer {
         const [yx, yy] = yardPoint(this.world, home);
         const flick = 0.9 + 0.1 * Math.sin(this.time * 0.004) * Math.sin(this.time * 0.0017);
         ctx.save();
+        ctx.globalAlpha = dark;
         const pools = [[yx, yy, 0, 30, 0.5], [(yx + home.cx) / 2, (yy + home.cy) / 2, 1.4, 44, 0.42]];
         for (const [mode, col] of [['source-over', '205,18,22'], ['lighter', '150,10,10']]) {
           ctx.globalCompositeOperation = mode;
@@ -1768,7 +1771,10 @@ export class Renderer {
         }
         ctx.restore();
         // the display itself sits on top: it's the point of the yard
+        ctx.save();
+        ctx.globalAlpha = dark;
         this.skeletonYard(ctx, P, s, home);
+        ctx.restore();
         drew = true;
       }
       return drew;

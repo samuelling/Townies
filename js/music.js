@@ -3,6 +3,7 @@
 // and a sparse Turing-machine melody on the key's pentatonic scale, snapped to chord tones on the
 // beat, so nothing ever clashes. Keys only move by a fourth or fifth (sharing most notes), with the
 // echoes ducked at the change. Soft drums drift in for some sections only. Plus SC2000-ish UI blips.
+import * as FX from './sfx.js';
 const BPM = 88;
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const PENT = [0, 1, 2, 4, 5]; // scale degrees 1 2 3 5 6
@@ -32,7 +33,10 @@ export class Music {
   constructor() {
     this.ctx = null;
     this.on = false;
-    this.sfxOn = true;
+    let saved = null;
+    try { saved = localStorage.getItem('townies-sfx'); } catch (e) { /* storage off */ }
+    this.sfxOn = saved !== '0';
+    this.lastFx = {};
     this.step = 0;
     this.timer = null;
     this.key = 50; // D
@@ -355,12 +359,39 @@ export class Music {
   }
 
   // ---- sound effects ----
-  sfx(kind) {
+  toggleSfx() {
+    this.sfxOn = !this.sfxOn;
+    try { localStorage.setItem('townies-sfx', this.sfxOn ? '1' : '0'); } catch (e) { /* storage off */ }
+    return this.sfxOn;
+  }
+  // n: how big the action was (tiles, lots), for sounds that scale
+  sfx(kind, n = 1) {
     if (!this.sfxOn) return;
     const c = this.ensure();
     if (!c) return;
     if (c.state === 'suspended') c.resume();
     const t = c.currentTime + 0.01;
+    // the same sound twice within a moment would just pile up
+    const now = performance.now();
+    if (now - (this.lastFx[kind] || 0) < 120) return;
+    this.lastFx[kind] = now;
+    const synth = {
+      drill: () => FX.drill(this, t, Math.min(1.3, 0.45 + 0.04 * n)),
+      road: () => FX.road(this, t, n),
+      bulldoze: () => FX.bulldoze(this, t, n),
+      zoneR: () => FX.stamp(this, t, 'zoneR'), zoneC: () => FX.stamp(this, t, 'zoneC'), zoneI: () => FX.stamp(this, t, 'zoneI'), dezone: () => FX.stamp(this, t, 'dezone'),
+      park: () => FX.park(this, t),
+      civic: () => FX.civic(this, t),
+      ribbon: () => FX.ribbon(this, t),
+      gavel: () => FX.gavel(this, t),
+      siren: () => FX.siren(this, t),
+      rewind: () => FX.rewind(this, t),
+      hammer: () => FX.hammer(this, t),
+      submit: () => FX.submit(this, t),
+      spooky: () => FX.spooky(this, t),
+      snow: () => FX.snow(this, t),
+    }[kind];
+    if (synth) return synth();
     const blip = (f0, f1, dur, type = 'square', vol = 0.08) => {
       const o = c.createOscillator();
       o.type = type;

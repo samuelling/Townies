@@ -1028,6 +1028,7 @@ export class Sim {
     const gain = lot.landVal + lot.bldgVal - oldVal;
     if (gain > 0) this.newGrowth += (gain * (key === 'R' ? r.rateR : r.rateC)) / 1000;
     this.devCount = (this.devCount || 0) + 1;
+    if (this.hooks.built) this.hooks.built(lot);
     // what the market built, by kind (read by tools/validate.mjs)
     const gl = (this.growthLog = this.growthLog || {});
     const g = (gl[key + ':' + why] = gl[key + ':' + why] || { n: 0, units: 0, jobs: 0 });

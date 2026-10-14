@@ -55,4 +55,4 @@ export function eggMonthly(sim) {
   else if (sim.m === 9) sim.news('Halloween creeps across the East End', 'Pumpkins on the steps, inflatable ghosts listing in the wind, and foam tombstones with puns on them. One house on Irving Street started a month ago and is not sorry.');
 }
 
-export const EGG_NOTE = 'September and October: a full skeleton gathering in the front yard, lit red at night. Locally famous.';
+export const EGG_NOTE = 'A full skeleton gathering in the front yard, lit red. Out every night in September and October. Locally famous.';

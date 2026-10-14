@@ -133,7 +133,7 @@ export class UI {
       });
       return m;
     };
-    const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Re-download map data', () => this.g.restart(true)]];
+    const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Sound effects on/off', () => { const on = this.g.music.toggleSfx(); this.toast(on ? 'Sound effects on' : 'Sound effects off'); if (on) this.g.music.sfx('drill'); }], ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
@@ -379,7 +379,7 @@ export class UI {
       this.g.music.sfx('error');
     } else {
       this.toast(`${CREW_DEPTS[INC[it.type].dept].label} ${CREW_DEPTS[INC[it.type].dept].unit} on the way${it.street ? ' to ' + it.street : ''}`);
-      this.g.music.sfx('build');
+      this.g.music.sfx('siren');
     }
     this.refreshIncidents();
     this.r.needs = true;
@@ -502,7 +502,7 @@ export class UI {
     this.win('query', 'Query', (body) => {
       const t = el('table', { class: 'kv' });
       const add = (...rs) => rs.forEach((r) => r && t.append(r));
-      if (lot && lot === homeLot(w) && irvingSeason(s)) add(row('🎃 This fall', EGG_NOTE));
+      if (lot && lot === homeLot(w) && irvingSeason(s) && (this.r.lastLights || 0) > 0.3) add(row('🎃 Tonight', EGG_NOTE));
       let head = '';
       if (!w.inTown[i]) head = 'Outside Watertown — neighbouring town';
       else if (w.terrain[i] === 1) head = w.road[i] ? `Bridge — ${w.names[w.roadName[i]] || 'unnamed'}` : 'Water';
@@ -829,7 +829,7 @@ export class UI {
           el('button', { class: 'choice', onclick: () => {
             const res = submit(sim, st.ids, st.prog, { ...st.t, exclude: [...st.exclude] }, st.name);
             if (res.error) { this.toast(res.error, 4000); this.g.music.sfx('error'); return; }
-            this.g.music.sfx('build');
+            this.g.music.sfx('submit');
             this.closeWin('planner');
             this.planState = null;
             this.refreshStatus();
@@ -1221,7 +1221,7 @@ export class UI {
     if (c.calib == null) { const vols = legVolumes(sim, c.legs); const e0 = evalJunction('signal', c.legs, vols, 1); c.calib = clamp(e0.X / 0.97, 1, 5); }
     const r = planDesign(sim, c, d, true);
     if (!r.ok) return this.toast(r.msg || "Can't build that here");
-    this.g.music.sfx('build');
+    this.g.music.sfx('drill', 20);
     sim.news(`${c.name === 'Intersection' ? 'Intersection' : c.name} to become a ${DESIGNS[d].label.toLowerCase()}`, `${fmtMoney(r.cost)}${r.lots.length ? `, including ${r.lots.length} propert${r.lots.length > 1 ? 'ies' : 'y'} taken by eminent domain` : ''}. ${DESIGNS[d].months ? `Construction takes about ${DESIGNS[d].months} months; expect detours.` : 'Done in weeks.'}`, 'big');
     this.refreshStatus();
     this.wins.get('junction') && this.wins.get('junction').refresh();
@@ -1277,7 +1277,7 @@ export class UI {
         this.refreshWins();
         this.r.refreshOverlay();
         this.r.selLot = null;
-        this.g.music.sfx('build');
+        this.g.music.sfx('gavel');
       } }, el('b', {}, ch.label), ch.fx ? el('small', {}, typeof ch.fx === 'function' ? ch.fx(this.sim, ctx) : ch.fx) : null));
     }
     body.append(choices);
@@ -1381,7 +1381,12 @@ export class UI {
       const p = pos(e);
       const hitInc = !moved && (this.tool === 'query' || this.tool === 'pan') ? this.r.incidentAt(p[0], p[1]) : null;
       if (hitInc != null) this.sendCrew(hitInc);
-      else if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.pickTile(p[0], p[1]));
+      else if (mode === 'pan' && !moved && this.tool === 'query') {
+        const ti = this.r.pickTile(p[0], p[1]);
+        const hl = homeLot(this.w);
+        if (hl && ti >= 0 && this.w.lotOf[ti] === hl.id && irvingSeason(this.sim) && (this.r.lastLights || 0) > 0.3) this.g.music.sfx('spooky');
+        this.query(ti);
+      }
       else if (mode === 'tool' && this.tool === 'junction') {
         const g = gridAt(p);
         this.junctionWindow(ctlAt(this.sim, g[0], g[1]));
@@ -1447,6 +1452,7 @@ export class UI {
     this.refreshStatus();
     this.refreshWins();
     this.refreshUndo();
+    this.g.music.sfx('rewind');
     this.toast(`Undid: ${e.label}${e.cost > 0 ? ` · ${fmtMoney(e.cost)} back` : ''}`);
   }
   refreshUndo() {
@@ -1502,7 +1508,10 @@ export class UI {
     }
     this.sim.execute(p, { dense: this.dense });
     this.refreshUndo();
-    this.g.music.sfx(p.tool === 'bulldoze' ? 'bulldoze' : p.tool.startsWith('zone') || p.tool === 'dezone' ? 'zone' : 'build');
+    const nT = p.tiles.length;
+    const fx = p.tool === 'bulldoze' ? ['bulldoze', Math.max(1, Math.round(nT / 6))] : p.tool.startsWith('zone') || p.tool === 'dezone' ? [p.tool, nT]
+      : p.tool === 'road' ? ['road', nT] : p.tool === 'park' ? ['park', nT] : SERVICES[p.tool] ? ['civic', nT] : ['drill', nT];
+    this.g.music.sfx(fx[0], fx[1]);
     this.r.refreshOverlay();
     this.refreshStatus();
     this.updateHint();
