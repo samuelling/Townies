@@ -379,3 +379,4 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .aplscore.up { color: #1c7a2e; } .aplscore.down { color: #b3261e; }
 .aplbar { height: 7px; background: #ddd; border: 1px solid #888; margin: 2px 0; }
 .aplbar i { display: block; height: 100%; background: linear-gradient(90deg, #8fbf6a, #4c8a3a); }
+.tool.undobtn.disabled { opacity: 0.4; }

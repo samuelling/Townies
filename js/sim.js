@@ -1356,7 +1356,91 @@ export class Sim {
     return out;
   }
 
+  // ---------------- undo ----------------
+  // Map edits (bulldoze, roads, zoning, parks, civic buildings) can be undone for a month or so afterwards.
+  // Before an edit, every per-tile array is copied; afterwards only the tiles that changed are kept, along
+  // with copies of the lots and buildings nearby, so an undo entry is small.
   execute(p, opts = {}) {
+    if (!p || !p.ok) return false;
+    const u = this.undoBegin(p);
+    const r = this.executeEdit(p, opts);
+    if (r) this.undoEnd(u, p);
+    return r;
+  }
+  undoArrays() {
+    const out = [];
+    for (const [owner, obj] of [['w', this.w], ['s', this]]) for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (ArrayBuffer.isView(v) && v.length === this.N && !['traffic', 'congestion', 'vpd', 'flow', 'jf', 'V0', 'M0', 'incBlock'].includes(k)) out.push([owner, k, v]);
+    }
+    return out;
+  }
+  undoBegin(p) {
+    const w = this.w, { W, H } = w;
+    let x0 = W, y0 = H, x1 = 0, y1 = 0;
+    for (const i of p.tiles) { const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+    const ids = new Set();
+    for (let y = Math.max(0, y0 - 4); y <= Math.min(H - 1, y1 + 4); y++) for (let x = Math.max(0, x0 - 4); x <= Math.min(W - 1, x1 + 4); x++) { const li = w.lotOf[y * W + x]; if (li >= 0) ids.add(li); }
+    const lots = [...ids].map((id) => [id, structuredClone(w.lots[id])]);
+    const alive = [];
+    for (const [, l] of lots) for (const b of l.bldgs) alive.push([b, w.bldgs[b].alive]);
+    for (let y = Math.max(0, y0 - 2); y <= Math.min(H - 1, y1 + 2); y++) for (let x = Math.max(0, x0 - 2); x <= Math.min(W - 1, x1 + 2); x++) { const b = w.bAt[y * W + x]; if (b >= 0) alive.push([b, w.bldgs[b].alive]); }
+    return {
+      arrays: this.undoArrays().map(([o, k, v]) => [o, k, v.slice()]),
+      lots, alive, lotsLen: w.lots.length, bldgsLen: w.bldgs.length, roadLinesLen: (w.roadLines || []).length,
+      services: structuredClone(w.services), funds: this.funds, newGrowth: this.newGrowth, t: this.t,
+    };
+  }
+  undoEnd(u, p) {
+    const diffs = [];
+    const now = new Map(this.undoArrays().map(([o, k, v]) => [o + ':' + k, v]));
+    for (const [o, k, old] of u.arrays) {
+      const cur = now.get(o + ':' + k);
+      if (!cur) continue;
+      const idx = [];
+      for (let i = 0; i < old.length; i++) if (old[i] !== cur[i] && !(old[i] !== old[i] && cur[i] !== cur[i])) idx.push(i);
+      if (!idx.length) continue;
+      const vals = new old.constructor(idx.length);
+      idx.forEach((i, j) => (vals[j] = old[i]));
+      diffs.push([o, k, Int32Array.from(idx), vals]);
+    }
+    const label = { bulldoze: 'Bulldoze', road: 'Road', zoneR: 'Residential zoning', zoneC: 'Commercial zoning', zoneI: 'Industrial zoning', dezone: 'Dezoning', park: 'Park' }[p.tool] || 'Build';
+    this.undoStack = (this.undoStack || []).concat([{ ...u, arrays: null, diffs, label, cost: u.funds - this.funds, roads: p.tool === 'road' || p.tool === 'bulldoze' }]).slice(-20);
+  }
+  canUndo() {
+    const st = (this.undoStack || []).filter((e) => this.t - e.t <= 1);
+    this.undoStack = st;
+    return st.length ? st[st.length - 1] : null;
+  }
+  undo() {
+    const e = this.canUndo();
+    if (!e) return null;
+    this.undoStack.pop();
+    const w = this.w;
+    for (const [o, k, idx, vals] of e.diffs) { const arr = (o === 'w' ? w : this)[k]; if (arr) for (let j = 0; j < idx.length; j++) arr[idx[j]] = vals[j]; }
+    for (const [id, clone] of e.lots) { const lot = w.lots[id]; for (const k of Object.keys(lot)) if (!(k in clone)) delete lot[k]; Object.assign(lot, clone); }
+    for (let id = e.lotsLen; id < w.lots.length; id++) { w.lots[id].dead = 1; w.lots[id].tiles = []; w.lots[id].bldgs = []; }
+    for (const [b, a] of e.alive) w.bldgs[b].alive = a;
+    for (let b = e.bldgsLen; b < w.bldgs.length; b++) w.bldgs[b].alive = 0;
+    w.services.length = 0;
+    w.services.push(...e.services);
+    if (w.roadLines) w.roadLines.length = Math.min(w.roadLines.length, e.roadLinesLen);
+    this.funds += e.cost; // the money comes back; the months that passed don't
+    this.newGrowth = e.newGrowth;
+    this.rebuildRoadList();
+    this.recalc();
+    this.walkDirty = true;
+    this.parkPts = null;
+    this.computeAll();
+    if (e.roads) {
+      this.hooks.roadsChanged && this.hooks.roadsChanged([]);
+      if (this.flow) this.reassign();
+    }
+    this.hooks.invalidateAll && this.hooks.invalidateAll();
+    return e;
+  }
+
+  executeEdit(p, opts = {}) {
     if (!p || !p.ok) return false;
     const w = this.w;
     const { W, road, lotOf, svcAt, bldgs } = w;
@@ -1575,7 +1659,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), V0: this.V0 || null, M0: this.M0 || null };

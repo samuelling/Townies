@@ -30,6 +30,7 @@ const BD_MODES = ['auto', 'buildings', 'roads', 'all'];
 const BD_LABEL = { auto: 'AUTO', buildings: 'BUILDINGS ONLY', roads: 'ROADS ONLY', all: 'EVERYTHING' };
 
 const ICON = {
+  undo: '<svg viewBox="0 0 24 24"><path d="M9 5L4 10l5 5" fill="none" stroke="#000" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><path d="M4.5 10H14a5.5 5.5 0 0 1 0 11h-4" fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round"/></svg>',
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
   pan: '<svg viewBox="0 0 24 24"><path d="M8 11V5a1.5 1.5 0 013 0v5V3.5a1.5 1.5 0 013 0V10V5a1.5 1.5 0 013 0v6V8a1.5 1.5 0 013 0v7c0 4-3 7-7 7s-5-1.5-7-4l-3-4.5c-.7-1 .8-2.3 1.8-1.4L8 14z" fill="#f2d3b0" stroke="#000" stroke-width="1.3"/></svg>',
   bulldoze: '<svg viewBox="0 0 24 24"><rect x="7" y="9" width="10" height="7" fill="#f1c232" stroke="#000"/><rect x="10" y="5" width="5" height="5" fill="#f1c232" stroke="#000"/><path d="M2 12h4v6H2z" fill="#888" stroke="#000"/><rect x="6" y="16" width="13" height="4" rx="2" fill="#333"/></svg>',
@@ -171,11 +172,13 @@ export class UI {
     }
     this.paintGroups();
     tb.append(el('div', { class: 'tsep' }));
-    for (const [id, fn, tip] of [['rotl', () => this.r.rotate(-1), 'Rotate left (,)'], ['rotr', () => this.r.rotate(1), 'Rotate right (.)'], ['zin', () => this.r.setZoom(this.r.z * 1.5), 'Zoom in (+)'], ['zout', () => this.r.setZoom(this.r.z / 1.5), 'Zoom out (−)']]) {
-      const b = el('button', { class: `tool${id.startsWith('z') ? ' zoombtn' : ''}${id === 'rotl' ? ' rotl' : ''}`, title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
+    for (const [id, fn, tip] of [['rotl', () => this.r.rotate(-1), 'Rotate left (,)'], ['rotr', () => this.r.rotate(1), 'Rotate right (.)'], ['zin', () => this.r.setZoom(this.r.z * 1.5), 'Zoom in (+)'], ['zout', () => this.r.setZoom(this.r.z / 1.5), 'Zoom out (−)'], ['undo', () => this.undo(), 'Undo your last map edit (Ctrl/⌘+Z)']]) {
+      const b = el('button', { class: `tool${id.startsWith('z') ? ' zoombtn' : ''}${id === 'rotl' ? ' rotl' : ''}${id === 'undo' ? ' undobtn' : ''}`, title: tip, onclick: () => { fn(); this.g.music.sfx('click'); } });
       b.innerHTML = ICON[id];
+      if (id === 'undo') this.undoBtn = b;
       tb.append(b);
     }
+    this.refreshUndo();
     document.addEventListener('click', () => this.closeFlyout());
 
     const sb = document.getElementById('statusbar');
@@ -1389,6 +1392,8 @@ export class UI {
     window.addEventListener('keydown', (e) => {
       if (!this.r || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       const k = e.key;
+      if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); return this.undo(); }
+      if (e.ctrlKey || e.metaKey) return;
       const t = TOOLS.find((x) => x.key && x.key === k.toLowerCase());
       if (t) return this.setTool(t.id);
       if (k === ',') this.r.rotate(-1);
@@ -1404,6 +1409,25 @@ export class UI {
     });
     window.addEventListener('resize', () => this.r && this.r.resize());
   }
+  undo() {
+    const s = this.sim;
+    const e = s.undo();
+    if (!e) { this.toast('Nothing to undo (map edits can be undone until the end of next month)', 2600); this.refreshUndo(); return; }
+    this.r.preview = null;
+    this.r.refreshOverlay();
+    this.r.needs = true;
+    this.refreshStatus();
+    this.refreshWins();
+    this.refreshUndo();
+    this.toast(`Undid: ${e.label}${e.cost > 0 ? ` · ${fmtMoney(e.cost)} back` : ''}`);
+  }
+  refreshUndo() {
+    if (!this.undoBtn || !this.sim) return;
+    const e = this.sim.canUndo();
+    this.undoBtn.classList.toggle('disabled', !e);
+    this.undoBtn.title = e ? `Undo: ${e.label} (Ctrl/⌘+Z)` : 'Nothing to undo. Map edits can be undone until the end of next month.';
+  }
+
   updatePlan(a, b) {
     if (this.tool === 'develop') {
       if (a < 0) return;
@@ -1449,6 +1473,7 @@ export class UI {
       return;
     }
     this.sim.execute(p, { dense: this.dense });
+    this.refreshUndo();
     this.g.music.sfx(p.tool === 'bulldoze' ? 'bulldoze' : p.tool.startsWith('zone') || p.tool === 'dezone' ? 'zone' : 'build');
     this.r.refreshOverlay();
     this.refreshStatus();

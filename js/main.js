@@ -218,6 +218,7 @@ function monthTick() {
   s.tick();
   if (s.m === 9 || s.m === 11) game.renderer.invalidateAll(); // fall foliage on, then off
   game.ui.refreshStatus();
+  game.ui.refreshUndo();
   if (s.approvalWhy) game.ui.approvalNote([[s.approvalWhy.f, s.approvalWhy.d]], s.approvalWhy.top ? s.approvalWhy.top.why : '');
   game.ui.refreshWins();
   if (game.renderer.overlayMode !== 'none') game.renderer.refreshOverlay();
