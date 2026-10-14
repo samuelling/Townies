@@ -6,4 +6,4 @@ export const DATA_CREDITS = 'Map data © OpenStreetMap contributors (ODbL), via 
 
 export const SHORT_CREDITS = 'Map © OpenStreetMap contributors · MassGIS · MassDOT · US Census LODES · Overture Maps · Inspired by SimCity 2000; not affiliated with Maxis or Electronic Arts.';
 
-export const FICTION = 'The commenters, Melora included, are invented archetypes, and Council agenda items are fictionalised paraphrases of recurring local storylines. None of them depicts a real person.';
+export const FICTION = 'The commenters are invented archetypes, and Council agenda items are fictionalised paraphrases of recurring local storylines. None of them depicts a real person.';

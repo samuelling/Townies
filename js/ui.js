@@ -1,5 +1,6 @@
 // SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
+import { beginDecision, endDecision } from './chance.js';
 import { PATTERNS, patternsNow } from './patterns.js';
 import { monthWeather, WX_ICON, NORMALS } from './weather.js';
 import { ROUTES } from './transit.js';
@@ -19,7 +20,6 @@ import { legendFor, legendCss } from './legend.js';
 import { startTutorial } from './tutorial.js';
 import { TECH, TECH_IDS, techStatus, setStance } from './tech.js';
 import { NOTICE, DATA_CREDITS, FICTION } from './credits.js';
-import { meloraStatus } from './melora.js';
 import { valeStatus } from './rival.js';
 import { ASSUMPTIONS, MARKET_ASSUMPTIONS, EVIDENCE, presetOf, A } from './assumptions.js';
 import { resetGreed } from './storefronts.js';
@@ -704,11 +704,6 @@ export class UI {
     this.win('comments', 'Comment Section', (body) => {
       const s = this.sim;
       body.append(el('p', { class: 'fine' }, 'The regulars. Fictional, but you have met them. Comments react to what you do; tap a block with Query to hear from a neighbor.'));
-      const m = meloraStatus(s);
-      body.append(el('div', { class: 'melcard' }, this.avatar('melora'), el('div', {},
-        el('div', {}, el('b', {}, 'Melora'), ` · ${m.label}`),
-        el('div', { class: 'meter', title: `${Math.round(m.steam)} / 100` }, el('i', { style: `width:${Math.round(m.steam)}%` })),
-        el('small', {}, [m.delays ? `${m.delays} hearing${m.delays > 1 ? 's' : ''} delayed` : null, m.wins ? `${m.wins} "win${m.wins > 1 ? 's' : ''}"` : null, m.walked ? `${m.walked} project${m.walked > 1 ? 's' : ''} abandoned` : null, m.points ? `${m.points} fair point${m.points > 1 ? 's' : ''}` : null, m.cost > 0 ? `${m.costStr} in staff time` : null, m.warden ? 'Tree Warden' : null, m.pauseUntil > s.t ? `development pause: ${m.pauseUntil - s.t} mo left` : null].filter(Boolean).join(' · ') || 'Watching the agendas. Big projects and being brushed off get her going; feeling heard calms her down.'))));
       const v = valeStatus(s);
       body.append(el('div', { class: 'melcard valecard' }, this.avatar('vale'), el('div', {},
         el('div', {}, el('b', {}, 'Preston Vale'), ` · Vale Harbor Partners · ${v.label}`),
@@ -1260,7 +1255,9 @@ export class UI {
     for (const ch of sc.choices) {
       choices.append(el('button', { class: 'choice', onclick: () => {
         const before = { ...this.sim.approvalOff };
+        beginDecision(this.sim);
         try { ch.run(this.sim, ctx); } catch (e) { console.error(e); }
+        endDecision(this.sim, title, ch.label);
         const delta = {};
         for (const k of Object.keys(this.sim.approvalOff)) delta[k] = this.sim.approvalOff[k] - (before[k] || 0);
         try { reactAgenda(this.sim, title, delta); } catch (e) { console.error(e); }
@@ -1274,6 +1271,7 @@ export class UI {
       } }, el('b', {}, ch.label), ch.fx ? el('small', {}, typeof ch.fx === 'function' ? ch.fx(this.sim, ctx) : ch.fx) : null));
     }
     body.append(choices);
+    body.append(el('p', { class: 'fine agodds' }, 'Effects are estimates: reactions and costs can land bigger or smaller, and some decisions come back months later.'));
     box.append(body);
     this.showModal(box);
   }

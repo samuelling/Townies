@@ -103,8 +103,6 @@ function headlines(sim, a, now, projects, done) {
   if (dI <= -25 && dC >= 15) out.push(`Chains move in as ${int(-dI)} independents close; the “for lease” signs come down with national logos behind them.`);
   else if (dI >= 15) out.push(`${int(dI)} more independent shops than when you started. Somebody is buying all that sourdough.`);
   if (big && big.homes + big.jobs > 100) out.push(`Biggest ribbon-cutting: ${big.name}${big.homes ? ` (${int(big.homes)} homes)` : big.jobs ? ` (${int(big.jobs)} jobs)` : ''}.`);
-  const mw = now.melWins - (a.melWins || 0);
-  if (mw >= 3) out.push(`Melora won ${mw} fights at the Planning Board, and wants you to know it.`);
   if (now.funds < -5e6) out.push(`The books end ${money(now.funds)} in the red; the state is reading the minutes.`);
   else if (now.funds - a.funds > 20e6) out.push(`Reserves up ${money(now.funds - a.funds)}. The Finance Committee is almost smiling.`);
   if (done) out.unshift(done.won ? 'Mission accomplished.' : `Term over: ${done.why || 'not every goal was met'}`);

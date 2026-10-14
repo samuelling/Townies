@@ -1,5 +1,6 @@
 // City simulation: budget (with Massachusetts Prop 2½ levy limits), growth, traffic, services, approval.
 import { CFG, ZONE, COVER, SERVICES, SPECIAL } from './config.js';
+import { curveballMonthly } from './chance.js';
 import { computeStreetLife } from './streetlife.js';
 import { computePatterns } from './patterns.js';
 import { weatherCapF, weatherMonthly } from './weather.js';
@@ -15,7 +16,6 @@ import { initStorefronts, storefrontsMonthly, policyApproval } from './storefron
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
-import { meloraMonthly } from './melora.js';
 import { initAssumptions, A as assumeA } from './assumptions.js';
 import { junctionFactors, squareCtl } from './junctions.js';
 import { buildInput, assignCore, fitToCounts, TP } from './traffic.js';
@@ -892,7 +892,6 @@ export class Sim {
     this.storefrontNews(storefrontsMonthly(this));
     computeStreetLife(this);
     techMonthly(this);
-    meloraMonthly(this);
     valeMonthly(this);
     eggMonthly(this);
     weatherMonthly(this);
@@ -907,6 +906,7 @@ export class Sim {
     for (const p of due) this.hooks.followup && this.hooks.followup(p);
     for (const [k, v] of Object.entries(this.recurring)) if (v.until != null && v.until <= this.t) delete this.recurring[k];
     this.randomEvents();
+    curveballMonthly(this);
     if (this.y !== prevY) this.newYear();
     this.pushHistory(income, expenses);
     this.checkGameOver();
@@ -1167,10 +1167,12 @@ export class Sim {
   apply(eff = {}) {
     const w = this.w;
     const pf = this.priceF();
-    if (eff.funds) this.funds += eff.funds * pf;
+    // during a Council decision, outcomes land bigger or smaller than billed (js/chance.js)
+    const nz = this.fxNoise;
+    if (eff.funds) this.funds += eff.funds * pf * (nz ? (eff.funds < 0 ? nz.cost : nz.gain) : 1);
     if (eff.approval) for (const [k, v] of Object.entries(eff.approval)) {
-      if (k === 'all') FACTIONS.forEach((f) => (this.approvalOff[f] += v));
-      else this.approvalOff[k] = (this.approvalOff[k] || 0) + v;
+      if (k === 'all') FACTIONS.forEach((f) => (this.approvalOff[f] += v * (nz ? nz.f[f] : 1)));
+      else this.approvalOff[k] = (this.approvalOff[k] || 0) + v * (nz && nz.f[k] ? nz.f[k] : 1);
     }
     if (eff.demand) for (const [k, v] of Object.entries(eff.demand)) this.demandMod[k] += v;
     if (eff.recurring) {
@@ -1709,7 +1711,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'slKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['fxNoise', 'undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'slKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), V0: this.V0 || null, M0: this.M0 || null };

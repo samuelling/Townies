@@ -290,9 +290,6 @@ export const CHAPTERS = [
       P('Part of Watertown’s charm is the small-town drama a few miles from downtown Boston. The Council agenda items are fictionalized riffs on storylines that keep recurring in local coverage, especially ', A('https://www.watertownmanews.com', 'Watertown News'), ' and its comment threads: parking in the Square, lab buildings next to houses, bike lanes, the post office, the dam and the herring run, school budgets versus seniors.'),
       P('The commenters are a fixed cast of invented regulars, each with a predictable hobbyhorse, who react to what you do. None of them is a real person, and none of their lines are quoted from real comments.'),
       P('The Watertown Townie newspaper, the ticker and the neighbor quotes in Query all draw from the same templates, filled in with real street names and the simulated businesses involved.'),
-      H('Melora'),
-      P('One regular is more than a voice. Melora shows up at Planning Board hearings, gets them continued with a binder of concerns, rallies neighbors to lower a project’s odds, files records requests and circulates petitions. Every month of delay eats into a developer’s margin, and sometimes the developer walks away. She means well and occasionally catches something real, like miscounted affordable units or a tree worth saving. More often, though, her wins leave a lot empty while nearby rents keep rising.'),
-      P('Her mood (the meter in the Comment Section) rises with big projects and with being brushed off, and falls when she wins or feels heard. Meeting with her costs a little and calms her down. Giving her a title calms her down too, but then every future permit crosses her desk. She is an archetype drawn from many comment sections, not a portrait of anyone.'),
     ],
   },
   {
@@ -441,7 +438,7 @@ function uncertaintyChapter(u) {
   const name = { vib: 'Vibrancy', walk: 'walking trips', indies: 'independent shops', funds: 'reserves' };
   const top = (k) => (u.drivers[k] || []).slice(0, 2).map(([p, c]) => `${R[p] ? R[p].label.toLowerCase() : p} (${c > 0 ? 'more → higher' : 'more → lower'})`).join(' and ');
   return [
-    P(`Each of ${u.draws} runs draws its own values for the knobs below, then plays ${u.years} years from ${u.startY} under three simple strategies, reusing the same draws for each strategy so they're compared fairly. Bands show the middle 80% of outcomes (10th to 90th percentile); lines are medians. No Council agenda, no Melora, no Vale: just the model's slow forces.`),
+    P(`Each of ${u.draws} runs draws its own values for the knobs below, then plays ${u.years} years from ${u.startY} under three simple strategies, reusing the same draws for each strategy so they're compared fairly. Bands show the middle 80% of outcomes (10th to 90th percentile); lines are medians. No Council agenda and no rival developer: just the model's slow forces.`),
     el('div', { class: 'fanlegend' }, ...Object.entries(u.strategies).map(([k, d]) => el('span', {}, el('i', { style: `background:${STRAT_COL[k]}` }), d.label))),
     el('div', { class: 'fans' },
       fanChart(u, 'vib', 'Vibrancy', (v) => v.toFixed(0)),

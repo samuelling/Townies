@@ -124,7 +124,7 @@ export const BEAT_SCENARIOS = [
       return null;
     },
     title: (s, c) => `The ${c.kind[0].toUpperCase() + c.kind.slice(1)} on ${c.street}`,
-    text: (s, c) => `A ninety-year-old ${c.kind} on ${c.street} has lifted the sidewalk into a ramp. Public Works wants it down before someone trips; the neighbors want it saved and have tied a ribbon around it. Melora has already posted twice.`,
+    text: (s, c) => `A ninety-year-old ${c.kind} on ${c.street} has lifted the sidewalk into a ramp. Public Works wants it down before someone trips; the neighbors want it saved and have tied a ribbon around it. The comment section has already weighed in, twice.`,
     choices: [
       { label: 'Bump the sidewalk around it', fx: '−$35K · the tree stays · Homeowners ↑', run: (s, c) => {
         s.lvNear({ at: [c.cx, c.cy], r: 4, amt: 0.01 });

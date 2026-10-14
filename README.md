@@ -25,7 +25,7 @@ Music is generated live in the browser.
 ## License & credits
 Townies is an original, non-commercial fan and art project inspired by SimCity 2000. It is not affiliated with or endorsed by Maxis or Electronic Arts. "SimCity" and "Sim" are trademarks of Electronic Arts.
 
-The code, the pixel-art rendering and the generated music are original to this project. The commenters (Melora included) are invented archetypes, and the Council agenda items are fictionalised paraphrases of recurring local storylines; none of them depicts a real person.
+The code, the pixel-art rendering and the generated music are original to this project. The commenters are invented archetypes, and the Council agenda items are fictionalised paraphrases of recurring local storylines; none of them depicts a real person.
 
 Real data, with thanks:
 

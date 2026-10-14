@@ -1,5 +1,5 @@
 // Preston Vale of Vale Harbor Partners: the out-of-town developer who keeps coming back with the
-// chain-heavy, garage-wrapped version of every site. Melora's mirror image: where she slows everything
+// chain-heavy, garage-wrapped version of every site. The opposite of the town's loudest commenters: where they slow everything
 // down, he wants everything bigger and sooner. His "ambition" (0–100) rises with buzz and with wins,
 // falls when he's turned down, and decides how often he shows up. Fictional; not based on any real
 // person or company.

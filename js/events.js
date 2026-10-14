@@ -4,10 +4,11 @@ import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
-import { MELORA_SCENARIOS, meloraRecords } from './melora.js';
+import { meloraRecords } from './melora.js';
 import { BEAT_SCENARIOS } from './beats.js';
 import { VALE_SCENARIOS, VALE_FOLLOWUPS } from './rival.js';
 import { TRANSIT_SCENARIOS } from './transit.js';
+import { CURVE_SCENARIOS, CHANCE_FOLLOWUPS } from './chance.js';
 import { DESIGNS, planDesign, squareCtl } from './junctions.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
@@ -509,14 +510,15 @@ export const SCENARIOS = [
     ],
   },
   ...TECH_SCENARIOS,
-  ...MELORA_SCENARIOS,
   ...BEAT_SCENARIOS,
   ...VALE_SCENARIOS,
   ...TRANSIT_SCENARIOS,
+  ...CURVE_SCENARIOS,
 ];
 
 export const FOLLOWUPS = {
   ...VALE_FOLLOWUPS,
+  ...CHANCE_FOLLOWUPS,
   'square-done': (s) => s.apply({ flag: { squareDone: 1 }, capNear: { at: 'square', r: 8, amt: 1 / 3 }, lvNear: { at: 'square', r: 30, amt: 0.15 }, approval: { business: 8, renters: 4, homeowners: 3, commuters: 2 }, demand: { C: 0.15 }, news: ['The new Square opens', 'The fifth corner is now a lawn. People are sitting on it. On purpose.', 'big'] }),
   'construction-biz': (s) => s.apply({ approval: { business: -4 }, news: ['Bakery remains open, accessible by gravel path and determination', 'Business owners along the construction zone ask for help.'] }),
   'cap-lobby': (s) => {
@@ -558,7 +560,8 @@ const PRIORITY = new Set(['tax-night', 'cap', 'blizzard']);
 
 export function nextScenario(s) {
   if (s.gameOver) return null;
-  if (s.t - (s.lastScenarioT ?? -99) < AGENDA.minGap) return null;
+  // the gap between agenda items varies (2–4 months), and so does whether one comes up in a given month
+  if (s.t - (s.lastScenarioT ?? -99) < (s.agendaGap || AGENDA.minGap)) return null;
   const eligible = [];
   for (const sc of SCENARIOS) {
     if (MIN_YEAR[sc.id] && s.y < MIN_YEAR[sc.id]) continue;
@@ -572,7 +575,7 @@ export function nextScenario(s) {
   if (!eligible.length) return null;
   let pool = eligible.filter((sc) => PRIORITY.has(sc.id) || sc.priority);
   if (!pool.length) {
-    if (s.rand() > AGENDA.chance) return null;
+    if (s.rand() > AGENDA.chance * (0.6 + 0.8 * s.rand())) return null;
     pool = eligible.slice();
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(s.rand() * (i + 1));
@@ -587,6 +590,7 @@ export function nextScenario(s) {
     }
     s.seen[sc.id] = s.t;
     s.lastScenarioT = s.t;
+    s.agendaGap = 2 + Math.floor(s.rand() * 3);
     if (sc.run) sc.run(s, ctx);
     return { sc, ctx };
   }
