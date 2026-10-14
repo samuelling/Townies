@@ -32,23 +32,32 @@ export function sunHeight(hour, month) {
   return -Math.sin((Math.PI * into) / (24 - s + r));
 }
 
-// colour the whole scene is multiplied by: daylight, golden hour, sunset, dusk, night
+// Twilight, in hours: negative before sunset (or after sunrise), positive after sunset (or before sunrise).
+// Real dusk takes a while: civil twilight ends about half an hour after sunset, nautical an hour and a quarter,
+// astronomical about two hours, and the colour change starts well before the sun touches the horizon.
+export function twilight(hour, month) {
+  const r = RISE[month], s = SET[month];
+  if (hour >= r && hour <= s) return -Math.min(hour - r, s - hour);
+  return Math.min((hour - s + 24) % 24, (r - hour + 24) % 24);
+}
+// colour the whole scene is multiplied by, through golden hour, sunset, the blue hour and into night
 const STOPS = [
-  [0.3, [255, 255, 255]],
-  [0.09, [255, 238, 214]],
-  [0.0, [246, 186, 148]],
-  [-0.05, [176, 122, 150]],
-  [-0.12, [84, 78, 128]],
-  [-0.22, [40, 48, 90]],
+  [-1.6, [255, 255, 255]],
+  [-0.8, [255, 238, 214]],
+  [0, [246, 188, 150]],
+  [0.5, [196, 136, 150]],
+  [1.1, [116, 96, 142]],
+  [1.7, [64, 68, 112]],
+  [2.3, [40, 48, 90]],
 ];
-export function skyTint(h) {
-  if (h >= STOPS[0][0]) return STOPS[0][1];
+export function skyTint(e) {
+  if (e <= STOPS[0][0]) return STOPS[0][1];
   for (let k = 1; k < STOPS.length; k++) {
-    const [h1, c1] = STOPS[k];
-    if (h >= h1) {
-      const [h0, c0] = STOPS[k - 1];
-      const t = (h - h1) / (h0 - h1);
-      return c1.map((v, i) => Math.round(v + (c0[i] - v) * t));
+    const [e1, c1] = STOPS[k];
+    if (e <= e1) {
+      const [e0, c0] = STOPS[k - 1];
+      const t = (e - e0) / (e1 - e0);
+      return c0.map((v, i) => Math.round(v + (c1[i] - v) * t));
     }
   }
   return STOPS[STOPS.length - 1][1];
@@ -57,8 +66,8 @@ const smooth = (e0, e1, x) => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);
 };
-// street lights come on a little before sunset and go off a little after sunrise
-export const lightsOn = (h) => smooth(0.05, -0.1, h);
+// street lights come on gradually from a little before sunset until it's properly dark (and off again at dawn)
+export const lightsOn = (e) => smooth(-0.35, 1.1, e);
 // after about 11 p.m. most people turn in; windows come back on before dawn
 export function lateness(hour) {
   const hh = (hour - 22 + 24) % 24;

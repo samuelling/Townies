@@ -5,7 +5,7 @@ import { ROUTES, routeLines } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
-import { sunHeight, skyTint, lightsOn, lateness, BEDTIMES, groupOn, groupOf } from './daynight.js';
+import { twilight, skyTint, lightsOn, lateness, BEDTIMES, groupOn, groupOf } from './daynight.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
 const CACHE_PX = 48e6; // chunk cache budget in pixels (~190 MB of canvas)
@@ -1573,12 +1573,21 @@ export class Renderer {
     const was = this.cyc;
     this.cyc = clamp(this.cyc + clamp(want - this.cyc, -dt / 1200, dt / 1200), 0, 1);
     const out = { tint: null, lights: 0, prep: false, moving: this.cyc !== was };
-    if (this.cyc < 0.002) { this.lastLights = 0; return out; }
-    const h = sunHeight(this.tod, this.sim.m);
-    const t = skyTint(h).map((v) => Math.round(255 + (v - 255) * this.cyc));
+    if (this.cyc < 0.002) { this.lastLights = 0; this.tintS = null; this.lightS = null; return out; }
+    const e = twilight(this.tod, this.sim.m);
+    // slew: the light glides toward where the clock says it should be (about half a second behind), so nothing
+    // jumps even at Sloth, where an evening goes by in a couple of seconds
+    const k = 1 - Math.exp(-dt / 500);
+    const tgt = skyTint(e).map((v) => 255 + (v - 255) * this.cyc);
+    if (!this.tintS) this.tintS = tgt.slice();
+    this.tintS = this.tintS.map((v, i) => v + (tgt[i] - v) * k);
+    const lt = lightsOn(e) * this.cyc;
+    this.lightS = this.lightS == null ? lt : this.lightS + (lt - this.lightS) * k;
+    if (Math.abs(this.lightS - lt) > 0.002 || this.tintS.some((v, i) => Math.abs(v - tgt[i]) > 0.5)) out.moving = true;
+    const t = this.tintS.map(Math.round);
     if (t.some((v) => v < 255)) out.tint = t;
-    out.lights = lightsOn(h) * this.cyc;
-    out.prep = h < 0.4; // evening's coming (or it's still early): get the lights ready ahead of time
+    out.lights = this.lightS;
+    out.prep = e > -2.5; // evening's coming (or it's still early): get the lights ready ahead of time
     this.lastLights = out.lights;
     // keep drawing while the clock runs; a paused night holds still
     if (this.dayCycle && !this.sim.paused) out.moving = true;
