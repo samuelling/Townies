@@ -188,6 +188,7 @@ export class Sim {
     const w = this.w;
     let pop = 0, jobs = 0, cj = 0, ij = 0, units = 0;
     this.zLots = [];
+    this.rLots = [];
     for (const lot of w.lots) {
       if (lot.dead || !lot.inTown) continue;
       const occ = lot.occ;
@@ -198,7 +199,10 @@ export class Sim {
       jobs += lot.jobs * occ;
       if (lot.zone === ZONE.C) cj += lot.jobs * occ;
       if (lot.zone === ZONE.I) ij += lot.jobs * occ;
-      if (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I) this.zLots.push(lot.id);
+      if (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I) {
+        this.zLots.push(lot.id);
+        if (lot.ready != null) this.rLots.push(lot.id);
+      }
     }
     this.pop = pop;
     this.jobs = jobs;
@@ -985,36 +989,75 @@ export class Sim {
       else if (hasB && lot.dens < cap && d > 0.2 && des > -0.1 && lot.area >= 250 && this.t - (lot.built || -999) > 48 && this.rand() < (lot.dense ? 0.05 : 0.025) * d * (1 + des) * slow * GROWTH[key] * sizeW(lot))
         { target2 = Math.min(cap, lot.dens + 1 + (lot.dense && lot.dens <= 2 ? 1 : 0)); why = 'denser'; }
       if (target2 > 0 && this.marketBuild !== false) { // marketBuild=false: history replay builds only what really got built
-        const oldVal = lot.landVal + lot.bldgVal;
-        const u0 = lot.units || 0, j0 = lot.jobs || 0;
-        touched.push(...developLot(w, lot, target2, this.t));
-        lot.bldgZone = lot.zone;
-        lot.built = this.t;
-        lot.occ = 0.6;
-        computeLotMetrics(w, lot, false);
-        setBldgValue(this, lot, lot.bldArea * bldRate(lot.zone));
-        lot.year = this.y;
-        const r = this.rates();
-        const gain = lot.landVal + lot.bldgVal - oldVal;
-        if (gain > 0) this.newGrowth += (gain * (key === 'R' ? r.rateR : r.rateC)) / 1000;
+        this.buildLot(lot, target2, key, why, touched);
         devs++;
-        this.devCount = (this.devCount || 0) + 1;
-        // what the market built, by kind (read by tools/validate.mjs)
-        const gl = (this.growthLog = this.growthLog || {});
-        const g = (gl[key + ':' + why] = gl[key + ':' + why] || { n: 0, units: 0, jobs: 0 });
-        g.n++;
-        g.units += (lot.units || 0) - u0;
-        g.jobs += Math.round((lot.jobs || 0) - j0);
-        if (target2 >= 3 && this.rand() < 0.5) {
-          const what = key === 'R' ? `${lot.units}-unit apartment building` : key === 'C' ? `${Math.round(lot.bldArea / 92.9) * 1000 > 0 ? Math.round(lot.bldArea * 10.76).toLocaleString() + '-square-foot ' : ''}commercial building` : 'lab building';
-          const item = this.news(`New ${what} rises`, `Construction wraps up ${streetOf(lot) ? 'on ' + streetOf(lot) : 'in town'}. ${pick(DEV_QUIPS, this.rand())}`);
-          if (this.rand() < 0.6) react(this, 'new-building', { street: streetOf(lot) || 'that street' }, item);
-        }
       }
+    }
+    // land the player cleared or zoned is shovel-ready: builders look at every such lot every month instead of
+    // waiting to be sampled, so a cleared block fills in within months when there's demand (the slow rate above
+    // is for land the market has passed over for years: parking lots, side yards, odd remnants)
+    for (const id of this.rLots || []) {
+      const lot = w.lots[id];
+      if (!lot || lot.dead || lot.under || lot.project || lot.locked) continue;
+      if (lot.bldgs.some((b) => w.bldgs[b].alive)) { delete lot.ready; continue; }
+      if (lot.road < 0 || this.marketBuild === false) continue;
+      const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
+      if (this.rand() >= this.readyOdds(lot, key) * slow) continue;
+      this.buildLot(lot, lot.dense ? 3 : key === 'R' ? 1 : 2, key, 'ready', touched);
+      delete lot.ready;
+      devs++;
     }
     if (touched.length && this.hooks.invalidateTiles) this.hooks.invalidateTiles(touched);
     this.recalc();
     this.lastDevs = devs;
+  }
+
+  // put up a building on a lot (market growth): updates values, new growth, the growth log, maybe the news
+  buildLot(lot, target2, key, why, touched) {
+    const w = this.w;
+    const oldVal = lot.landVal + lot.bldgVal;
+    const u0 = lot.units || 0, j0 = lot.jobs || 0;
+    touched.push(...developLot(w, lot, target2, this.t));
+    lot.bldgZone = lot.zone;
+    lot.built = this.t;
+    lot.occ = 0.6;
+    computeLotMetrics(w, lot, false);
+    setBldgValue(this, lot, lot.bldArea * bldRate(lot.zone));
+    lot.year = this.y;
+    const r = this.rates();
+    const gain = lot.landVal + lot.bldgVal - oldVal;
+    if (gain > 0) this.newGrowth += (gain * (key === 'R' ? r.rateR : r.rateC)) / 1000;
+    this.devCount = (this.devCount || 0) + 1;
+    // what the market built, by kind (read by tools/validate.mjs)
+    const gl = (this.growthLog = this.growthLog || {});
+    const g = (gl[key + ':' + why] = gl[key + ':' + why] || { n: 0, units: 0, jobs: 0 });
+    g.n++;
+    g.units += (lot.units || 0) - u0;
+    g.jobs += Math.round((lot.jobs || 0) - j0);
+    if (target2 >= 3 && this.rand() < 0.5) {
+      const what = key === 'R' ? `${lot.units}-unit apartment building` : key === 'C' ? `${Math.round(lot.bldArea / 92.9) * 1000 > 0 ? Math.round(lot.bldArea * 10.76).toLocaleString() + '-square-foot ' : ''}commercial building` : 'lab building';
+      const item = this.news(`New ${what} rises`, `Construction wraps up ${streetOf(lot) ? 'on ' + streetOf(lot) : 'in town'}. ${pick(DEV_QUIPS, this.rand())}`);
+      if (this.rand() < 0.6) react(this, 'new-building', { street: streetOf(lot) || 'that street' }, item);
+    }
+  }
+
+  // monthly chance that builders take up a shovel-ready lot: strong demand fills it within a few months; weak
+  // demand still gets something eventually (a slow trickle, not never)
+  readyOdds(lot, key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I') {
+    const d = this.demand[key] || 0;
+    const c = this.cellOf(lot.cx, lot.cy);
+    const des = (this.lvMod[c] - 1) * 1.5 + (key === 'C' ? 0.5 : 0.15) * this.vibSat[c];
+    return clamp(0.05 + 0.3 * d + 0.08 * des, 0.012, 0.25);
+  }
+  // what the lot inspector says about an empty zoned lot
+  readyNote(lot) {
+    if (!lot || lot.dead || lot.ready == null || lot.bldgs.some((b) => this.w.bldgs[b].alive)) return '';
+    if (lot.road < 0) return 'Zoned, but no road reaches it: builders need street access.';
+    const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
+    const p = this.readyOdds(lot, key);
+    const what = { R: 'Housing', C: 'Commercial', I: 'Industrial' }[key];
+    const m = Math.round(Math.log(0.5) / Math.log(1 - p));
+    return p >= 0.1 ? 'Ready to build. Builders like this spot; expect one within a few months.' : p >= 0.04 ? `Ready to build. Expect a builder in about ${m} months, give or take.` : `Ready to build, but ${what.toLowerCase()} demand is weak; this could sit empty for years. Try another zone, or raise demand.`;
   }
 
   updateDemand() {
@@ -1359,6 +1402,10 @@ export class Sim {
       }
       cost = lotsHit.size * 1500 + fresh * 300;
       msg = `${lotsHit.size} lots rezoned, ${fresh} new tiles`;
+      if (tool !== 'dezone' && this.demand) {
+        const d = this.demand[tool === 'zoneR' ? 'R' : tool === 'zoneC' ? 'C' : 'I'];
+        msg += d > 0.2 ? ' · demand strong' : d > -0.1 ? ' · demand middling' : ' · demand weak: may sit empty';
+      }
     } else if (tool === 'park') {
       tiles = (opts.tiles || this.rectTiles(a, b)).filter((i) => inTown[i]);
       for (const i of tiles) {
@@ -1531,6 +1578,7 @@ export class Sim {
             lot.otherVal = 0;
             for (const s of w.services) if (s.real && s.lot === li) s.alive = 0;
             computeLotMetrics(w, lot, false);
+            if (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I) lot.ready = this.t;
             touched.push(...lot.tiles);
           } else if (li < 0) touched.push(...demolish(w, bldgs[w.bAt[i]]));
         } else if (road[i]) {
@@ -1560,6 +1608,9 @@ export class Sim {
         lot.zone = zone;
         lot.dense = dense;
         if (lot.bldgZone == null) lot.bldgZone = zone;
+        // empty land the player zones is shovel-ready (see growth())
+        if (zone !== ZONE.NONE && !lot.bldgs.some((id) => bldgs[id].alive)) lot.ready = this.t;
+        else delete lot.ready;
         touched.push(...lot.tiles);
       }
       // carve new 2x2 lots from bare land
@@ -1633,7 +1684,7 @@ export class Sim {
     const lot = {
       id: w.lots.length, tiles, cx, cy, real: 0, zone, mixed: false, code3: '', landVal, bldgVal: 0, otherVal: 0, totalVal: landVal,
       area, bldArea: 0, units: 0, records: 1, year: 0, addr: '', useDesc: 'New city-zoned lot', style: '', stories: NaN, zoning: '', biz: [], bldgs: [],
-      occ: 0.9, dens: 0, jobs: 0, pop: 0, road: -1, dense, inTown: 1, built: this.t, baseLand: landVal / this.market, baseBldg: 0, bldgZone: zone,
+      occ: 0.9, dens: 0, jobs: 0, pop: 0, road: -1, dense, inTown: 1, built: this.t, baseLand: landVal / this.market, baseBldg: 0, bldgZone: zone, ready: this.t,
     };
     w.lots.push(lot);
     for (const i of tiles) w.lotOf[i] = lot.id;
@@ -1711,7 +1762,7 @@ export class Sim {
 
   // ---------------- save ----------------
   serialize() {
-    const skip = new Set(['fxNoise', 'undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'slKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
+    const skip = new Set(['fxNoise', 'undoStack', 'calF', 'V0', 'M0', 'vpd', 'flow', 'jf', 'trafficWorker', 'w', 'hooks', 'traffic', 'congestion', 'popC', 'jobsC', 'indC', 'trafC', 'crimeC', 'pollC', 'polCov', 'fireCov', 'schoolCov', 'parkC', 'specialC', 'lvMod', 'rand', 'roadList', 'zLots', 'rLots', 'lvLocal', 'capLocal', 'S0', 'incBlock', 'vibF', 'vibC', 'vibSat', 'popNear', 'jobsNear', 'vibKernel', 'slKernel', 'walkS', 'walkC', 'interC', 'parkPts']);
     const sim = {};
     for (const [k, v] of Object.entries(this)) if (!skip.has(k)) sim[k] = v;
     return { sim: JSON.parse(JSON.stringify(sim)), lvLocal: Array.from(this.lvLocal), capLocal: this.capLocal, S0: Array.from(this.S0), V0: this.V0 || null, M0: this.M0 || null };
