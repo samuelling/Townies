@@ -5,7 +5,7 @@ import { ROUTES, routeLines } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
-import { sunHeight, skyTint, lightsOn, lateness } from './daynight.js';
+import { sunHeight, skyTint, lightsOn, lateness, BEDTIMES, groupOn, groupOf } from './daynight.js';
 
 const LEVELS = [0.25, 0.5, 1, 2];
 const CACHE_PX = 48e6; // chunk cache budget in pixels (~190 MB of canvas)
@@ -304,7 +304,7 @@ export class Renderer {
       return e;
     }
     if (!allowRender) return e || null; // stale is better than nothing
-    const px = (q) => (q.c ? q.c.width * q.c.height : 0) + (q.c2 ? q.c2.width * q.c2.height : 0);
+    const px = (q) => (q.tiers ? q.tiers.reduce((t, c) => t + c.width * c.height, 0) : q.c ? q.c.width * q.c.height : 0) + (q.c2 ? q.c2.width * q.c2.height : 0);
     if (e) this.cachePx -= px(e);
     e = layer === 'g' ? this.renderGround(cx, cy, L) : layer === 'n' ? this.renderNight(cx, cy, L) : this.renderObjects(cx, cy, L);
     e.ver = this.ver[ci];
@@ -729,31 +729,42 @@ export class Renderer {
       }
     }
     const ox = mnx - 4, oy = mny - 4;
-    const c = this.mkCanvas(mxx - mnx + 8, mxy - mny + 8), c2 = this.mkCanvas(c.width, c.height);
-    const g = c.getContext('2d'), g2 = c2.getContext('2d');
+    // one canvas per bedtime group (windows), and c2 for what stays on all night: lamps, porch lights, signs
+    const cw = Math.ceil(mxx - mnx + 8), chh = Math.ceil(mxy - mny + 8);
+    const tiers = BEDTIMES.map(() => this.mkCanvas(cw, chh));
+    const tg = tiers.map((t) => t.getContext('2d'));
+    const c2 = this.mkCanvas(cw, chh);
+    const g2 = c2.getContext('2d');
+    const all = tg.concat([g2]);
     const P = (x, y, hm = 0) => {
       const [rx, ry] = this.rxy(x, y);
       return [(rx - ry) * 16 * L - ox, (rx + ry) * 8 * L - oy - hm * HS * L];
     };
+    const pool = (x, y, rr, a) => {
+      const [px, py] = P(x, y, 0);
+      g2.save();
+      g2.translate(px, py);
+      g2.scale(1, 0.5);
+      const gr = g2.createRadialGradient(0, 0, 0, 0, 0, rr);
+      gr.addColorStop(0, `rgba(255,200,130,${a})`);
+      gr.addColorStop(0.45, `rgba(255,176,96,${(a * 0.34).toFixed(3)})`);
+      gr.addColorStop(1, 'rgba(255,160,80,0)');
+      g2.fillStyle = gr;
+      g2.beginPath(); g2.arc(0, 0, rr, 0, Math.PI * 2); g2.fill();
+      g2.restore();
+    };
+    const bulb = (x, y, z, r, col) => {
+      const q = P(x, y, z);
+      g2.fillStyle = col;
+      g2.fillRect(q[0] - r, q[1] - r, 2 * r, 2 * r);
+    };
     const WIN = ['#ffd27f', '#ffd27f', '#ffe1a4', '#ffc98a', '#ffd27f', '#cddfff'];
+    const last = BEDTIMES.length - 1;
     for (const o of items) {
       if (o.lamp) {
         const [x, y, cls] = o.lamp;
-        const [px, py] = P(x, y, 0);
-        const rr = (cls >= 2 ? 1.5 : 1.15) * 22 * L;
-        g2.save();
-        g2.translate(px, py);
-        g2.scale(1, 0.5);
-        const gr = g2.createRadialGradient(0, 0, 0, 0, 0, rr);
-        gr.addColorStop(0, 'rgba(255,200,130,0.5)');
-        gr.addColorStop(0.45, 'rgba(255,176,96,0.17)');
-        gr.addColorStop(1, 'rgba(255,160,80,0)');
-        g2.fillStyle = gr;
-        g2.beginPath(); g2.arc(0, 0, rr, 0, Math.PI * 2); g2.fill();
-        g2.restore();
-        const hd = P(x, y, 6), r = Math.max(0.6, 1.1 * L);
-        g2.fillStyle = 'rgba(255,238,205,0.95)';
-        g2.fillRect(hd[0] - r, hd[1] - r, 2 * r, 2 * r);
+        pool(x, y, (cls >= 2 ? 1.5 : 1.15) * 22 * L, 0.5);
+        bulb(x, y, 6, Math.max(0.6, 1.1 * L), 'rgba(255,238,205,0.95)');
         continue;
       }
       const b = o.b;
@@ -764,9 +775,10 @@ export class Renderer {
       const sil = G0.concat(T0);
       if (house) sil.push(P(b.cx, b.cy, b.h + 4));
       // whatever this building stands in front of is hidden
-      for (const gg of [g, g2]) {
+      const hl = hull(sil);
+      for (const gg of all) {
         gg.globalCompositeOperation = 'destination-out';
-        this.fillPoly(gg, hull(sil), '#000');
+        this.fillPoly(gg, hl, '#000');
         gg.globalCompositeOperation = 'source-over';
       }
       const lot = b.lot >= 0 ? lots[b.lot] : null;
@@ -775,6 +787,9 @@ export class Renderer {
       let lit = house ? 0.55 : b.kind === 'lab' || b.arch === 'lab' ? 0.4 : b.kind === 'garage' || b.arch === 'warehouse' ? 0.06
         : z === ZONE.R || (lot && lot.mixed) ? 0.5 : z === ZONE.C ? 0.3 : z === ZONE.I ? 0.12 : b.kind === 'church' ? 0.15 : 0.3;
       if (!lot && !w.inTown[Math.floor(b.cy) * w.W + Math.floor(b.cx)]) lit *= 0.8;
+      const homes = house || z === ZONE.R || (lot && lot.mixed);
+      // a household goes to bed together-ish: downstairs first, bedrooms last
+      const hhTier = groupOf(hash2(b.id, 91, 3));
       const floors = Math.max(1, Math.round(b.levels || 1));
       const fh = b.h / floors;
       const shopFront = lot && lot.storefronts && (lot.sf || []).length > 0;
@@ -787,41 +802,55 @@ export class Renderer {
         const cols = clamp(Math.floor(lenM / (house ? 3.2 : 3.4)), 1, 30);
         let fl0 = 0;
         if (front && (shopFront || b.kind === 'shop') && !house) {
-          // a lit shop window along the street
-          this.wallQuad(g, P, a, cE, 0.06, 0.94, 0.4, Math.min(2.9, fh * 0.85), 'rgba(255,208,140,0.8)');
+          // a lit shop window along the street, until closing
+          this.wallQuad(tg[0], P, a, cE, 0.06, 0.94, 0.4, Math.min(2.9, fh * 0.85), 'rgba(255,208,140,0.8)');
           fl0 = 1;
         }
-        if (front && b.arch === 'bigbox' && b.sign) this.wallQuad(g, P, a, cE, 0.3, 0.7, b.h - 2.6, b.h - 0.6, b.sign);
+        if (front && b.arch === 'bigbox' && b.sign) this.wallQuad(g2, P, a, cE, 0.3, 0.7, b.h - 2.6, b.h - 0.6, b.sign);
+        // the porch light (houses) or the light over the entrance (apartment buildings): on all night
+        if (front && homes && hash2(b.id, 77, 1) < (house ? 0.62 : 0.85)) {
+          const t = house ? 0.5 : 0.5 + 0.3 * (hash2(b.id, 78, 1) - 0.5);
+          const dx = a[0] + (cE[0] - a[0]) * t, dy = a[1] + (cE[1] - a[1]) * t;
+          const ox2 = (dx - b.cx) * 0.18, oy2 = (dy - b.cy) * 0.18;
+          if (L >= 1) pool(dx + ox2, dy + oy2, 9 * L, 0.42); // zoomed out, just the bulb
+          bulb(dx + ox2 * 0.2, dy + oy2 * 0.2, house ? 2.4 : 3, Math.max(0.5, 0.8 * L), 'rgba(255,226,170,1)');
+        }
         for (let fl = fl0; fl < floors; fl++) {
           const z0 = fl * fh + fh * 0.32, z1 = fl * fh + fh * 0.78;
           const step = L < 0.5 ? 2 : 1; // zoomed out, neighbouring windows would land on the same pixel
           for (let col = 0; col < cols; col += step) {
             const hv = hash2(b.id * 31 + k, col, fl);
             if (hv >= lit) continue;
+            const u = hash2(b.id * 31 + k, col, fl + 50);
+            const tier = house ? clamp(hhTier - (fl === 0 ? 1 : 0) - (u < 0.2 ? 1 : 0), 0, last) : groupOf(u);
+            const gg = tg[tier];
             const wc = WIN[Math.floor((hv / lit) * WIN.length)];
             if (L < 0.5) {
               // too small for a window shape: a pinprick of light
               const t = (col + 0.5) / cols, q = P(a[0] + (cE[0] - a[0]) * t, a[1] + (cE[1] - a[1]) * t, (z0 + z1) / 2);
-              g.fillStyle = wc;
-              g.fillRect(q[0] - 0.5, q[1] - 0.5, 1, 1);
-            } else this.wallQuad(g, P, a, cE, (col + 0.3) / cols, (col + 0.7) / cols, z0, z1, wc);
+              gg.fillStyle = wc;
+              gg.fillRect(q[0] - 0.5, q[1] - 0.5, 1, 1);
+            } else this.wallQuad(gg, P, a, cE, (col + 0.3) / cols, (col + 0.7) / cols, z0, z1, wc);
           }
         }
       }
     }
-    // bloom: a soft halo around every lit window
-    if (typeof g.filter === 'string') {
-      const t = this.mkCanvas(c.width, c.height), tg = t.getContext('2d');
-      tg.filter = `blur(${Math.max(1.5, 3 * L).toFixed(1)}px)`;
-      tg.drawImage(c, 0, 0);
-      g.globalCompositeOperation = 'lighter';
-      g.globalAlpha = L < 0.5 ? 0.5 : 0.85;
-      g.drawImage(t, 0, 0);
-      g.globalAlpha = 1;
-      g.globalCompositeOperation = 'source-over';
+    // bloom: a soft halo around every light
+    if (typeof g2.filter === 'string') {
+      const t = this.mkCanvas(cw, chh), tx = t.getContext('2d');
+      tx.filter = `blur(${Math.max(1.5, 3 * L).toFixed(1)}px)`;
+      for (const [cv, gg, a] of tiers.map((cv, i) => [cv, tg[i], L < 0.5 ? 0.5 : 0.85]).concat(L >= 1 ? [[c2, g2, 0.5]] : [])) {
+        tx.clearRect(0, 0, cw, chh);
+        tx.drawImage(cv, 0, 0);
+        gg.globalCompositeOperation = 'lighter';
+        gg.globalAlpha = a;
+        gg.drawImage(t, 0, 0);
+        gg.globalAlpha = 1;
+        gg.globalCompositeOperation = 'source-over';
+      }
     }
     this.nid = (this.nid || 0) + 1;
-    return { c, c2, ox, oy, L, id: this.nid };
+    return { c: tiers[0], tiers, c2, ox, oy, L, id: this.nid };
   }
 
   // headlights coming toward you, taillights going away; zoomed in they sit on the cars, zoomed out they stream
@@ -1432,7 +1461,7 @@ export class Renderer {
     // high-DPI screen, chunks evict each other forever and squares keep re-rendering across the map.
     const PX_PER_CHUNK = 2.6 * (32 * CH) * (16 * CH); // ground + buildings at L = 1, in pixels
     // after dark each chunk also keeps a canvas of lights (at half detail from L = 1 up)
-    const pxc = (lv) => PX_PER_CHUNK * lv * lv * (1 + (dn.lights > 0.01 || dn.prep ? (lv >= 1 ? 0.25 : 1) : 0));
+    const pxc = (lv) => PX_PER_CHUNK * lv * lv * (1 + (dn.lights > 0.01 || dn.prep ? (lv >= 1 ? 0.6 : 2.4) : 0)); // five light canvases
     const fits = (lv) => vis.length * pxc(lv) < CACHE_PX * (lv === this.lastL ? 0.7 : 0.6);
     while (L > LEVELS[0] && !fits(L)) L = LEVELS[LEVELS.indexOf(L) - 1];
     this.lastL = L;
@@ -1505,8 +1534,8 @@ export class Renderer {
       // the chunks' lights are gathered into one screen-sized layer, redone only when the view, the chunks or
       // the hour's window count change; each frame then adds that layer once
       const es = vis.map((v) => fetch(v, 'n')).filter((e) => e && e.c);
-      const win = Math.round(dn.win * 20) / 20;
-      const key = `${Math.round(offX)},${Math.round(offY)},${s},${this.cw}x${this.ch},${win},${es.map((e) => e.id).join('.')}`;
+      const on = BEDTIMES.map((g, k) => Math.round(groupOn(k, this.tod) * 20) / 20);
+      const key = `${Math.round(offX)},${Math.round(offY)},${s},${this.cw}x${this.ch},${on.join(',')},${es.map((e) => e.id).join('.')}`;
       if (key !== this.nightKey) {
         this.nightKey = key;
         const nc = this.nightComp && this.nightComp.width === this.cw && this.nightComp.height === this.ch ? this.nightComp : (this.nightComp = this.mkCanvas(this.cw, this.ch));
@@ -1517,8 +1546,11 @@ export class Renderer {
           const kk = s / e.L;
           ng.globalAlpha = 1;
           ng.drawImage(e.c2, e.ox * kk + offX, e.oy * kk + offY, e.c2.width * kk, e.c2.height * kk);
-          ng.globalAlpha = win;
-          ng.drawImage(e.c, e.ox * kk + offX, e.oy * kk + offY, e.c.width * kk, e.c.height * kk);
+          e.tiers.forEach((cv, k) => {
+            if (on[k] <= 0) return;
+            ng.globalAlpha = on[k];
+            ng.drawImage(cv, e.ox * kk + offX, e.oy * kk + offY, cv.width * kk, cv.height * kk);
+          });
         }
       }
       ctx.globalAlpha = dn.lights;
@@ -1540,7 +1572,7 @@ export class Renderer {
     const want = this.dayCycle && this.overlayMode === 'none' && this.sim ? 1 : 0;
     const was = this.cyc;
     this.cyc = clamp(this.cyc + clamp(want - this.cyc, -dt / 1200, dt / 1200), 0, 1);
-    const out = { tint: null, lights: 0, win: 1, prep: false, moving: this.cyc !== was };
+    const out = { tint: null, lights: 0, prep: false, moving: this.cyc !== was };
     if (this.cyc < 0.002) { this.lastLights = 0; return out; }
     const h = sunHeight(this.tod, this.sim.m);
     const t = skyTint(h).map((v) => Math.round(255 + (v - 255) * this.cyc));
@@ -1548,7 +1580,6 @@ export class Renderer {
     out.lights = lightsOn(h) * this.cyc;
     out.prep = h < 0.4; // evening's coming (or it's still early): get the lights ready ahead of time
     this.lastLights = out.lights;
-    out.win = 1 - 0.45 * lateness(this.tod);
     // keep drawing while the clock runs; a paused night holds still
     if (this.dayCycle && !this.sim.paused) out.moving = true;
     return out;

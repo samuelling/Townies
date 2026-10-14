@@ -68,3 +68,32 @@ export function clock(hour) {
   const h = Math.floor(hour) % 24, m = Math.floor((hour % 1) * 60 / 10) * 10;
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
 }
+
+// Who's still up. Every lit window belongs to one of these groups; each group's lights go off around its
+// bedtime (and early risers' come back on before dawn). By 1 a.m. only the night owls are left, plus porch
+// lights, street lamps and signs, which stay on all night. Hours are counted from noon so the night doesn't
+// wrap around midnight.
+export const BEDTIMES = [
+  { share: 0.3, bed: 22.0, wake: 6.0 },
+  { share: 0.3, bed: 23.25, wake: 6.5 },
+  { share: 0.25, bed: 0.5, wake: 7.0 },
+  { share: 0.15, bed: null, wake: null }, // night owls
+];
+const fromNoon = (h) => (h - 12 + 24) % 24;
+// 0..1: how many of a group's lights are on at this hour (a quarter-hour fade, so they click off in a wave)
+export function groupOn(k, hour) {
+  const g = BEDTIMES[k];
+  if (g.bed == null) return 1;
+  const hn = fromNoon(hour), bed = fromNoon(g.bed), wake = fromNoon(g.wake);
+  if (hn < bed) return 1;
+  if (hn < bed + 0.25) return 1 - (hn - bed) / 0.25;
+  if (hn < wake) return 0;
+  if (hn < wake + 0.25) return (hn - wake) / 0.25;
+  return 1;
+}
+// which group a window is in, from a uniform 0..1 draw
+export function groupOf(u) {
+  let acc = 0;
+  for (let k = 0; k < BEDTIMES.length; k++) { acc += BEDTIMES[k].share; if (u < acc) return k; }
+  return BEDTIMES.length - 1;
+}
