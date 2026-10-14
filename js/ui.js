@@ -26,6 +26,9 @@ import { resetGreed } from './storefronts.js';
 import { DESIGNS, DESIGN_ORDER, evaluate as evalJunction, legVolumes, planDesign, ctlAt, adoptCtl, squareCtl } from './junctions.js';
 import { PROGRAMS, siteFromRect, analyze, evaluate, hearingScore, hearingOdds, submit, devMood, projectName } from './projects.js';
 
+const BD_MODES = ['auto', 'buildings', 'roads', 'all'];
+const BD_LABEL = { auto: 'AUTO', buildings: 'BUILDINGS ONLY', roads: 'ROADS ONLY', all: 'EVERYTHING' };
+
 const ICON = {
   query: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="2.4"/><path d="M14.5 14.5l6 6" stroke="#000" stroke-width="3"/><text x="10" y="13.5" font-size="9" text-anchor="middle" font-weight="bold">?</text></svg>',
   pan: '<svg viewBox="0 0 24 24"><path d="M8 11V5a1.5 1.5 0 013 0v5V3.5a1.5 1.5 0 013 0V10V5a1.5 1.5 0 013 0v6V8a1.5 1.5 0 013 0v7c0 4-3 7-7 7s-5-1.5-7-4l-3-4.5c-.7-1 .8-2.3 1.8-1.4L8 14z" fill="#f2d3b0" stroke="#000" stroke-width="1.3"/></svg>',
@@ -56,7 +59,7 @@ const ICON = {
 const TOOLS = [
   { id: 'query', label: 'Query', key: 'q', tip: 'Tap a building, parcel or street to see its real data.' },
   { id: 'pan', label: 'Pan', key: 'h', tip: 'Drag to move around. Two fingers pinch to zoom.' },
-  { id: 'bulldoze', label: 'Bulldoze', key: 'b', tip: 'Drag a box to demolish buildings, roads or trees.' },
+  { id: 'bulldoze', label: 'Bulldoze', key: 'b', tip: 'Drag a box. Boxes with buildings in them leave the roads alone; a box of just road removes road. Tap again to change.' },
   { id: 'road', label: 'Road', key: 'd', tip: 'Drag to build a straight road at any angle. Bridges over water cost more.' },
   { id: 'curve', label: 'Curved road', key: 'c', tip: 'Drag from start to end, then move the pointer to bend it and click (or tap) to build.' },
   { id: 'junction', label: 'Intersection', key: 'j', tip: 'Tap an intersection to compare signals, roundabouts and rotaries with real traffic counts.' },
@@ -249,6 +252,7 @@ export class UI {
     if (this.tool === id && id.startsWith('zone')) this.dense = !this.dense;
     else if (this.tool !== id && id.startsWith('zone')) this.dense = false;
     if (this.tool === id && (id === 'road' || id === 'curve')) this.avenue = !this.avenue;
+    if (this.tool === id && id === 'bulldoze') this.bdMode = BD_MODES[(BD_MODES.indexOf(this.bdMode || 'auto') + 1) % BD_MODES.length];
     this.curveSt = null;
     this.tool = id;
     for (const [k, b] of Object.entries(this.toolBtns)) b.classList.toggle('on', k === id);
@@ -260,12 +264,14 @@ export class UI {
   updateHint(extra) {
     const t = TOOLS.find((x) => x.id === this.tool);
     if (!t) return;
-    const dens = this.tool.startsWith('zone') ? ` <b class="chip" id="densechip">${this.dense ? 'DENSE' : 'LIGHT'}</b>` : this.tool === 'road' || this.tool === 'curve' ? ` <b class="chip" id="avechip">${this.avenue ? 'AVENUE' : 'STREET'}</b>` : '';
+    const dens = this.tool.startsWith('zone') ? ` <b class="chip" id="densechip">${this.dense ? 'DENSE' : 'LIGHT'}</b>` : this.tool === 'road' || this.tool === 'curve' ? ` <b class="chip" id="avechip">${this.avenue ? 'AVENUE' : 'STREET'}</b>` : this.tool === 'bulldoze' ? ` <b class="chip" id="bdchip" title="What the bulldozer takes. Auto: if the box has buildings in it, only buildings (and trees) go; a box of just road removes the road.">${BD_LABEL[this.bdMode || 'auto']}</b>` : '';
     this.hint.innerHTML = `<b>${t.label}</b>${dens} <span>${extra || t.tip}</span>`;
     const chip = document.getElementById('densechip');
     if (chip) chip.onclick = () => { this.dense = !this.dense; this.updateHint(); };
     const ac = document.getElementById('avechip');
     if (ac) ac.onclick = () => { this.avenue = !this.avenue; this.updateHint(extra); };
+    const bc = document.getElementById('bdchip');
+    if (bc) bc.onclick = () => { this.bdMode = BD_MODES[(BD_MODES.indexOf(this.bdMode || 'auto') + 1) % BD_MODES.length]; this.updateHint(); };
   }
   setOverlay(k) {
     this.r.setOverlay(k);
@@ -1297,6 +1303,7 @@ export class UI {
       else mode = 'tool';
       if (e.button === 2 || e.button === 1) mode = 'pan';
       startTile = this.r.tileAt(start[0], start[1]);
+      this.dragCss = [start, start];
       if (mode === 'tool' && this.tool === 'curve' && this.curveSt) { this.curveSt.ctrl = gridAt(start); this.updatePlan(this.curveSt.a, this.curveSt.b); }
       else if (mode === 'tool' && this.tool !== 'junction') this.updatePlan(startTile, startTile);
       void isTouch;
@@ -1330,7 +1337,7 @@ export class UI {
       if (Math.hypot(p[0] - start[0], p[1] - start[1]) > 6) moved = true;
       if (mode === 'pan') this.r.panBy(p[0] - prev[0], p[1] - prev[1]);
       else if (mode === 'tool' && this.tool === 'curve' && this.curveSt) { this.curveSt.ctrl = gridAt(p); this.updatePlan(this.curveSt.a, this.curveSt.b); }
-      else if (mode === 'tool' && dragTools.has(this.tool)) this.updatePlan(startTile, this.r.tileAt(p[0], p[1]));
+      else if (mode === 'tool' && dragTools.has(this.tool)) { this.dragCss = [start, p]; this.updatePlan(startTile, this.r.tileAt(p[0], p[1])); }
     });
     const end = (e) => {
       if (!pts.has(e.pointerId)) return;
@@ -1343,7 +1350,7 @@ export class UI {
       const p = pos(e);
       const hitInc = !moved && (this.tool === 'query' || this.tool === 'pan') ? this.r.incidentAt(p[0], p[1]) : null;
       if (hitInc != null) this.sendCrew(hitInc);
-      else if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.tileAt(p[0], p[1]));
+      else if (mode === 'pan' && !moved && this.tool === 'query') this.query(this.r.pickTile(p[0], p[1]));
       else if (mode === 'tool' && this.tool === 'junction') {
         const g = gridAt(p);
         this.junctionWindow(ctlAt(this.sim, g[0], g[1]));
@@ -1363,8 +1370,10 @@ export class UI {
         }
       } else if (mode === 'tool') {
         const endT = dragTools.has(this.tool) ? this.r.tileAt(p[0], p[1]) : startTile;
+        if (moved) this.dragCss = [start, p];
         this.updatePlan(startTile, endT);
         this.commit();
+        this.dragCss = null;
       }
       mode = null;
     };
@@ -1407,7 +1416,16 @@ export class UI {
       return;
     }
     const tool = this.tool === 'curve' ? 'road' : this.tool;
-    const p = this.sim.plan(tool, a, b, { dense: this.dense, avenue: this.avenue, ctrl: this.tool === 'curve' && this.curveSt ? this.curveSt.ctrl : null });
+    let tiles = null;
+    if (/^(zoneR|zoneC|zoneI|dezone|park)$/.test(tool) && this.dragCss && Math.hypot(this.dragCss[1][0] - this.dragCss[0][0], this.dragCss[1][1] - this.dragCss[0][1]) >= 6) tiles = this.r.tilesInScreenRect(this.dragCss[0], this.dragCss[1]);
+    if (tool === 'bulldoze' && this.dragCss) {
+      // select what you see: a tap takes what's drawn under it (a tall building in front wins); a drag takes the
+      // tiles inside the rectangle you drew on screen, not a diamond that reaches past it
+      const [p0, p1] = this.dragCss;
+      if (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 6) { const t = this.r.pickTile(p0[0], p0[1]); tiles = t >= 0 ? [t] : []; a = t; }
+      else { tiles = this.r.tilesInScreenRect(p0, p1); a = this.r.pickTile(p0[0], p0[1]); }
+    }
+    const p = this.sim.plan(tool, a, b, { dense: this.dense, avenue: this.avenue, ctrl: this.tool === 'curve' && this.curveSt ? this.curveSt.ctrl : null, tiles, only: this.bdMode || 'auto' });
     this.plan = p;
     if (!p) { this.r.preview = null; return; }
     const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneC: 'rgba(95,159,255,0.45)', zoneI: 'rgba(240,200,64,0.5)' }[this.tool] : null;

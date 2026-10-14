@@ -1246,6 +1246,7 @@ export class Sim {
     const w = this.w;
     const { W, H, inTown, road, terrain, svcAt, lotOf } = w;
     if (a < 0) return null;
+    let picked = null; // for bulldozing: the tiles actually dragged over (trees there go; a cleared lot's yard trees stay)
     if (b < 0) b = a;
     let tiles = [], cost = 0, ok = true, msg = '', p0line = null;
     if (tool === 'road') {
@@ -1269,21 +1270,35 @@ export class Sim {
       }
       if (ok) msg = `Road: ${tiles.filter((i) => !road[i]).length} tiles`;
     } else if (tool === 'bulldoze') {
-      tiles = this.rectTiles(a, b).filter((i) => inTown[i]);
+      // Auto: if the selection takes in any buildings, it's about the buildings and the roads in it are left alone;
+      // a selection of nothing but road (and trees) removes the road. opts.only can force either, or 'all'.
+      const sel = (opts.tiles || this.rectTiles(a, b)).filter((i) => inTown[i]);
+      picked = new Set(sel);
+      const anyBldg = sel.some((i) => this.bAlive(i) || svcAt[i] >= 0);
+      const only = opts.only && opts.only !== 'auto' ? opts.only : anyBldg ? 'buildings' : sel.some((i) => road[i]) ? 'roads' : 'buildings';
+      tiles = sel.filter((i) => (only === 'roads' ? road[i] && !this.bAlive(i) && svcAt[i] < 0 : only === 'buildings' ? !road[i] || this.bAlive(i) || svcAt[i] >= 0 : true));
       const lotsHit = new Set();
+      let roadN = 0;
       for (const i of tiles) {
         if (svcAt[i] >= 0) cost += 60000;
         else if (this.bAlive(i)) {
           const li = lotOf[i];
           if (li >= 0) lotsHit.add(li);
           else cost += 20000;
-        } else if (road[i]) cost += 4000;
+        } else if (road[i]) { cost += 4000; roadN++; }
         else if (w.tree[i]) cost += 200;
       }
       for (const li of lotsHit) cost += 15000 + w.lots[li].bldArea * 25;
-      msg = lotsHit.size ? `Demolish ${lotsHit.size} building lot${lotsHit.size > 1 ? 's' : ''}` : 'Bulldoze';
+      // show the whole of each lot that will be cleared
+      if (lotsHit.size) {
+        const shown = new Set(tiles);
+        for (const li of lotsHit) for (const i of w.lots[li].tiles) if (!road[i]) shown.add(i);
+        tiles = [...shown];
+      }
+      this.bulldozeMode = only;
+      msg = only === 'roads' ? (roadN ? `Remove ${roadN} road tile${roadN > 1 ? 's' : ''} · buildings untouched` : 'Roads only: drag over road') : lotsHit.size ? `Demolish ${lotsHit.size} building lot${lotsHit.size > 1 ? 's' : ''}${only === 'buildings' ? ' · roads untouched' : ''}` : only === 'buildings' ? 'Bulldoze (roads untouched)' : 'Bulldoze everything';
     } else if (tool === 'zoneR' || tool === 'zoneC' || tool === 'zoneI' || tool === 'dezone') {
-      tiles = this.rectTiles(a, b).filter((i) => inTown[i] && terrain[i] !== 1 && !road[i] && svcAt[i] < 0);
+      tiles = (opts.tiles || this.rectTiles(a, b)).filter((i) => inTown[i] && terrain[i] !== 1 && !road[i] && svcAt[i] < 0);
       const lotsHit = new Set();
       let fresh = 0;
       for (const i of tiles) {
@@ -1293,7 +1308,7 @@ export class Sim {
       cost = lotsHit.size * 1500 + fresh * 300;
       msg = `${lotsHit.size} lots rezoned, ${fresh} new tiles`;
     } else if (tool === 'park') {
-      tiles = this.rectTiles(a, b).filter((i) => inTown[i]);
+      tiles = (opts.tiles || this.rectTiles(a, b)).filter((i) => inTown[i]);
       for (const i of tiles) {
         if (terrain[i] === 1 || road[i] || this.bAlive(i) || svcAt[i] >= 0) { ok = false; msg = 'Clear the land first'; }
         else if (w.cover[i] !== COVER.PARK) cost += 25000;
@@ -1320,7 +1335,7 @@ export class Sim {
       ok = false;
       msg = 'That is a project site — wait until it opens';
     }
-    return { tool, tiles, cost, ok, msg, line: p0line, cls: opts.avenue ? 2 : 1 };
+    return { tool, tiles, cost, ok, msg, line: p0line, cls: opts.avenue ? 2 : 1, picked: picked || null };
   }
   // tiles under a polyline, 4-connected so traffic can flow along it
   polyTiles(line) {
@@ -1387,7 +1402,7 @@ export class Sim {
           this.roadsCut = true;
           if (w.roadCut) w.roadCut[i] = 1;
           touched.push(i);
-        } else if (w.tree[i]) {
+        } else if (w.tree[i] && (!p.picked || p.picked.has(i))) {
           w.tree[i] = 0;
           touched.push(i);
         }

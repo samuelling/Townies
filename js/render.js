@@ -92,6 +92,47 @@ export class Renderer {
     const a = X / (16 * s), b = Y / (8 * s);
     return this.unrot((a + b) / 2, (b - a) / 2);
   }
+  // grid → CSS pixel position of a point on the ground
+  gridToScreen(x, y) {
+    const s = this.scale();
+    const [cx, cy] = this.camScreen(s);
+    const [rx, ry] = this.rxy(x, y);
+    return [((rx - ry) * 16 * s - cx + this.cw / 2) / this.dpr, ((rx + ry) * 8 * s - cy + this.ch / 2) / this.dpr];
+  }
+  // tiles whose centers fall inside a rectangle drawn on the screen (what you dragged, not a diamond)
+  tilesInScreenRect(p0, p1) {
+    const x0 = Math.min(p0[0], p1[0]), x1 = Math.max(p0[0], p1[0]), y0 = Math.min(p0[1], p1[1]), y1 = Math.max(p0[1], p1[1]);
+    const cs = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => this.screenToGrid(x, y));
+    const { W, H } = this.world;
+    const gx0 = Math.max(0, Math.floor(Math.min(...cs.map((c) => c[0]))) - 1), gx1 = Math.min(W - 1, Math.ceil(Math.max(...cs.map((c) => c[0]))) + 1);
+    const gy0 = Math.max(0, Math.floor(Math.min(...cs.map((c) => c[1]))) - 1), gy1 = Math.min(H - 1, Math.ceil(Math.max(...cs.map((c) => c[1]))) + 1);
+    const out = [];
+    for (let y = gy0; y <= gy1; y++) for (let x = gx0; x <= gx1; x++) {
+      const [sx, sy] = this.gridToScreen(x + 0.5, y + 0.5);
+      if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) out.push(y * W + x);
+    }
+    return out;
+  }
+  // what's drawn under the pointer: a tall building in front wins over the ground behind it
+  pickTile(cssX, cssY) {
+    const g = this.screenToGrid(cssX, cssY);
+    const { W, H, bAt, bldgs } = this.world;
+    const s = this.scale();
+    const [rx, ry] = this.rxy(g[0], g[1]);
+    for (let k = 7; k >= 1; k -= 0.5) {
+      const [x, y] = this.unrot(rx + k, ry + k);
+      const ix = Math.floor(x), iy = Math.floor(y);
+      if (ix < 0 || iy < 0 || ix >= W || iy >= H) continue;
+      const bi = bAt[iy * W + ix];
+      if (bi < 0) continue;
+      const b = bldgs[bi];
+      if (!b || !b.alive) continue;
+      const hpx = (b.h || b.levels * 3.2) * HS * s;
+      if (hpx >= k * 16 * s) return iy * W + ix;
+    }
+    void cssX;
+    return this.tileAt(cssX, cssY);
+  }
   tileAt(cssX, cssY) {
     const [x, y] = this.screenToGrid(cssX, cssY);
     const ix = Math.floor(x), iy = Math.floor(y);
