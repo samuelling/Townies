@@ -6,6 +6,7 @@ import { monthWeather, WX_ICON, NORMALS } from './weather.js';
 import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
+import { canStepInside, openHome } from './home.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { SPEEDS, DEFAULT_SPEED, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
@@ -558,7 +559,9 @@ export class UI {
           row('Police / Fire', `${Math.round(s.polCov[c] * 100)}% / ${Math.round(s.fireCov[c] * 100)}%`)
         );
       }
-      body.append(el('h3', {}, head), t);
+      body.append(el('h3', {}, head));
+      if (canStepInside(lot)) body.append(el('button', { class: 'choice hv-enter', onclick: () => openHome(this.g, lot) }, el('b', {}, '🏠 Step inside'), el('small', {}, 'Experimental: a cutaway of this home and the household living in it')));
+      body.append(t);
       if (lot && lot.real) body.append(el('p', { class: 'fine' }, 'Assessor data: MassGIS property tax parcels. Values change as you play.'));
     }, { x: window.innerWidth - 380, y: 70 });
   }

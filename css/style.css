@@ -386,3 +386,28 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .vbrk b.up { color: #1c7a2e; } .vbrk b.down { color: #b3261e; }
 .vbrk small { color: #666; font-size: 10.5px; }
 .agodds { margin-top: 6px; color: #555; font-style: italic; }
+
+/* experimental: Step inside (js/home.js) */
+.homeview { position: fixed; inset: 36px 24px 24px; z-index: 900; display: flex; flex-direction: column; background: var(--chrome); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.45); }
+.hv-main { flex: 1; display: flex; min-height: 0; }
+.hv-stage { position: relative; flex: 1; min-width: 0; }
+.hv-canvas { width: 100%; height: 100%; display: block; }
+.hv-floors { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.hv-fb { width: 28px; height: 26px; background: var(--chrome); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); font-weight: bold; }
+.hv-fb.on { background: #ffd27f; }
+.hv-side { width: 300px; overflow-y: auto; padding: 8px 10px; background: #f4f1ea; border-left: 2px solid #000; -webkit-user-select: text; user-select: text; }
+.hv-side h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--chrome-lo); }
+.hv-clock { font-weight: bold; font-size: 15px; }
+.hv-clock small { font-weight: normal; color: #555; }
+.hv-speed { display: flex; gap: 4px; margin-top: 6px; }
+.hv-speed button { background: var(--chrome); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); padding: 1px 6px; }
+.hv-speed button.on { background: #ffd27f; }
+.hv-people div { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.hv-people i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.hv-choices { display: flex; flex-direction: column; gap: 4px; }
+.hv-choices .choice { padding: 4px 8px; }
+.hv-choices .choice.on { background: #ffe6b0; }
+.hv-choices .choice[disabled] { opacity: 0.5; }
+.hv-diary div { font-size: 12px; margin: 2px 0; }
+.hv-enter { width: 100%; margin: 4px 0 8px; }
+@media (max-width: 760px) { .homeview { inset: 30px 0 0; } .hv-main { flex-direction: column; } .hv-side { width: auto; height: 45%; border-left: 0; border-top: 2px solid #000; } }
