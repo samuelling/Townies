@@ -197,6 +197,7 @@ function boot(state, scen = null) {
     game.renderer.z = state.z || 1;
   } else game.renderer.z = window.innerWidth < 700 ? 0.75 : 1;
   game.ui = new UI(game);
+  try { game.renderer.showNames = localStorage.getItem('townies-names') === '1'; } catch (e) { /* storage off */ }
   const tutorial = scen === 'tutorial';
   if (!state) startScenario(game.sim, tutorial ? 'sandbox' : scen || 'sandbox', game.peers);
   game.ui.refreshHud();

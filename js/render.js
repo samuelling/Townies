@@ -1560,11 +1560,147 @@ export class Renderer {
       ctx.restore();
     }
     if (spooky) this.drawHalloween(ctx, s, offX, offY, 'glow');
+    const hlAnim = this.drawHighlight(ctx, s, offX, offY);
+    if (this.showNames) this.drawStreetNames(ctx, s, offX, offY, vis, dn.lights > 0.4);
     const skyAnim = this.drawSky(ctx, s, offX, offY) || this.drawMoments(ctx, s, offX, offY);
     const incAnim = this.drawIncidents(ctx, s, offX, offY) || skyAnim;
     this.drawPreview(ctx, s, offX, offY);
-    this.needs = incomplete || carsDrawn || dn.moving || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
+    this.needs = incomplete || carsDrawn || dn.moving || hlAnim || (incAnim && !this.sim.paused) || !!(this.moments && this.moments.length);
     if (!incomplete && !this.prewarmDone && performance.now() < deadline - 6) this.idle();
+  }
+
+  // ---------- street names ----------
+  // Labels set along the streets themselves, letter by letter so they follow curves, kept upright, and spaced so
+  // they don't collide: main roads first, then smaller streets as you zoom in.
+  drawStreetNames(ctx, s, offX, offY, vis, night) {
+    const w = this.world;
+    if (!this.lineIdx) return;
+    const dpr = this.dpr;
+    const minCls = s < 0.3 ? 3 : s < 0.55 ? 2 : 1;
+    const P = (x, y) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY];
+    };
+    const seen = new Set();
+    const cand = [];
+    for (const v of vis)
+      for (const li of this.lineIdx[v.cy * this.ncx + v.cx]) {
+        if (seen.has(li)) continue;
+        seen.add(li);
+        const ln = w.roadLines[li];
+        if (!ln.name || (ln.cls || 1) < minCls) continue;
+        cand.push(li);
+      }
+    const size = Math.round((s < 0.55 ? 10 : 11) * dpr);
+    ctx.save();
+    ctx.font = `bold ${size}px Geneva, Tahoma, Verdana, sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3 * dpr;
+    ctx.strokeStyle = night ? 'rgba(10,14,30,0.85)' : 'rgba(255,255,255,0.9)';
+    ctx.fillStyle = night ? '#f3ead2' : '#222';
+    const boxes = [];
+    const lastAt = new Map(); // name -> screen points already labelled, so a street isn't named twice close together
+    const hit = (b) => boxes.some((q) => b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1]);
+    const W = this.cw, H = this.ch;
+    const items = cand.map((li) => {
+      const ln = w.roadLines[li];
+      const pts = [];
+      for (let k = 0; k + 1 < ln.pts.length; k += 2) pts.push(P(ln.pts[k], ln.pts[k + 1]));
+      let len = 0;
+      for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+      return { li, ln, pts, len };
+    }).sort((a, b) => (b.ln.cls || 1) - (a.ln.cls || 1) || b.len - a.len);
+    const spacing = 520 * dpr;
+    for (const it of items) {
+      const text = it.ln.name;
+      const tw = ctx.measureText(text).width;
+      if (it.len < tw * 1.15) continue;
+      // keep letters upright: walk the line in whichever direction reads left to right
+      let pts = it.pts;
+      if (pts[pts.length - 1][0] < pts[0][0]) pts = pts.slice().reverse();
+      const cum = [0];
+      for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+      const at = (d) => {
+        let k = 1;
+        while (k < cum.length - 1 && cum[k] < d) k++;
+        const a = pts[k - 1], b = pts[k], seg = cum[k] - cum[k - 1] || 1, t = clamp((d - cum[k - 1]) / seg, 0, 1);
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, Math.atan2(b[1] - a[1], b[0] - a[0])];
+      };
+      const n = Math.max(1, Math.floor(it.len / spacing));
+      for (let j = 0; j < n; j++) {
+        const mid = it.len * (j + 0.5) / n;
+        const d0 = mid - tw / 2;
+        if (d0 < 0 || d0 + tw > it.len) continue;
+        // too bendy here to read: skip
+        const a0 = at(d0)[2], a1 = at(d0 + tw / 2)[2], a2 = at(d0 + tw)[2];
+        const bend = (x, y) => Math.abs(Math.atan2(Math.sin(x - y), Math.cos(x - y)));
+        if (bend(a0, a1) > 0.6 || bend(a1, a2) > 0.6) continue;
+        const c = at(mid);
+        if (c[0] < -50 || c[0] > W + 50 || c[1] < -20 || c[1] > H + 20) continue;
+        const prev = lastAt.get(text) || [];
+        if (prev.some((p) => Math.hypot(p[0] - c[0], p[1] - c[1]) < spacing * 0.8)) continue;
+        // letters, and a box around them for collisions
+        const glyphs = [];
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, d = d0;
+        for (const ch of text) {
+          const cw = ctx.measureText(ch).width;
+          const g = at(d + cw / 2);
+          glyphs.push([ch, g]);
+          x0 = Math.min(x0, g[0] - size * 0.6); x1 = Math.max(x1, g[0] + size * 0.6);
+          y0 = Math.min(y0, g[1] - size * 0.6); y1 = Math.max(y1, g[1] + size * 0.6);
+          d += cw;
+        }
+        const box = [x0, y0, x1, y1];
+        if (hit(box)) continue;
+        boxes.push(box);
+        prev.push(c);
+        lastAt.set(text, prev);
+        for (const pass of ['stroke', 'fill'])
+          for (const [ch, g] of glyphs) {
+            ctx.setTransform(Math.cos(g[2]), Math.sin(g[2]), -Math.sin(g[2]), Math.cos(g[2]), g[0], g[1]);
+            if (pass === 'stroke') ctx.strokeText(ch, -ctx.measureText(ch).width / 2, 0);
+            else ctx.fillText(ch, -ctx.measureText(ch).width / 2, 0);
+          }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
+    ctx.restore();
+  }
+
+  // a street or place picked from search: a glowing line along it for a few seconds
+  drawHighlight(ctx, s, offX, offY) {
+    const h = this.hl;
+    if (!h) return false;
+    const left = h.until - this.time;
+    if (left <= 0) { this.hl = null; return false; }
+    const a = Math.min(1, left / 800) * (0.75 + 0.25 * Math.sin(this.time / 160));
+    const P = (x, y) => {
+      const [rx, ry] = this.rxy(x, y);
+      return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY];
+    };
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const [wd, col] of [[14 * this.dpr, `rgba(255,214,60,${0.35 * a})`], [5 * this.dpr, `rgba(255,236,120,${a})`]]) {
+      ctx.lineWidth = wd;
+      ctx.strokeStyle = col;
+      for (const li of h.lines || []) {
+        const p = this.world.roadLines[li].pts;
+        ctx.beginPath();
+        for (let k = 0; k + 1 < p.length; k += 2) { const q = P(p[k], p[k + 1]); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+        ctx.stroke();
+      }
+    }
+    if (h.pt) {
+      const q = P(h.pt[0], h.pt[1]);
+      ctx.strokeStyle = `rgba(255,214,60,${a})`;
+      ctx.lineWidth = 3 * this.dpr;
+      const r = (10 + 6 * Math.sin(this.time / 200)) * this.dpr;
+      ctx.beginPath(); ctx.ellipse(q[0], q[1], r * 1.6, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+    return true;
   }
 
   // the lighting for this frame; fades in and out over a second or so when the speed changes

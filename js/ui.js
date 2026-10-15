@@ -7,6 +7,7 @@ import { ROUTES } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
 import { canStepInside, openHome } from './home.js';
+import { buildIndex, search } from './search.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { SPEEDS, DEFAULT_SPEED, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
@@ -137,7 +138,7 @@ export class UI {
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Sound effects on/off', () => { const on = this.g.music.toggleSfx(); this.toast(on ? 'Sound effects on' : 'Sound effects off'); if (on) this.g.music.sfx('drill'); }], ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
-    const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]);
+    const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]).concat(['-', ['Street names on/off (N)', () => this.setNames(!this.r.showNames)]]);
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
     this.speedBtn = el('button', { class: 'mbtn', title: 'Speed', onclick: (e) => this.cycleSpeed(e.shiftKey ? -1 : 1) }, '▶');
@@ -149,6 +150,7 @@ export class UI {
       menu('Overlay', ovItems),
       menu('Help', helpItems),
       el('div', { class: 'spacer' }),
+      this.searchBox(),
       this.speedBtn,
       this.musicBtn
     );
@@ -285,6 +287,81 @@ export class UI {
     this.refreshLegend();
     const mw = this.wins.get('map');
     if (mw) mw.refresh();
+  }
+  // ---------------- street names and search ----------------
+  setNames(on) {
+    this.r.showNames = !!on;
+    this.r.needs = true;
+    try { localStorage.setItem('townies-names', on ? '1' : '0'); } catch (e) { /* storage off */ }
+    this.toast(on ? 'Street names on (N to hide)' : 'Street names off');
+  }
+  searchBox() {
+    const inp = el('input', { type: 'search', class: 'search', placeholder: '🔍 Street, address, place  (/)', autocomplete: 'off', spellcheck: 'false' });
+    const list = el('div', { class: 'search-list' });
+    const wrap = el('div', { class: 'search-wrap' }, inp, list);
+    this.searchIn = inp;
+    let hits = [], sel = 0, typing = false;
+    const show = () => {
+      list.innerHTML = '';
+      list.style.display = hits.length ? 'block' : 'none';
+      hits.forEach((e, i) => list.append(el('button', { class: `search-item${i === sel ? ' on' : ''}`, onmousedown: (ev) => { ev.preventDefault(); pick(e); } },
+        el('span', { class: 'si-icon' }, e.kind === 'street' ? '🛣' : e.kind === 'address' ? '🏠' : '📍'),
+        el('span', {}, e.label, el('small', {}, e.sub ? ` · ${e.sub}` : e.town ? '' : ' · nearby town'))
+      )));
+      if (typing && inp.value.trim() && !hits.length) { list.style.display = 'block'; list.append(el('div', { class: 'search-none' }, 'No match')); }
+    };
+    const pick = (e) => {
+      inp.value = e.label;
+      hits = [];
+      typing = false;
+      show();
+      inp.blur();
+      this.goTo(e);
+    };
+    inp.addEventListener('input', () => {
+      if (!this.searchIdx) this.searchIdx = buildIndex(this.w);
+      hits = search(this.searchIdx, inp.value);
+      sel = 0;
+      typing = true;
+      show();
+    });
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); sel = Math.min(hits.length - 1, sel + 1); show(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); sel = Math.max(0, sel - 1); show(); }
+      else if (ev.key === 'Enter' && hits[sel]) pick(hits[sel]);
+      else if (ev.key === 'Escape') { hits = []; show(); inp.blur(); }
+      ev.stopPropagation();
+    });
+    inp.addEventListener('blur', () => setTimeout(() => { hits = []; typing = false; show(); }, 150));
+    inp.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    return wrap;
+  }
+  goTo(e) {
+    const r = this.r, w = this.w;
+    if (e.kind === 'street') {
+      // frame the whole street
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, X0 = Infinity, X1 = -Infinity, Y0 = Infinity, Y1 = -Infinity;
+      for (const li of e.lines) {
+        const p = w.roadLines[li].pts;
+        for (let k = 0; k + 1 < p.length; k += 2) {
+          x0 = Math.min(x0, p[k]); x1 = Math.max(x1, p[k]); y0 = Math.min(y0, p[k + 1]); y1 = Math.max(y1, p[k + 1]);
+          const [rx, ry] = r.rxy(p[k], p[k + 1]);
+          X0 = Math.min(X0, (rx - ry) * 16); X1 = Math.max(X1, (rx - ry) * 16); Y0 = Math.min(Y0, (rx + ry) * 8); Y1 = Math.max(Y1, (rx + ry) * 8);
+        }
+      }
+      const cw = r.cw / r.dpr, ch = r.ch / r.dpr;
+      r.centerOn((x0 + x1) / 2, (y0 + y1) / 2);
+      r.setZoom(clamp(0.8 * Math.min(cw / (X1 - X0 + 80), ch / (Y1 - Y0 + 80)), 0.3, 1.6));
+      r.hl = { lines: e.lines, until: r.time + 7000 };
+      if (!r.showNames) this.setNames(true);
+    } else {
+      r.centerOn(e.x, e.y);
+      r.setZoom(Math.max(r.z, 1.6));
+      r.hl = { pt: [e.x, e.y], until: r.time + 7000 };
+      const lot = e.lot != null && e.lot >= 0 ? w.lots[e.lot] : null;
+      if (lot && !lot.dead && lot.tiles.length) this.query(lot.tiles[0]);
+    }
+    r.needs = true;
   }
   setSpeed(v) {
     v = clamp(Math.round(v) || 0, 0, SPEEDS.length - 1);
@@ -1434,6 +1511,8 @@ export class UI {
       if (t) return this.setTool(t.id);
       if (k === ',') this.r.rotate(-1);
       else if (k === '.') this.r.rotate(1);
+      else if (k === 'n' || k === 'N') this.setNames(!this.r.showNames);
+      else if (k === '/') { e.preventDefault(); this.searchIn && this.searchIn.focus(); }
       else if (k === '+' || k === '=') this.r.setZoom(this.r.z * 1.4);
       else if (k === '-' || k === '_') this.r.setZoom(this.r.z / 1.4);
       else if (k === ' ') { e.preventDefault(); this.setSpeed(this.g.speed ? 0 : this.g.lastSpeed || DEFAULT_SPEED); }
