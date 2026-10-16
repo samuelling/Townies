@@ -9,6 +9,7 @@ import { classifyLot } from './vibrancy.js';
 import { react } from './comments.js';
 import { openShop } from './storefronts.js';
 import { techBuildCostF, techBuildTimeF } from './tech.js';
+import { meloraOnSubmit, meloraAtHearing, meloraAfterVote, pauseActive } from './melora.js';
 
 const M2 = 256; // m² per tile
 export const PROGRAMS = {
@@ -252,6 +253,7 @@ export const hearingOdds = (score) => 1 / (1 + Math.exp(-(score - 0.47) * 9));
 export function submit(sim, siteIds, prog, t, name) {
   const site = analyze(sim, siteIds, new Set(t.exclude || []));
   if (!site.ids.length) return { error: 'Pick at least one parcel for the site.' };
+  if (pauseActive(sim) && prog !== 'plaza') return { error: `Development pause in effect for ${sim.mel.pauseUntil - sim.t} more month${sim.mel.pauseUntil - sim.t === 1 ? '' : 's'} (Melora's petition). Only parks and plazas can be filed.` };
   const o = evaluate(sim, site, prog, t);
   if (o.devFeas != null && !(o.devFeas >= -0.02) && !(prog === 'housing' && t.nonprofit)) return { error: 'The developer walked away: the numbers do not work. Allow more floors or ask for less.' };
   if (o.cityCost > 0 && sim.funds - o.cityCost < -0.15 * sim.budgetLines().expenses) return { error: `The City can't cover ${fmtMoney(o.cityCost)} right now, even with borrowing.` };
@@ -259,6 +261,7 @@ export function submit(sim, siteIds, prog, t, name) {
   const p = { id: (sim.projId = (sim.projId || 0) + 1), name, prog, t, ids: site.ids, stage: 'hearing', at: sim.t + 2, cx: site.cx, cy: site.cy, o, site: { homes: site.homes, indie: site.indie, auto: site.auto, sig: site.sig, residents: site.residents, nearHomes: site.nearHomes, legacy: site.legacy, value: site.value, acq: site.acq } };
   for (const li of site.ids) sim.w.lots[li].project = p.id;
   sim.projects.push(p);
+  meloraOnSubmit(sim, p);
   const item = sim.news(`${name} goes to a public hearing`, `${PROGRAMS[prog].label}: ${o.homes ? o.homes + ' homes, ' : ''}${o.storefronts ? o.storefronts + ' storefronts, ' : ''}${o.jobs ? o.jobs + ' jobs, ' : ''}on ${site.ids.length} parcels. The Planning Board hears it in two months.`, 'big');
   react(sim, 'project-proposed', { name, street: streetName(sim, site), floors: t.floors || '' }, item, 3);
   return { project: p };
@@ -280,6 +283,7 @@ export function projectsMonthly(sim) {
 }
 
 function hearing(sim, p) {
+  if (meloraAtHearing(sim, p)) return; // continued, or the developer walked
   const site = { ...p.site, ids: p.ids, cx: p.cx, cy: p.cy };
   const score = hearingScore(sim, site, p.prog, p.t, p.o) - (p.melPenalty || 0);
   const pr = hearingOdds(score);
@@ -307,6 +311,7 @@ function hearing(sim, p) {
   } else {
     p.stage = 'denied';
     for (const li of p.ids) sim.w.lots[li].project = null;
+    meloraAfterVote(sim, p, false);
     const item = sim.news(`${p.name} denied`, `The Board voted it down. ${p.prog === 'mega' || p.prog === 'lab' ? 'The developer says it will "explore other communities."' : 'Back to the drawing board.'}`, 'big');
     react(sim, 'project-denied', { name: p.name }, item, 2);
   }
@@ -317,6 +322,7 @@ function startBuild(sim, p, conditions) {
   p.stage = 'build';
   p.start = sim.t;
   p.at = sim.t + p.o.months;
+  meloraAfterVote(sim, p, true); // may add an appeal's months to p.at
   if (p.o.cityCost > 0) {
     if (sim.funds >= p.o.cityCost) sim.funds -= p.o.cityCost;
     else sim.apply({ bond: { amount: p.o.cityCost, label: `${p.name} (#${p.id})`, years: 20 } });

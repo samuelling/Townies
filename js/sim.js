@@ -16,6 +16,7 @@ import { initStorefronts, storefrontsMonthly, policyApproval } from './storefron
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
+import { meloraMonthly, meloraOnEdit } from './melora.js';
 import { initAssumptions, A as assumeA } from './assumptions.js';
 import { junctionFactors, squareCtl } from './junctions.js';
 import { buildInput, assignCore, fitToCounts, TP } from './traffic.js';
@@ -896,6 +897,7 @@ export class Sim {
     this.storefrontNews(storefrontsMonthly(this));
     computeStreetLife(this);
     techMonthly(this);
+    meloraMonthly(this);
     valeMonthly(this);
     eggMonthly(this);
     weatherMonthly(this);
@@ -981,6 +983,7 @@ export class Sim {
       lot.occ += (target - lot.occ) * 0.12;
       if ((was < 0.3) !== (lot.occ < 0.3)) for (const id of lot.bldgs) this.hooks.invalidateBuilding && this.hooks.invalidateBuilding(w.bldgs[id]);
       if (lot.locked) continue; // finished projects keep their buildings; occupancy still responds
+      if (lot.stay > this.t) continue; // on hold: an appeal or a demolition-delay review
       const hasB = lot.bldgs.some((id) => w.bldgs[id].alive);
       const cap = lot.dense ? 4 : 2;
       let target2 = 0, why = 'vacant';
@@ -998,7 +1001,7 @@ export class Sim {
     // is for land the market has passed over for years: parking lots, side yards, odd remnants)
     for (const id of this.rLots || []) {
       const lot = w.lots[id];
-      if (!lot || lot.dead || lot.under || lot.project || lot.locked) continue;
+      if (!lot || lot.dead || lot.under || lot.project || lot.locked || lot.stay > this.t) continue;
       if (lot.bldgs.some((b) => w.bldgs[b].alive)) { delete lot.ready; continue; }
       if (lot.road < 0 || this.marketBuild === false) continue;
       const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
@@ -1053,6 +1056,7 @@ export class Sim {
   // what the lot inspector says about an empty zoned lot
   readyNote(lot) {
     if (!lot || lot.dead || lot.ready == null || lot.bldgs.some((b) => this.w.bldgs[b].alive)) return '';
+    if (lot.stay > this.t) return `On hold for ${lot.stay - this.t} more month${lot.stay - this.t === 1 ? '' : 's'}: Melora's appeal has to run its course.`;
     if (lot.road < 0) return 'Zoned, but no road reaches it: builders need street access.';
     const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
     const p = this.readyOdds(lot, key);
@@ -1580,6 +1584,7 @@ export class Sim {
             for (const s of w.services) if (s.real && s.lot === li) s.alive = 0;
             computeLotMetrics(w, lot, false);
             if (lot.zone === ZONE.R || lot.zone === ZONE.C || lot.zone === ZONE.I) lot.ready = this.t;
+            (p.edited = p.edited || []).push(lot);
             touched.push(...lot.tiles);
           } else if (li < 0) touched.push(...demolish(w, bldgs[w.bAt[i]]));
         } else if (road[i]) {
@@ -1612,6 +1617,7 @@ export class Sim {
         // empty land the player zones is shovel-ready (see growth())
         if (zone !== ZONE.NONE && !lot.bldgs.some((id) => bldgs[id].alive)) lot.ready = this.t;
         else delete lot.ready;
+        (p.edited = p.edited || []).push(lot);
         touched.push(...lot.tiles);
       }
       // carve new 2x2 lots from bare land
@@ -1653,6 +1659,7 @@ export class Sim {
       react(this, 'service-built', { what: SERVICES[p.tool].label.toLowerCase() }, item);
     }
     this.funds -= p.cost;
+    if (p.edited) { meloraOnEdit(this, p.tool, p.edited); p.edited = null; }
     this.recalc();
     this.computeAll();
     this.hooks.invalidateTiles && this.hooks.invalidateTiles(touched);

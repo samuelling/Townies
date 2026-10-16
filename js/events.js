@@ -4,7 +4,7 @@ import { ZONE } from './config.js';
 import { fmtMoney } from './util.js';
 import { FACTIONS } from './sim.js';
 import { TECH_SCENARIOS } from './tech.js';
-import { meloraRecords } from './melora.js';
+import { MELORA_SCENARIOS, meloraRecords } from './melora.js';
 import { BEAT_SCENARIOS } from './beats.js';
 import { VALE_SCENARIOS, VALE_FOLLOWUPS } from './rival.js';
 import { TRANSIT_SCENARIOS } from './transit.js';
@@ -510,6 +510,7 @@ export const SCENARIOS = [
     ],
   },
   ...TECH_SCENARIOS,
+  ...MELORA_SCENARIOS,
   ...BEAT_SCENARIOS,
   ...VALE_SCENARIOS,
   ...TRANSIT_SCENARIOS,

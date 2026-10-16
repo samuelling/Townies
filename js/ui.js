@@ -620,6 +620,7 @@ export class UI {
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
         if (s.readyNote && s.readyNote(lot)) add(row('Note', s.readyNote(lot)));
+        else if (lot.stay > s.t) add(row('Note', `On hold for ${lot.stay - s.t} more month${lot.stay - s.t === 1 ? '' : 's'}: Melora's appeal.`));
         if (lot.evClosed) add(row('Note', 'Closed: electric cars took the business. A redevelopment site waiting to happen.'));
         if (lot.evHub) add(row('Note', '⚡ Former gas station, now an EV charging hub'));
         if (lot.reconstructed) add(row('Note', `Reconstructed for ${s.y0}: the real building here dates from ${lot.reconstructed}. What stood here before is approximated${lot.hist === 'mall' ? ' (the Arsenal Mall era)' : lot.hist ? ` (${lot.hist === 'auto' ? 'an auto shop' : lot.hist === 'parking' ? 'a parking lot' : 'light industry'})` : ''}.`));
