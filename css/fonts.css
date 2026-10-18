@@ -1,0 +1,5 @@
+/* Silkscreen (Jason Kottke) and VT323 (Peter Hull), SIL Open Font License 1.1 (fonts/OFL-*.txt).
+   Bundled so the game, and the iOS app, work offline. */
+@font-face { font-family: Silkscreen; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/silkscreen-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: Silkscreen; font-style: normal; font-weight: 700; font-display: swap; src: url(../fonts/silkscreen-latin-700-normal.woff2) format('woff2'); }
+@font-face { font-family: VT323; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/vt323-latin-400-normal.woff2) format('woff2'); }

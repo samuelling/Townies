@@ -297,6 +297,11 @@ export class UI {
   }
   searchBox() {
     const inp = el('input', { type: 'search', class: 'search', placeholder: '🔍 Street, address, place  (/)', autocomplete: 'off', spellcheck: 'false' });
+    const narrow = () => (inp.placeholder = window.matchMedia('(max-width: 700px)').matches ? '🔍' : '🔍 Street, address, place  (/)');
+    narrow();
+    window.addEventListener('resize', narrow);
+    inp.addEventListener('focus', () => { if (window.matchMedia('(max-width: 700px)').matches) inp.placeholder = '🔍 Street, address, place'; });
+    inp.addEventListener('blur', narrow);
     const list = el('div', { class: 'search-list' });
     const wrap = el('div', { class: 'search-wrap' }, inp, list);
     this.searchIn = inp;
@@ -371,6 +376,8 @@ export class UI {
     this.speedBtn.textContent = SPEEDS[v][1];
     this.speedBtn.title = `Speed: ${SPEEDS[v][0]}${SPEEDS[v][3] ? ' (day and night)' : ''}. Click for the next speed; Shift-click for the previous one.`;
     if (!cycles(v) && !(v === 0 && cycles(this.g.lastSpeed)) && this.sClock) this.sClock.textContent = '';
+    // in the iOS app, keep the screen awake at the slow day-and-night speeds (it's a screensaver there)
+    try { window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.townies && window.webkit.messageHandlers.townies.postMessage({ keepAwake: cycles(v) || (v === 0 && cycles(this.g.lastSpeed)) }); } catch (e) { /* not in the app */ }
     this.r.needs = true;
   }
   cycleSpeed(d = 1) {

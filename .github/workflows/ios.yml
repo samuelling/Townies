@@ -1,0 +1,31 @@
+name: iOS build
+
+# Compile-check the iPhone/iPad app (unsigned) whenever the app or the game changes.
+on:
+  push:
+    paths: ['ios/**', 'js/**', 'css/**', 'index.html', 'fonts/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Townies for iPhone and iPad
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Townies.xcodeproj -target Townies -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD|Bundled" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Check the game is inside the app
+        run: |
+          APP=$(find ios/build -name Townies.app -type d | head -1)
+          ls "$APP/Web" "$APP/Web/js" | head -40
+          test -f "$APP/Web/index.html" && test -f "$APP/Web/data/watertown.json.gz" && test -f "$APP/Web/fonts/vt323-latin-400-normal.woff2"
+      - name: Surface warnings and errors as annotations
+        if: always()
+        run: |
+          grep -E "^/.*\.swift:[0-9]+:[0-9]+: (warning|error):" build.log | sort -u | head -40 | \
+            sed -E 's#^.*/(ios/Townies)/([^:]+):([0-9]+):[0-9]+: (warning|error): (.*)$#::\4 file=\1/\2,line=\3::\5#' || true

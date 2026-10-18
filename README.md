@@ -22,10 +22,23 @@ On phones: one finger uses the tool, two fingers pan and pinch.
 
 Music is generated live in the browser.
 
+## iPhone and iPad
+`ios/` is a native app that runs the same game offline, full screen, on iPhone and iPad. The game's files are copied into the app when it builds and served to a web view from a tiny server inside the app (`ios/Townies/LocalServer.swift`), so saves, music and sound work exactly as on the web. The app also keeps the screen awake at the slow, day-and-night speeds. A GitHub Action compile-checks it on every change.
+
+To install it, you need a Mac with Xcode 16 or newer:
+
+1. Open `ios/Townies.xcodeproj`.
+2. Click the blue **Townies** project icon, then **Signing & Capabilities**, then **Team**, and pick your team. The bundle ID is `com.samuelling.townies`.
+3. Choose an iPhone or iPad in the device menu and press **▶ Run**. For TestFlight, use **Product › Archive**, then **Distribute App**.
+
+`ios/tools/make_icon.py` draws the app icon.
+
 ## License & credits
 Townies is an original, non-commercial fan and art project inspired by SimCity 2000. It is not affiliated with or endorsed by Maxis or Electronic Arts. "SimCity" and "Sim" are trademarks of Electronic Arts.
 
 The code, the pixel-art rendering and the generated music are original to this project. The commenters are invented archetypes, and the Council agenda items are fictionalised paraphrases of recurring local storylines; none of them depicts a real person.
+
+Fonts: [Silkscreen](https://github.com/googlefonts/silkscreen) and [VT323](https://github.com/googlefonts/vt323), SIL Open Font License 1.1, bundled in `fonts/`.
 
 Real data, with thanks:
 

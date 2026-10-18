@@ -422,3 +422,33 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .si-icon { width: 18px; flex: none; }
 .search-none { padding: 6px 8px; color: #666; }
 @media (max-width: 700px) { .search { width: 110px; } .search-list { width: 260px; } }
+
+/* touch screens, notches and short phone landscapes (also what the iOS app sees) */
+#app { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+#toolhint { bottom: max(8px, env(safe-area-inset-bottom)); }
+@media (pointer: coarse) and (min-width: 701px) {
+  #toolbar { grid-template-columns: repeat(2, 44px); grid-auto-rows: 44px; }
+  .tool { width: 44px; height: 44px; }
+  .mlabel { padding: 6px 10px; }
+  .dropdown button { padding: 9px 12px; }
+}
+@media (max-height: 500px) and (min-width: 701px) {
+  #menubar { padding-top: max(1px, env(safe-area-inset-top)); }
+  .mlabel { padding: 3px 7px; }
+  #statusbar { padding: 1px 6px; font-size: 11px; }
+  .srow { gap: 8px; }
+  .rci { width: 40px; height: 28px; }
+  .ticker { padding: 2px 6px; }
+  #toolbar { grid-template-columns: repeat(2, 36px); grid-auto-rows: 36px; padding: 2px; }
+  .tool { width: 36px; height: 36px; padding: 4px; }
+  .tsep { height: 2px; }
+  .wbody { max-height: 62vh; }
+}
+@media (max-width: 700px) {
+  .logo { display: none; }
+  .srow { flex-wrap: wrap; row-gap: 2px; }
+  /* search shrinks to a magnifier and opens across the bar when tapped */
+  .search { width: 34px; padding: 2px 4px; }
+  .search:focus { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 4px); width: auto; z-index: 1001; font-size: 16px; }
+  .search-list { position: fixed; left: 8px; right: 8px; width: auto; top: calc(env(safe-area-inset-top) + 40px); }
+}
