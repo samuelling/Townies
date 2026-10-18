@@ -206,7 +206,7 @@ function boot(state, scen = null) {
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
   game.renderer.resize();
   if (tutorial) game.ui.startTutorial();
-  else if (!state) setTimeout(() => game.ui.newsWindow(), 600);
+  else if (!state && !params.has('nonews')) setTimeout(() => game.ui.newsWindow(), 600);
   requestAnimationFrame(frame);
 }
 

@@ -60,7 +60,7 @@ jobs:
             sleep 30
             xcrun simctl io "$UDID" screenshot "shots/${tag}-title.png"
             xcrun simctl terminate "$UDID" com.samuelling.townies
-            xcrun simctl launch "$UDID" com.samuelling.townies -TowniesQuery "auto=live&speed=0"
+            xcrun simctl launch "$UDID" com.samuelling.townies -TowniesQuery "auto=live&speed=0&nonews=1"
             sleep 60
             xcrun simctl io "$UDID" screenshot "shots/${tag}-game.png"
             xcrun simctl ui "$UDID" appearance dark || true
