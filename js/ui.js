@@ -523,7 +523,9 @@ export class UI {
     document.getElementById('windows').append(node);
     const n = this.wins.size;
     if (window.innerWidth > 700) {
-      node.style.left = `${opts.x ?? 80 + n * 28}px`;
+      const tb = document.getElementById('toolbar');
+      const left0 = tb ? Math.round(tb.getBoundingClientRect().right) + 12 : 80; // clear of the tool column
+      node.style.left = `${opts.x ?? left0 + n * 28}px`;
       node.style.top = `${opts.y ?? 70 + n * 24}px`;
     }
     w = { el: node, body, refresh: () => { body.innerHTML = ''; build(body); } };
