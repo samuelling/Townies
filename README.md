@@ -1,6 +1,6 @@
 # Townies
 
-A SimCity 2000–style city sim set in the real Watertown, Massachusetts. You're the new City Manager.
+An isometric city sim set in the real Watertown, Massachusetts. You're the new City Manager.
 
 **Play:** https://samuelling.github.io/Townies/
 
@@ -34,7 +34,7 @@ To install it, you need a Mac with Xcode 16 or newer:
 `ios/tools/make_icon.py` renders the app icon from `ios/tools/icon.html`: the splash-screen title across a water tile.
 
 ## License & credits
-Townies is an original, non-commercial fan and art project inspired by SimCity 2000. It is not affiliated with or endorsed by Maxis or Electronic Arts. "SimCity" and "Sim" are trademarks of Electronic Arts.
+Townies is an original, non-commercial art project.
 
 The code, the pixel-art rendering and the generated music are original to this project. The commenters are invented archetypes, and the Council agenda items are fictionalised paraphrases of recurring local storylines; none of them depicts a real person.
 

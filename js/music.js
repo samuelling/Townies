@@ -2,7 +2,7 @@
 // Everything is drawn from one major key at a time: a slow diatonic chord progression (pads + bass)
 // and a sparse Turing-machine melody on the key's pentatonic scale, snapped to chord tones on the
 // beat, so nothing ever clashes. Keys only move by a fourth or fifth (sharing most notes), with the
-// echoes ducked at the change. Soft drums drift in for some sections only. Plus SC2000-ish UI blips.
+// echoes ducked at the change. Soft drums drift in for some sections only. Plus UI blips.
 import * as FX from './sfx.js';
 const BPM = 88;
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];

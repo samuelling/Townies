@@ -1,4 +1,4 @@
-// SimCity-2000-style isometric renderer with chunk caching.
+// Isometric pixel-art renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
 import { weatherFoot, WF_AVG } from './weather.js';
 import { ROUTES, routeLines } from './transit.js';
@@ -433,7 +433,7 @@ export class Renderer {
             g.lineWidth = Math.max(0.7, 0.8 * L);
             g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
           } else if (kind >= 11) {
-            // SC2000-style zoned-but-empty land
+            // zoned-but-empty land
             const zc = ZONE_RGB[kind - 10];
             const pts = [[x + 0.15, y + 0.15], [x + 0.85, y + 0.15], [x + 0.85, y + 0.85], [x + 0.15, y + 0.85]];
             g.beginPath();

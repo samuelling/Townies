@@ -22,7 +22,7 @@ export const CHAPTERS = [
   {
     id: 'why', title: 'Why this game',
     build: (g) => [
-      el('p', { class: 'lead' }, 'SimCity starts in an empty field. Watertown isn’t one.'),
+      el('p', { class: 'lead' }, 'Most city builders start in an empty field. Watertown isn’t one.'),
       P('It is four square miles built out generations ago, wedged between Boston, Cambridge, Newton and Waltham. In a place like this, the interesting decisions aren’t where to lay the first road. They’re about what an already-built town lets itself turn into.'),
       P('Townies starts from an opinion, held by the Watertown resident who made it. Decades of planning and zoning decisions left the town with a glut of auto shops, car lots and parking where a main street could be, and very little good retail space. Today, most of what gets built is the big developer project in the ', I('Arsenal Yards'), ' mold: new, shiny and lucrative, but light on character.'),
       P('So the core problem is balance. You need enough growth to pay the bills and house people, but you can’t let developers set the terms. And you have to bring back ', B('vibrancy'), ': streets people actually walk, lined with the shops that make a place feel like itself, like coffee shops, bookstores, boutiques and galleries.'),
@@ -219,7 +219,7 @@ export const CHAPTERS = [
   {
     id: 'proj', title: 'Projects & hearings',
     build: () => [
-      P('SimCity’s joy is building. With Watertown already built, building means ', B('redevelopment'), ': pick parcels, choose a program, and take it to the Planning Board.'),
+      P('The joy of a city builder is building. With Watertown already built, building means ', B('redevelopment'), ': pick parcels, choose a program, and take it to the Planning Board.'),
       LIST(
         [B('Developer megaproject'), ': apartments over chain retail and a garage. The developer pays and the tax base jumps, but there’s little character.'],
         [B('Main Street infill'), ': the City buys the land and sells it lot by lot to small builders under design rules. It costs you the gap between purchase and resale, and makes streets people walk.'],

@@ -7,7 +7,7 @@ export const CFG = {
   TILE_M: 16, // metres per tile edge (true scale)
   MARGIN_M: 450, // neighbouring-town margin kept around the town line
   CHUNK: 16, // tiles per render chunk edge
-  HS: 1.15, // screen px per metre of height at zoom 1 (slight SC2000 exaggeration)
+  HS: 1.15, // screen px per metre of height at zoom 1 (a slight exaggeration, for the look)
   FLOOR_M: 3.3,
   OVERPASS: [
     'https://overpass-api.de/api/interpreter',
@@ -35,7 +35,7 @@ export const ROAD_NAME = ['', 'Street', 'Collector', 'Arterial'];
 
 // Civic facilities you can place.
 //  - `radius` + `fund` key  -> emergency coverage (police / fire / school), handled in sim.computeMaps.
-//  - `effect` -> a "special structure": a one-off civic amenity (SimCity rewards). Fields:
+//  - `effect` -> a "special structure": a one-off civic amenity (a reward-style building). Fields:
 //      lvRadius / lvAmt   land-value halo (grid tiles, strength) around the building
 //      approval { faction|all: points }   standing approval offset while it stands & is funded
 //      upkeep             annual operating cost added to the budget as a recurring line

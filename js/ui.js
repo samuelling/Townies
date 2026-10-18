@@ -1,4 +1,4 @@
-// SimCity-2000-flavoured interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
+// The interface: menubar, toolbar, status bar, windows, agenda dialogs, input.
 import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
 import { beginDecision, endDecision } from './chance.js';
 import { PATTERNS, patternsNow } from './patterns.js';
@@ -83,7 +83,7 @@ const TOOLS = [
   { id: 'hospital', label: 'Hospital', key: '', tip: 'Tap to place a 5×5 hospital ($60M). Big land-value & approval boost; high upkeep.' },
   { id: 'stadium', label: 'Stadium', key: '', tip: 'Tap to place a 7×7 stadium ($120M). Civic pride & business — commuters grumble about traffic.' },
 ];
-// SC2000-style grouped tools: one toolbar button opens a flyout of its members.
+// Grouped tools: one toolbar button opens a flyout of its members.
 const GROUPS = [
   { id: 'roads', label: 'Roads', members: ['road', 'curve', 'junction'] },
   { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneI', 'dezone'] },
