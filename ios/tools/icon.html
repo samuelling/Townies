@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- The Townies app icon: the splash-screen title over four ground tiles (water, grass, road, building).
+     Rendered to PNG by ios/tools/make_icon.py with a headless browser, so the title uses the game's own font and style. -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../css/fonts.css">
+<style>
+  html, body { margin: 0; width: 1024px; height: 1024px; overflow: hidden; background: #000; }
+  canvas { position: absolute; inset: 0; }
+  .tlogo { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-58%); text-align: center;
+    font-family: Silkscreen, monospace; font-weight: 700; font-size: 150px; letter-spacing: 5px; line-height: 1;
+    color: #ffe680; text-shadow: 10px 10px 0 #b5462a, 20px 20px 0 #2b2b6e; }
+</style></head>
+<body>
+<canvas id="c" width="1024" height="1024"></canvas>
+<div class="tlogo">TOWNIES</div>
+<script>
+const g = document.getElementById('c').getContext('2d');
+const S = 512, px = 16; // a chunky pixel grid, like the game's tiles up close
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const rect = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+
+// water (top left): the game's blue with light ripples
+rect(0, 0, S, S, '#2c64b4');
+for (let y = 0; y < S; y += px) for (let x = 0; x < S; x += px) if (rnd() < 0.18) rect(x, y, px, px, rnd() < 0.5 ? '#3772c4' : '#2659a3');
+for (let k = 0; k < 14; k++) { const x = Math.floor(rnd() * 26) * px, y = Math.floor(rnd() * 30) * px; rect(x, y, px * (2 + Math.floor(rnd() * 3)), px / 2, '#8fc0ff'); }
+
+// grass (top right): green with darker tufts and a couple of trees
+rect(S, 0, S, S, '#5e9134');
+for (let y = 0; y < S; y += px) for (let x = S; x < 2 * S; x += px) if (rnd() < 0.2) rect(x, y, px, px, rnd() < 0.5 ? '#6fa13e' : '#4f8a2c');
+for (const [tx, ty] of [[S + 110, 120], [S + 370, 90], [S + 250, 300], [S + 420, 400]]) {
+  rect(tx + 24, ty + 64, 16, 40, '#5a3f26');
+  g.fillStyle = '#2e6b28'; g.beginPath(); g.arc(tx + 32, ty + 52, 52, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#4f9a35'; g.beginPath(); g.arc(tx + 16, ty + 36, 22, 0, Math.PI * 2); g.fill();
+}
+
+// road (bottom left): asphalt, curbs, a dashed yellow centre line
+rect(0, S, S, S, '#5c5b58');
+rect(0, S, S, 72, '#8f8d86'); rect(0, 2 * S - 72, S, 72, '#8f8d86');
+rect(0, S + 72, S, 10, '#3e3d3b'); rect(0, 2 * S - 82, S, 10, '#3e3d3b');
+for (let x = 16; x < S; x += 128) rect(x, S + S / 2 - 10, 80, 20, '#f2c200');
+for (let y = S + 90; y < 2 * S - 90; y += px) for (let x = 0; x < S; x += px) if (rnd() < 0.08) rect(x, y, px, px, '#545350');
+
+// building (bottom right): a brick block from above, roof and windows
+rect(S, S, S, S, '#a49d8a');
+rect(S + 48, S + 48, S - 96, S - 96, '#9c4a32');
+rect(S + 72, S + 72, S - 144, S - 144, '#7f7d78');
+for (let y = S + 96; y < 2 * S - 110; y += 64) for (let x = S + 96; x < 2 * S - 110; x += 64) rect(x, y, 32, 32, rnd() < 0.5 ? '#c9d6e6' : '#8fa6c2');
+rect(S + 300, S + 300, 96, 70, '#b9b9b4'); rect(S + 312, S + 312, 72, 46, '#9a9a96');
+
+// a hairline where the four tiles meet
+g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(S - 3, 0, 6, 1024); g.fillRect(0, S - 3, 1024, 6);
+document.fonts.ready.then(() => { document.body.dataset.ready = '1'; });
+</script>
+</body></html>

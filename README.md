@@ -31,7 +31,7 @@ To install it, you need a Mac with Xcode 16 or newer:
 2. Click the blue **Townies** project icon, then **Signing & Capabilities**, then **Team**, and pick your team. The bundle ID is `com.samuelling.townies`.
 3. Choose an iPhone or iPad in the device menu and press **▶ Run**. For TestFlight, use **Product › Archive**, then **Distribute App**.
 
-`ios/tools/make_icon.py` draws the app icon.
+`ios/tools/make_icon.py` renders the app icon from `ios/tools/icon.html`: the splash-screen title over four ground tiles.
 
 ## License & credits
 Townies is an original, non-commercial fan and art project inspired by SimCity 2000. It is not affiliated with or endorsed by Maxis or Electronic Arts. "SimCity" and "Sim" are trademarks of Electronic Arts.
