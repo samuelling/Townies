@@ -6,8 +6,9 @@ import WebKit
 /// uses to ask for the screen to stay awake (at the slow, day-and-night speeds).
 struct GameWebView: UIViewRepresentable {
     let url: URL
+    let bridge: GameBridge
 
-    func makeCoordinator() -> Coordinator { Coordinator(home: url) }
+    func makeCoordinator() -> Coordinator { Coordinator(home: url, bridge: bridge) }
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -34,6 +35,7 @@ struct GameWebView: UIViewRepresentable {
         if #available(iOS 16.4, *) { wv.isInspectable = true } // Safari › Develop on a Mac
         #endif
         context.coordinator.webView = wv
+        bridge.webView = wv
         wv.load(URLRequest(url: url))
         return wv
     }
@@ -42,8 +44,14 @@ struct GameWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let home: URL
+        let bridge: GameBridge
         weak var webView: WKWebView?
-        init(home: URL) { self.home = home }
+        init(home: URL, bridge: GameBridge) { self.home = home; self.bridge = bridge }
+
+        // the title screen and restarts show the page full screen until the game sends its setup again
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            bridge.reset()
+        }
 
         // the game's own pages load here; anything else (credits, sources) opens in Safari
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -66,10 +74,12 @@ struct GameWebView: UIViewRepresentable {
 
         // if the web content process is killed in the background, reload rather than show a blank page
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            bridge.reset()
             webView.load(URLRequest(url: home))
         }
 
         func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+            if let json = message.body as? String { bridge.receive(json); return } // js/native.js
             guard let body = message.body as? [String: Any] else { return }
             if let awake = body["keepAwake"] as? Bool {
                 UIApplication.shared.isIdleTimerDisabled = awake

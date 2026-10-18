@@ -30,8 +30,7 @@ struct TowniesApp: App {
             ZStack {
                 Color.black.ignoresSafeArea()
                 if server.ready {
-                    GameWebView(url: startURL)
-                        .ignoresSafeArea()
+                    GameScreen(url: startURL)
                 } else if let err = server.error {
                     Text("Townies couldn't start its local server.\n\(err)")
                         .foregroundStyle(.white)

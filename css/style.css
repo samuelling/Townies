@@ -452,3 +452,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .search:focus { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 4px); width: auto; z-index: 1001; font-size: 16px; }
   .search-list { position: fixed; left: 8px; right: 8px; width: auto; top: calc(env(safe-area-inset-top) + 40px); }
 }
+
+/* iOS app: the menu bar, status bar and toolbar are native (js/native.js); web windows look like iOS sheets */
+.native-chrome #menubar, .native-chrome #statusbar, .native-chrome #toolbar, .native-chrome .apprchip { display: none !important; }
+.native-chrome body, .native-chrome .win, .native-chrome .wbody { font-family: -apple-system, system-ui, sans-serif; }
+.native-chrome .win { border: 0; border-radius: 14px; background: #f2f2f7; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.native-chrome .wbar { background: #f2f2f7; height: 34px; border-bottom: 1px solid #d1d1d6; cursor: default; }
+.native-chrome .wbar span { background: none; font-weight: 600; font-size: 15px; }
+.native-chrome .wclose { border: 0; background: #e3e3e8; border-radius: 50%; width: 24px; height: 24px; line-height: 22px; font-size: 16px; color: #555; }
+.native-chrome .choice { border: 0; border-radius: 10px; background: #fff; padding: 9px 12px; }
+.native-chrome .choice:active { background: #e5e5ea; }
+@media (max-width: 700px) { .native-chrome .win, .native-chrome .win.wide { border-radius: 14px 14px 0 0; } }

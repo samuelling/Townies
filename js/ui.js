@@ -8,6 +8,7 @@ import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
 import { canStepInside, openHome } from './home.js';
 import { buildIndex, search } from './search.js';
+import { NATIVE, NATIVE_SHEETS, initNative, hud as nativeHud, nativeSheet, nativeModal, nativeModalClosed, post as nativePost } from './native.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { SPEEDS, DEFAULT_SPEED, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
@@ -110,6 +111,7 @@ export class UI {
     this.modal = null;
     this.build();
     this.bindInput();
+    if (NATIVE) initNative(this, { ICON, TOOLS, GROUPS, TOOL_NOTE, OVERLAYS });
   }
   get sim() { return this.g.sim; }
   get w() { return this.g.world; }
@@ -138,6 +140,7 @@ export class UI {
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Sound effects on/off', () => { const on = this.g.music.toggleSfx(); this.toast(on ? 'Sound effects on' : 'Sound effects off'); if (on) this.g.music.sfx('drill'); }], ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
     const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    this.menuDefs = { file: fileItems, windows: winItems, help: helpItems };
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]).concat(['-', ['Street names on/off (N)', () => this.setNames(!this.r.showNames)]]);
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
@@ -267,6 +270,7 @@ export class UI {
     this.r && (this.r.preview = null);
     this.updateHint();
     this.g.music && this.g.music.sfx('click');
+    nativeHud();
   }
   updateHint(extra) {
     const t = TOOLS.find((x) => x.id === this.tool);
@@ -287,6 +291,7 @@ export class UI {
     this.refreshLegend();
     const mw = this.wins.get('map');
     if (mw) mw.refresh();
+    nativeHud();
   }
   // ---------------- street names and search ----------------
   setNames(on) {
@@ -294,6 +299,7 @@ export class UI {
     this.r.needs = true;
     try { localStorage.setItem('townies-names', on ? '1' : '0'); } catch (e) { /* storage off */ }
     this.toast(on ? 'Street names on (N to hide)' : 'Street names off');
+    nativeHud();
   }
   searchBox() {
     const inp = el('input', { type: 'search', class: 'search', placeholder: '🔍 Street, address, place  (/)', autocomplete: 'off', spellcheck: 'false' });
@@ -379,6 +385,7 @@ export class UI {
     // in the iOS app, keep the screen awake at the slow day-and-night speeds (it's a screensaver there)
     try { window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.townies && window.webkit.messageHandlers.townies.postMessage({ keepAwake: cycles(v) || (v === 0 && cycles(this.g.lastSpeed)) }); } catch (e) { /* not in the app */ }
     this.r.needs = true;
+    nativeHud();
   }
   cycleSpeed(d = 1) {
     this.setSpeed((this.g.speed + d + SPEEDS.length) % SPEEDS.length);
@@ -387,17 +394,19 @@ export class UI {
   refreshClock(hour, day) {
     if (!this.sClock) return;
     const txt = clock(hour);
-    if (txt !== this.sClockTxt) { this.sClockTxt = txt; this.sClock.textContent = `${sunHeight(hour, this.sim.m) > 0 ? '☀' : '☾'} ${txt}`; this.sClock.title = `Day ${day} of the month, ${txt}`; }
+    if (txt !== this.sClockTxt) { this.sClockTxt = txt; nativeHud(); this.sClock.textContent = `${sunHeight(hour, this.sim.m) > 0 ? '☀' : '☾'} ${txt}`; this.sClock.title = `Day ${day} of the month, ${txt}`; }
   }
   async toggleMusic() {
     const on = await this.g.music.toggle();
     this.musicBtn.classList.toggle('muted', !on);
     try { localStorage.setItem('townies-music', on ? '1' : '0'); } catch (e) {}
+    nativeHud();
   }
 
   // a small chip under the Approval readout: who moved, by how much, and the main reason
   approvalNote(moves, why) {
     if (!moves || !moves.length || !this.sAppr) return;
+    if (NATIVE) return nativePost('approval', { moves: moves.map(([f, d]) => ({ label: FACTION_LABEL[f], d: Math.round(d) })), why: why || '' });
     if (!this.apprChip) {
       this.apprChip = el('div', { class: 'apprchip', onclick: () => this.councilWindow() });
       document.body.append(this.apprChip);
@@ -444,6 +453,7 @@ export class UI {
     this.refreshIncidents();
     const n = s.newsLog[0];
     if (n && this.tickerMode !== 'c') this.ticker.textContent = `📰 ${n.title}`;
+    nativeHud();
   }
 
   refreshIncidents() {
@@ -502,6 +512,7 @@ export class UI {
     });
   }
   toast(msg, ms = 1600) {
+    if (NATIVE) return nativePost('toast', { msg: String(msg), ms });
     const t = el('div', { class: 'toast' }, msg);
     document.body.append(t);
     setTimeout(() => t.classList.add('out'), ms);
@@ -510,6 +521,13 @@ export class UI {
 
   // ---------------- windows ----------------
   win(id, title, build, opts = {}) {
+    if (NATIVE && NATIVE_SHEETS.has(id)) {
+      // a native sheet in the iOS app; refreshes resend it
+      const nw = { el: document.createElement('div'), body: null, refresh: () => nativeSheet(id, title, build) };
+      this.wins.set(id, nw);
+      nw.refresh();
+      return nw;
+    }
     let w = this.wins.get(id);
     if (w) {
       w.el.style.zIndex = ++this.z;
@@ -945,6 +963,7 @@ export class UI {
   }
 
   refreshHud() {
+    nativeHud();
     const s = this.sim;
     if (!s || !this.hud) return;
     const sc = s.scenario;
@@ -1065,6 +1084,7 @@ export class UI {
             const t = reportText(rc);
             const btn = e.currentTarget;
             const done = () => { btn.querySelector('b').textContent = 'Copied'; this.toast('Summary copied'); };
+            if (NATIVE) return nativePost('share', { text: t }); // the iOS share sheet
             try { navigator.clipboard.writeText(t).then(done, () => this.toast('Copy failed: select the text instead')); } catch (er) { this.toast('Copy not available here'); }
           } }, el('b', {}, 'Copy summary'), el('small', {}, 'as text, to paste anywhere'))));
     }, { cls: 'wide' });
@@ -1377,6 +1397,11 @@ export class UI {
   }
   showModal(box) {
     this.closeModal();
+    if (NATIVE) {
+      nativeModal(box);
+      this.modal = { remove: () => nativeModalClosed() };
+      return;
+    }
     const back = el('div', { class: 'backdrop' }, box);
     document.body.append(back);
     this.modal = back;
@@ -1551,6 +1576,7 @@ export class UI {
     if (!this.undoBtn || !this.sim) return;
     const e = this.sim.canUndo();
     this.undoBtn.classList.toggle('disabled', !e);
+    nativeHud();
     this.undoBtn.title = e ? `Undo: ${e.label} (Ctrl/⌘+Z)` : 'Nothing to undo. Map edits can be undone until the end of next month.';
   }
 
