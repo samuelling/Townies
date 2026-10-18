@@ -1,18 +1,18 @@
 <!doctype html>
-<!-- The Townies app icon: the splash-screen title, TOWN over IES, on a water tile.
+<!-- The Townies app icon: the splash-screen title across a water tile.
      Rendered to PNG by ios/tools/make_icon.py with a headless browser, so the title uses the game's own font and style. -->
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="../../css/fonts.css">
 <style>
   html, body { margin: 0; width: 1024px; height: 1024px; overflow: hidden; background: #000; }
   canvas { position: absolute; inset: 0; }
-  .tlogo { position: absolute; left: 0; right: 0; top: 50%; transform: translate(-10px, -54%); text-align: center;
-    font-family: Silkscreen, monospace; font-weight: 700; font-size: 250px; letter-spacing: 8px; line-height: 1.02;
-    color: #ffe680; text-shadow: 14px 14px 0 #b5462a, 28px 28px 0 #2b2b6e; }
+  .tlogo { position: absolute; left: 0; right: 0; top: 50%; transform: translate(-8px, -58%); text-align: center;
+    font-family: Silkscreen, monospace; font-weight: 700; font-size: 150px; letter-spacing: 5px; line-height: 1;
+    color: #ffe680; text-shadow: 10px 10px 0 #b5462a, 20px 20px 0 #2b2b6e; }
 </style></head>
 <body>
 <canvas id="c" width="1024" height="1024"></canvas>
-<div class="tlogo">TOWN<br>IES</div>
+<div class="tlogo">TOWNIES</div>
 <script>
 const g = document.getElementById('c').getContext('2d');
 const px = 16; // a chunky pixel grid, like the game's tiles up close
