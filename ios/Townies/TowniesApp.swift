@@ -17,12 +17,20 @@ struct TowniesApp: App {
         LocalServer.shared.start()
     }
 
+    // `-TowniesQuery "auto=live"` as a launch argument (or in Xcode's scheme) jumps past the title
+    // screen, the same as ?auto=live on the web; used for simulator screenshots in CI
+    private var startURL: URL {
+        var c = URLComponents(url: server.baseURL.appendingPathComponent("index.html"), resolvingAgainstBaseURL: false)!
+        if let q = UserDefaults.standard.string(forKey: "TowniesQuery"), !q.isEmpty { c.percentEncodedQuery = q }
+        return c.url!
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {
                 Color.black.ignoresSafeArea()
                 if server.ready {
-                    GameWebView(url: server.baseURL.appendingPathComponent("index.html"))
+                    GameWebView(url: startURL)
                         .ignoresSafeArea()
                 } else if let err = server.error {
                     Text("Townies couldn't start its local server.\n\(err)")
