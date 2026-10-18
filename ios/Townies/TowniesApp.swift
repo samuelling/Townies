@@ -12,8 +12,11 @@ struct TowniesApp: App {
 
     init() {
         // Play along with whatever else is playing, and respect the silent switch, like most games.
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // (off the main thread: activating the session can block for a moment)
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
         LocalServer.shared.start()
     }
 
