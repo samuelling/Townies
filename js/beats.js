@@ -36,6 +36,8 @@ function busyTileNear(s, x, y, r) {
   return best;
 }
 
+// tree names keep their place names: a Norway maple, a Japanese tree lilac
+const PROPER_TREE = /^(London|Alberta|Alleghany|Osage|Okame|Higan|Shubert|Nuttall|Indian|Norway|Japanese|American|Amur|Austrian|Chinese|European|Kentucky|Callery|Bradford|Scots|Colorado|Eastern|Freeman|Kwanzan|Yoshino|Turkish|Persian|Siberian|English|Ohio|Washington|Canadian|Korean|Black Hills|Sargent|Kousa|Cleveland|Chanticleer|Princeton|Accolade|Autumn Blaze|Armstrong|Crimson King|Schwedler|Douglas|Serbian|Carolina|Ginkgo)$/;
 export const BEAT_SCENARIOS = [
   {
     id: 'beat-lease',
@@ -112,6 +114,22 @@ export const BEAT_SCENARIOS = [
     when: (s) => s.t >= 6 && s.w.tree,
     prep: (s) => {
       const { W, tree, road, inTown } = s.w;
+      // a real street tree from the town's inventory: a big one by a street, with its real species
+      const T = s.w.trees;
+      if (T) {
+        for (let k = 0; k < 400; k++) {
+          const j = Math.floor(s.rand() * T.n);
+          if (T.sp[j] < 0 || T.dbh[j] < 20) continue;
+          const i = Math.floor(T.y[j]) * W + Math.floor(T.x[j]);
+          if (!tree[i] || !inTown[i]) continue;
+          const r = [i, i - 1, i + 1, i - W, i + W].find((q) => q >= 0 && q < tree.length && road[q] >= 1);
+          if (r == null) continue;
+          const st = roadNameAt(s, r);
+          if (!st) continue;
+          const name = s.w.treeSpecies[T.sp[j]].name.split(' ').map((x) => (PROPER_TREE.test(x) ? x : x.toLowerCase())).join(' ');
+          return { cx: i % W, cy: (i / W) | 0, tile: i, street: st, kind: name, dbh: T.dbh[j] };
+        }
+      }
       for (let k = 0; k < 400; k++) {
         const i = Math.floor(s.rand() * tree.length);
         if (!tree[i] || !inTown[i]) continue;
@@ -124,7 +142,7 @@ export const BEAT_SCENARIOS = [
       return null;
     },
     title: (s, c) => `The ${c.kind[0].toUpperCase() + c.kind.slice(1)} on ${c.street}`,
-    text: (s, c) => `A ninety-year-old ${c.kind} on ${c.street} has lifted the sidewalk into a ramp. Public Works wants it down before someone trips; the neighbors want it saved and have tied a ribbon around it. The comment section has already weighed in, twice.`,
+    text: (s, c) => `A ${c.dbh ? `${c.dbh}-inch` : 'ninety-year-old'} ${c.kind} on ${c.street} has lifted the sidewalk into a ramp. Public Works wants it down before someone trips; the neighbors want it saved and have tied a ribbon around it. The comment section has already weighed in, twice.`,
     choices: [
       { label: 'Bump the sidewalk around it', fx: '−$35K · the tree stays · Homeowners ↑', run: (s, c) => {
         s.lvNear({ at: [c.cx, c.cy], r: 4, amt: 0.01 });

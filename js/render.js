@@ -639,9 +639,21 @@ export class Renderer {
       const [rx, ry] = this.rxy(b.cx, b.cy);
       objs.push({ d: rx + ry, b });
     }
+    const T = w.trees;
     for (let y = cc.y0; y < cc.y1; y++)
       for (let x = cc.x0; x < cc.x1; x++) {
         const i = y * W + x;
+        if (T && T.start[i + 1] > T.start[i]) {
+          // the trees the lidar found on this tile, unless the tile's been cleared or built over since
+          if (!tree[i] || terrain[i] === 1 || w.svcAt[i] >= 0) continue;
+          const bi = bAt[i];
+          if (bi >= 0 && bldgs[bi] && bldgs[bi].alive && bldgs[bi].proc) continue;
+          for (let k = T.start[i]; k < T.start[i + 1]; k++) {
+            const [rx, ry] = this.rxy(T.x[k], T.y[k]);
+            objs.push({ d: rx + ry, rt: k });
+          }
+          continue;
+        }
         if (!tree[i] || road[i] || terrain[i] === 1 || bAt[i] >= 0 || w.svcAt[i] >= 0) continue;
         const tx = x + 0.25 + 0.5 * hash2(x, y, 61), ty = y + 0.25 + 0.5 * hash2(x, y, 62);
         const [rx, ry] = this.rxy(tx, ty);
@@ -652,13 +664,14 @@ export class Renderer {
     // bounds
     let mnx = cc.mnx, mny = cc.mny, mxx = cc.mxx, mxy = cc.mxy;
     for (const o of objs) {
-      const pts = o.b ? o.b.pts : [[o.t[0], o.t[1]]];
-      const hpx = o.b ? (o.b.h + (o.b.kind === 'church' ? 16 : o.b.kind === 'house' ? 10 : 6)) * HS * L : 12 * HS * L;
+      const pts = o.b ? o.b.pts : o.rt != null ? [[T.x[o.rt], T.y[o.rt]]] : [[o.t[0], o.t[1]]];
+      const hpx = o.b ? (o.b.h + (o.b.kind === 'church' ? 16 : o.b.kind === 'house' ? 10 : 6)) * HS * L : o.rt != null ? (T.h[o.rt] / 10 + 2) * HS * L : 12 * HS * L;
       for (const q of pts) {
         const [rx, ry] = this.rxy(q[0], q[1]);
         const sx = (rx - ry) * 16 * L, sy = (rx + ry) * 8 * L;
-        if (sx - 8 * L < mnx) mnx = sx - 8 * L;
-        if (sx + 8 * L > mxx) mxx = sx + 8 * L;
+        const hw = o.rt != null ? Math.max(8, (T.r[o.rt] / 10) * 2.2) * L : 8 * L;
+        if (sx - hw < mnx) mnx = sx - hw;
+        if (sx + hw > mxx) mxx = sx + hw;
         if (sy - hpx < mny) mny = sy - hpx;
         if (sy + 4 > mxy) mxy = sy + 4;
       }
@@ -672,6 +685,7 @@ export class Renderer {
     };
     for (const o of objs) {
       if (o.b) this.drawBuilding(g, P, o.b, L);
+      else if (o.rt != null) this.drawRealTree(g, P, o.rt, L);
       else this.drawTree(g, P, o.t, L);
     }
     return { c, ox, oy, L };
@@ -940,6 +954,74 @@ export class Renderer {
     g.beginPath(); g.ellipse(top[0], top[1], r, r * 0.95, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = autumn ? 'rgba(255,220,140,0.35)' : 'rgba(140,200,90,0.45)';
     g.beginPath(); g.ellipse(top[0] - r * 0.3, top[1] - r * 0.3, r * 0.5, r * 0.45, 0, 0, Math.PI * 2); g.fill();
+  }
+
+  // A tree the lidar measured: its own height and crown, drawn by kind (broadleaf, evergreen, flowering) and,
+  // where the town's inventory knows it, by species through the seasons: bare from December to March,
+  // blossom on the cherries and pears in April, autumn colour by genus in October and November.
+  drawRealTree(g, P, k, L) {
+    const T = this.world.trees, sp = T.sp[k] >= 0 ? this.world.treeSpecies[T.sp[k]] : null;
+    const x = T.x[k], y = T.y[k], h = Math.max(2.5, T.h[k] / 10), cr = Math.max(1.2, T.r[k] / 10);
+    const kind = T.kind[k], m = this.sim ? this.sim.month : 6, hsh = hash2(k, 7, 13);
+    const i = Math.floor(y) * this.world.W + Math.floor(x);
+    const out = !this.world.inTown[i];
+    const rpx = cr * 1.1 * L; // crown radius on screen (a metre is about L pixels across)
+    const base = P(x, y, 0), top = P(x, y, h - cr * 0.85);
+    const poor = T.cond[k] <= 1;
+    const genus = sp ? sp.genus : '';
+    // what colour is this crown this month?
+    let col, hi, bare = false;
+    if (kind === 1) { col = out ? '#2f4a32' : '#24502e'; hi = 'rgba(120,170,110,0.35)'; }
+    else if (m === 11 || m <= 2) bare = true;
+    else if (m === 3) {
+      if (kind === 2) { col = genus === 'Pyrus' || genus === 'Amelanchier' || genus === 'Cornus' ? '#f4f1ea' : genus === 'Cercis' ? '#c76fa8' : genus === 'Syringa' ? '#b79ad6' : '#f2b8c8'; hi = 'rgba(255,255,255,0.45)'; }
+      else { col = '#9cc46a'; hi = 'rgba(210,240,150,0.4)'; } // new leaves
+    } else if (m === 9 || m === 10) {
+      const late = m === 10 && hsh < 0.35;
+      if (late) bare = true;
+      else if (genus === 'Acer') col = hsh < 0.5 ? '#c4452e' : '#d9822b';
+      else if (genus === 'Ginkgo' || genus === 'Gleditsia' || genus === 'Betula' || genus === 'Tilia') col = '#d9b23a';
+      else if (genus === 'Quercus') col = '#8f5a2e';
+      else if (kind === 2) col = '#b5462a';
+      else col = hsh < 0.4 ? '#c9a23a' : hsh < 0.7 ? '#b8662a' : '#7f8a3a';
+      hi = 'rgba(255,220,140,0.35)';
+    } else { col = out ? '#3d6034' : poor ? '#6b7a3a' : kind === 2 ? '#3f7a32' : '#2e6b28'; hi = 'rgba(140,200,90,0.45)'; }
+    if (L < 0.5) {
+      g.fillStyle = bare ? 'rgba(110,92,74,0.55)' : col;
+      g.fillRect(top[0] - rpx * 0.8, top[1] - rpx * 0.6, rpx * 1.6, rpx * 1.4);
+      return;
+    }
+    g.strokeStyle = '#5a3f26';
+    g.lineWidth = Math.max(1, Math.min(3, (0.6 + T.dbh[k] / 30) * L));
+    if (kind === 1) {
+      // a conifer: a cone from near the ground to the top
+      const tip = P(x, y, h), low = P(x, y, Math.min(2, h * 0.2));
+      g.beginPath(); g.moveTo(base[0], base[1]); g.lineTo(low[0], low[1]); g.stroke();
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(tip[0], tip[1]); g.lineTo(low[0] + rpx, low[1]); g.lineTo(low[0] - rpx, low[1]); g.closePath(); g.fill();
+      g.fillStyle = hi;
+      g.beginPath(); g.moveTo(tip[0], tip[1]); g.lineTo(low[0], low[1]); g.lineTo(low[0] - rpx, low[1]); g.closePath(); g.fill();
+      return;
+    }
+    g.beginPath(); g.moveTo(base[0], base[1]); g.lineTo(top[0], top[1] + rpx * 0.3); g.stroke();
+    if (bare) {
+      // winter: the branches, and a faint haze of twigs
+      g.fillStyle = 'rgba(120,100,80,0.28)';
+      g.beginPath(); g.ellipse(top[0], top[1], rpx, rpx * 0.9, 0, 0, Math.PI * 2); g.fill();
+      g.lineWidth = Math.max(1, 0.6 * L);
+      g.beginPath();
+      for (let b = 0; b < 5; b++) {
+        const a = -Math.PI / 2 + (b - 2) * 0.55 + (hash2(k, b, 3) - 0.5) * 0.4;
+        g.moveTo(top[0], top[1] + rpx * 0.3);
+        g.lineTo(top[0] + Math.cos(a) * rpx * 0.95, top[1] + Math.sin(a) * rpx * 0.85);
+      }
+      g.stroke();
+      return;
+    }
+    g.fillStyle = col;
+    g.beginPath(); g.ellipse(top[0], top[1], rpx, rpx * 0.92, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = hi;
+    g.beginPath(); g.ellipse(top[0] - rpx * 0.3, top[1] - rpx * 0.3, rpx * 0.5, rpx * 0.45, 0, 0, Math.PI * 2); g.fill();
   }
 
   rdir(dx, dy) {

@@ -119,6 +119,22 @@ function exteriorNote(lot, w) {
   return out.join(' · ');
 }
 
+// the trees on a tile: the street trees by species (the town's 2022 inventory), the rest by height
+const COND_WORD = ['critical', 'poor', 'fair', 'good', 'excellent'];
+function treeNote(w, i) {
+  const T = w.trees, named = [], other = [];
+  for (let k = T.start[i]; k < T.start[i + 1]; k++) (T.sp[k] >= 0 ? named : other).push(k);
+  const tall = Math.max(...[...named, ...other].map((k) => T.h[k] / 10));
+  const bits = named.slice(0, 3).map((k) => `${w.treeSpecies[T.sp[k]].name}${T.dbh[k] ? `, ${T.dbh[k]}″ trunk` : ''}, ${COND_WORD[T.cond[k]] || 'good'}`);
+  if (named.length > 3) bits.push(`${named.length - 3} more street tree${named.length > 4 ? 's' : ''}`);
+  if (other.length) {
+    const ev = other.filter((k) => T.kind[k] === 1).length, n = other.length;
+    const what = ev === n ? 'evergreen' : ev ? `tree${n > 1 ? 's' : ''} (${ev} evergreen)` : `tree${n > 1 ? 's' : ''}`;
+    bits.push(named.length ? `${n} more ${what}${ev === n && n > 1 ? 's' : ''}` : `${n === 1 ? (ev ? 'An' : 'A') : n} ${what}${ev === n && n > 1 ? 's' : ''}`);
+  }
+  return `${bits.join(' · ')} · ${named.length + other.length > 1 ? `tallest ${Math.round(tall)} m` : `${Math.round(tall)} m tall`}`;
+}
+
 export class UI {
   constructor(game) {
     this.g = game;
@@ -666,6 +682,7 @@ export class UI {
         if (lot.reconstructed) add(row('Note', `Reconstructed for ${s.y0}: the real building here dates from ${lot.reconstructed}. What stood here before is approximated${lot.hist === 'mall' ? ' (the Arsenal Mall era)' : lot.hist ? ` (${lot.hist === 'auto' ? 'an auto shop' : lot.hist === 'parking' ? 'a parking lot' : 'light industry'})` : ''}.`));
         if (lot.built > 0 && lot.year >= (s.y0 ?? CFG.START.y)) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
+      if (w.trees && w.tree[i] && w.trees.start[i + 1] > w.trees.start[i]) add(row('Trees', treeNote(w, i)));
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),

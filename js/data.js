@@ -198,6 +198,8 @@ export async function fetchAssessor(path = 'data/assessor.json.gz') {
 
 // roofs measured from the 2021 USGS lidar (data/lidar.json.gz, built by tools/lidar/): optional too
 export const fetchLidar = () => fetchAssessor('data/lidar.json.gz');
+// every tree, from the lidar and the town's 2022 inventory (data/trees.json.gz, built by tools/trees/)
+export const fetchTrees = () => fetchAssessor('data/trees.json.gz');
 
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
   const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');

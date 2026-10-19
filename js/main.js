@@ -1,7 +1,7 @@
 import { CFG } from './config.js';
-import { loadRawData, fetchAssessor, fetchLidar, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
-import { buildWorld, applyAssessor, applyLidar } from './world.js';
+import { buildWorld, applyAssessor, applyLidar, applyTrees } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
@@ -120,10 +120,13 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       if (asr && game.world.asrV !== asr.v) { log('Reading the assessor’s building cards…'); await nextFrame(); applyAssessor(game.world, asr); }
       const lid = await fetchLidar();
       if (lid && game.world.lidV !== lid.v) { log('Measuring roofs from the lidar…'); await nextFrame(); applyLidar(game.world, lid); }
+      const trees = await fetchTrees();
+      if (trees && game.world.treeV !== trees.v) { log('Planting every tree where it really stands…'); await nextFrame(); applyTrees(game.world, trees); }
     } else {
       const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
       raw.assessor = await fetchAssessor();
       raw.lidar = await fetchLidar();
+      raw.trees = await fetchTrees();
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);
@@ -247,7 +250,7 @@ function frame(now) {
 function monthTick() {
   const s = game.sim;
   s.tick();
-  if (s.m === 9 || s.m === 11) game.renderer.invalidateAll(); // fall foliage on, then off
+  if (s.m === 3 || s.m === 4 || s.m === 9 || s.m === 10 || s.m === 11) game.renderer.invalidateAll(); // blossom, leaves out, fall colour, bare
   game.ui.refreshStatus();
   game.ui.refreshUndo();
   if (s.approvalWhy) game.ui.approvalNote([[s.approvalWhy.f, s.approvalWhy.d]], s.approvalWhy.top ? s.approvalWhy.top.why : '');

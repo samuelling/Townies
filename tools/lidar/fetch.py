@@ -49,7 +49,9 @@ nodes = sorted(set(nodes), key=lambda k: int(k.split('-')[0]))
 print(len(nodes), 'nodes to depth', MAXD, flush=True)
 
 lock = threading.Lock()
-out = open(os.path.join(OUT, 'points.bin'), 'wb')
+# LIDAR_SET=veg keeps the vegetation returns (classes 3-5) instead, for finding trees (tools/trees/)
+VEG = os.environ.get('LIDAR_SET') == 'veg'
+out = open(os.path.join(OUT, 'vegpoints.bin' if VEG else 'points.bin'), 'wb')
 stats = {'pts': 0, 'kept': 0, 'done': 0}
 def job(key):
     data = get(BASE + 'ept-data/' + key + '.laz')
@@ -58,7 +60,8 @@ def job(key):
     X, Y, Z = np.asarray(las.x), np.asarray(las.y), np.asarray(las.z)
     # every building return; one ground return in four (only the ground level around each building matters)
     keepg = (c == 2) & (np.arange(len(c)) % 4 == 0)
-    m = ((c == 6) | keepg) & (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
+    keep = ((c == 3) | (c == 4) | (c == 5)) if VEG else ((c == 6) | keepg)
+    m = keep & (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
     rec = np.zeros(int(m.sum()), dtype=[('x', '<i4'), ('y', '<i4'), ('z', '<i4'), ('c', 'u1')])
     rec['x'] = np.round(X[m] * 100); rec['y'] = np.round(Y[m] * 100); rec['z'] = np.round(Z[m] * 100); rec['c'] = c[m]
     with lock:

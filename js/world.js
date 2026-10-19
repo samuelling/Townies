@@ -406,6 +406,46 @@ function streetWords(s) {
   return out.join(' ');
 }
 
+// Every tree the 2021 lidar found, with species, trunk and condition where the town's 2022 inventory has it
+// (data/trees.json.gz, built by tools/trees/). Stored by tile; a tile with trees has tree[i] = 3, and the
+// sim's existing rules (clearing for roads, buildings and bulldozers) take them away tile by tile.
+export function applyTrees(world, data) {
+  if (!data || !data.rows || world.treeV === data.v) return 0;
+  const { W, H, bAt, bldgs, terrain, tree } = world;
+  const pr = worldProj(world);
+  const inside = (b, x, y) => {
+    let c = false;
+    const p = b.pts;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++)
+      if (p[i][1] > y !== p[j][1] > y && x < ((p[j][0] - p[i][0]) * (y - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c;
+    return c;
+  };
+  const keep = [];
+  for (const row of data.rows) {
+    const [x, y] = pr.toGrid(row[0] / 1e5, row[1] / 1e5);
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const i = Math.floor(y) * W + Math.floor(x);
+    if (terrain[i] === 1) continue;
+    const bi = bAt[i];
+    if (bi >= 0 && bldgs[bi] && bldgs[bi].alive && inside(bldgs[bi], x, y)) continue; // under a roof: the lidar's overhang
+    keep.push([i, x, y, row]);
+  }
+  keep.sort((a, b) => a[0] - b[0]);
+  const n = keep.length, N = W * H;
+  const T = { n, x: new Float32Array(n), y: new Float32Array(n), h: new Uint16Array(n), r: new Uint8Array(n), kind: new Uint8Array(n), sp: new Int16Array(n), dbh: new Uint8Array(n), cond: new Uint8Array(n), start: new Int32Array(N + 1) };
+  keep.forEach(([i, x, y, row], k) => {
+    T.x[k] = x; T.y[k] = y; T.h[k] = row[2]; T.r[k] = Math.min(255, row[3]); T.kind[k] = row[4]; T.sp[k] = row[5]; T.dbh[k] = Math.min(255, row[6]); T.cond[k] = row[7];
+    T.start[i + 1]++;
+  });
+  for (let i = 0; i < N; i++) T.start[i + 1] += T.start[i];
+  // the tiles that have trees are the ones the lidar found them on; the old scatter goes
+  for (let i = 0; i < N; i++) tree[i] = T.start[i + 1] > T.start[i] ? 3 : 0;
+  world.trees = T;
+  world.treeSpecies = data.species || [];
+  world.treeV = data.v;
+  return n;
+}
+
 export function assignFront(world, b) {
   const { W, H, road } = world;
   const lot = b.lot >= 0 ? world.lots[b.lot] : null;
@@ -863,14 +903,16 @@ export function buildWorld(raw, progress = () => {}) {
 
   // ---- trees ----
   progress('Planting trees…');
-  for (const [tx, ty] of treePts) {
+  // with the measured trees (data/trees.json.gz) there's nothing to guess: they're placed after the world
+  // is built (applyTrees). Without them, OpenStreetMap's mapped trees plus a scatter by land cover.
+  if (!raw.trees) for (const [tx, ty] of treePts) {
     const x = Math.floor(tx), y = Math.floor(ty);
     if (inB(x, y)) {
       const i = y * W + x;
       if (!road[i] && terrain[i] !== 1 && bAt[i] < 0) tree[i] = 2;
     }
   }
-  for (let i = 0; i < N; i++) {
+  if (!raw.trees) for (let i = 0; i < N; i++) {
     if (tree[i] || road[i] || terrain[i] === 1 || bAt[i] >= 0) continue;
     const x = i % W, y = (i / W) | 0;
     const li = lotOf[i];
@@ -961,6 +1003,7 @@ export function buildWorld(raw, progress = () => {}) {
   world.trafficCounts = nSeg ? { segments: nSeg, yearMin: Math.min(...years), yearMax: Math.max(...years), yearMedian: median(years) } : null;
   if (raw.assessor) { progress('Reading the assessor’s building cards…'); applyAssessor(world, raw.assessor); }
   if (raw.lidar) { progress('Measuring roofs from the lidar…'); applyLidar(world, raw.lidar); }
+  if (raw.trees) { progress('Planting every tree where it really stands…'); applyTrees(world, raw.trees); }
   return world;
 }
 
