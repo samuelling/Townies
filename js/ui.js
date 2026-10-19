@@ -144,7 +144,11 @@ export class UI {
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]).concat(['-', ['Street names on/off (N)', () => this.setNames(!this.r.showNames)]]);
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
-    this.speedBtn = el('button', { class: 'mbtn', title: 'Speed', onclick: (e) => this.cycleSpeed(e.shiftKey ? -1 : 1) }, '▶');
+    this.speedBtn = el('button', { class: 'mbtn speedstep', title: 'Speed', onclick: (e) => this.cycleSpeed(e.shiftKey ? -1 : 1) }, '▶');
+    // on phones, where there's no room for the Speed menu, the speed button opens it instead of stepping
+    this.speedMenu = menu('▶', spItems);
+    this.speedMenu.className = 'menu m-speedbtn';
+    this.speedMenu.firstChild.classList.add('mbtn');
     mb.append(
       el('div', { class: 'logo' }, 'TOWNIES'),
       menu('File', fileItems),
@@ -155,6 +159,7 @@ export class UI {
       el('div', { class: 'spacer' }),
       this.searchBox(),
       this.speedBtn,
+      this.speedMenu,
       this.musicBtn
     );
     document.addEventListener('click', () => this.closeMenus());
@@ -377,6 +382,10 @@ export class UI {
     this.g.speed = v;
     this.sim.paused = v === 0;
     this.speedBtn.textContent = SPEEDS[v][1];
+    this.speedMenu.firstChild.textContent = SPEEDS[v][1];
+    this.speedMenu.firstChild.title = `Speed: ${SPEEDS[v][0]}`;
+    // a check mark beside the current speed, as in a Mac menu
+    for (const dd of document.querySelectorAll('.m-speed .dropdown, .m-speedbtn .dropdown')) [...dd.children].forEach((b, i) => b.classList.toggle('checked', i === v));
     this.speedBtn.title = `Speed: ${SPEEDS[v][0]}${SPEEDS[v][3] ? ' (day and night)' : ''}. Click for the next speed; Shift-click for the previous one.`;
     if (!cycles(v) && !(v === 0 && cycles(this.g.lastSpeed)) && this.sClock) this.sClock.textContent = '';
     // in the iOS app, keep the screen awake at the slow day-and-night speeds (it's a screensaver there)
