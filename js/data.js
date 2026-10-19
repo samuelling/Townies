@@ -200,6 +200,10 @@ export async function fetchAssessor(path = 'data/assessor.json.gz') {
 export const fetchLidar = () => fetchAssessor('data/lidar.json.gz');
 // every tree, from the lidar and the town's 2022 inventory (data/trees.json.gz, built by tools/trees/)
 export const fetchTrees = () => fetchAssessor('data/trees.json.gz');
+// unmapped backyard roofs the lidar found (data/yards.json.gz, built by tools/yards/)
+export const fetchYards = () => fetchAssessor('data/yards.json.gz');
+// MBTA bus routes, stops and timetables (data/transit.json.gz, built by tools/transit/)
+export const fetchTransit = () => fetchAssessor('data/transit.json.gz');
 
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
   const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');

@@ -1,7 +1,7 @@
 // Isometric pixel-art renderer with chunk caching.
 import { CFG, ZONE, COVER, ZONE_COLOR, SERVICES } from './config.js';
 import { weatherFoot, WF_AVG } from './weather.js';
-import { ROUTES, routeLines } from './transit.js';
+import { ROUTES, routeLines, transitNet, pieceAt, headwayMin } from './transit.js';
 import { homeLot, irvingSeason, halloweenSeason, decoratedLots, yardPoint } from './eggs.js';
 import { hexRgb, shade, hash2, clamp } from './util.js';
 import { INC, DEPTS } from './incidents.js';
@@ -640,9 +640,18 @@ export class Renderer {
       objs.push({ d: rx + ry, b });
     }
     const T = w.trees;
+    const yp = this.yardIndex();
     for (let y = cc.y0; y < cc.y1; y++)
       for (let x = cc.x0; x < cc.x1; x++) {
         const i = y * W + x;
+        if (yp && yp.has(i))
+          for (const pb of yp.get(i)) {
+            // a garage the lidar found, unless its lot has been rebuilt or the tile paved over since
+            const lot = w.lots[pb.lot];
+            if (!lot || lot.dead || lot.under || road[i] || lot.bldgs.some((id) => bldgs[id] && bldgs[id].alive && bldgs[id].proc)) continue;
+            const [rx, ry] = this.rxy(pb.cx, pb.cy);
+            objs.push({ d: rx + ry, b: pb });
+          }
         if (T && T.start[i + 1] > T.start[i]) {
           // the trees the lidar found on this tile, unless the tile's been cleared or built over since
           if (!tree[i] || terrain[i] === 1 || w.svcAt[i] >= 0) continue;
@@ -782,7 +791,8 @@ export class Renderer {
         continue;
       }
       const b = o.b;
-      const house = b.kind === 'house' && b.obb;
+      const outb = b.outb && !b.proc;
+      const house = b.kind === 'house' && b.obb && !outb;
       const pts = house ? b.obb : b.pts;
       const G0 = pts.map((q) => P(q[0], q[1], 0));
       const T0 = pts.map((q) => P(q[0], q[1], b.h));
@@ -796,6 +806,7 @@ export class Renderer {
         gg.globalCompositeOperation = 'source-over';
       }
       const lot = b.lot >= 0 ? lots[b.lot] : null;
+      if (outb) continue; // a garage or shed: dark
       if (lot && lot.occ < 0.3) continue; // abandoned: dark
       const z = lot ? lot.zone : -1;
       let lit = house ? 0.55 : b.kind === 'lab' || b.arch === 'lab' ? 0.4 : b.kind === 'garage' || b.arch === 'warehouse' ? 0.06
@@ -1033,6 +1044,91 @@ export class Renderer {
     }
   }
 
+  // the lidar-found garages and sheds by tile (world.yardProps, see applyYards)
+  yardIndex() {
+    const w = this.world, ps = w.yardProps;
+    if (!ps || !ps.length) return null;
+    if (this._yardSrc !== ps) {
+      const m = new Map();
+      for (const pb of ps) { const i = Math.floor(pb.cy) * w.W + Math.floor(pb.cx); if (!m.has(i)) m.set(i, []); m.get(i).push(pb); }
+      this._yardIdx = m; this._yardSrc = ps;
+    }
+    return this._yardIdx;
+  }
+
+  // ---------- garages, sheds, carports, barns ----------
+  // A small box under a gable (ridge along the long side) or a flat roof, with its doors on the side facing
+  // the driveway (obb[0] -> obb[1]).
+  drawOutb(g, P, b, L, st) {
+    const { mix, mixAmt, stroke } = st;
+    if (!b._rgb) { b._rgb = hexRgb(b.col); b._roof = hexRgb(b.roofCol); }
+    const o = b.obb, eave = Math.min(b.h, b.eaveH || 2.5), top = b.h;
+    const wall = b._rgb, roofC = b._roof;
+    const G0 = o.map((q) => P(q[0], q[1], 0)), E0 = o.map((q) => P(q[0], q[1], eave));
+    const all = this.visibleWalls(G0);
+    const walls = all.filter((x) => x.v).sort((p, q) => p.d - q.d);
+    const len = (a, c) => Math.hypot(c[0] - a[0], c[1] - a[1]);
+    const mid = (a, c) => [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+    const along01 = len(o[0], o[1]) >= len(o[1], o[2]);
+    const flat = b.roof === 'flat' || top - eave < 0.3;
+    const R = flat ? null : along01 ? [mid(o[3], o[0]), mid(o[1], o[2])] : [mid(o[0], o[1]), mid(o[2], o[3])];
+    const carport = b.outb === 'carport';
+    for (const wl of walls) {
+      const k = wl.k, k2 = (k + 1) % 4;
+      const wc = shade(wall, wl.f, mix, mixAmt);
+      if (carport) {
+        g.strokeStyle = shade([120, 118, 112], wl.f, mix, mixAmt);
+        g.lineWidth = Math.max(1, 0.9 * L);
+        g.beginPath();
+        for (const q of [k, k2]) { g.moveTo(G0[q][0], G0[q][1]); g.lineTo(E0[q][0], E0[q][1]); }
+        g.stroke();
+        continue;
+      }
+      this.fillPoly(g, [G0[k], G0[k2], E0[k2], E0[k]], wc, stroke);
+      if (R) {
+        const gable = along01 ? k === 1 || k === 3 : k === 0 || k === 2;
+        if (gable) {
+          const rp = along01 ? (k === 1 ? R[1] : R[0]) : k === 0 ? R[0] : R[1];
+          this.fillPoly(g, [E0[k], E0[k2], P(rp[0], rp[1], top)], wc, stroke);
+        }
+      }
+      if (k === 0 && L >= 0.5) this.outbDoors(g, P, b, o[0], o[1], eave, wl.f, L, st);
+    }
+    if (!R) { this.fillPoly(g, E0, shade(roofC, 1.02, mix, mixAmt), stroke); return; }
+    const T0 = R.map((q) => P(q[0], q[1], top));
+    // two roof planes, each from a long eave up to the ridge; the farther one first
+    const planes = along01
+      ? [{ e: 0, pts: [E0[0], E0[1], T0[1], T0[0]] }, { e: 2, pts: [E0[2], E0[3], T0[0], T0[1]] }]
+      : [{ e: 1, pts: [E0[1], E0[2], T0[1], T0[0]] }, { e: 3, pts: [E0[3], E0[0], T0[0], T0[1]] }];
+    for (const pl of planes) pl.d = (E0[pl.e][1] + E0[(pl.e + 1) % 4][1]) / 2;
+    planes.sort((p, q) => p.d - q.d);
+    for (const pl of planes) {
+      const f = all[pl.e].v ? 1.0 : 0.78;
+      this.fillPoly(g, pl.pts, shade(roofC, f, mix, mixAmt), stroke);
+    }
+  }
+  outbDoors(g, P, b, a, c, eave, f, L, st) {
+    const { mix, mixAmt } = st;
+    const lenM = Math.hypot(c[0] - a[0], c[1] - a[1]) * CFG.TILE_M;
+    const Q = (t0, t1, z0, z1, col) => this.wallQuad(g, P, a, c, t0, t1, z0, z1, col);
+    const dh = Math.min(2.15, eave - 0.25);
+    if (b.outb === 'garage' || b.outb === 'barn') {
+      const n = Math.max(1, Math.min(3, Math.round(lenM / 3.4)));
+      const dw = Math.min(2.7, (lenM - 0.6 * (n + 1)) / n) / lenM;
+      const gap = (1 - n * dw) / (n + 1);
+      const doorC = b.outb === 'barn' ? shade([150, 70, 55], f * 0.9, mix, mixAmt) : shade([226, 224, 216], f * 0.95, mix, mixAmt);
+      for (let k = 0; k < n; k++) {
+        const t0 = gap + k * (dw + gap);
+        Q(t0, t0 + dw, 0, dh, doorC);
+        if (L >= 1.5) for (let z = dh / 4; z < dh - 0.1; z += dh / 4) Q(t0, t0 + dw, z - 0.03, z + 0.03, 'rgba(0,0,0,0.16)');
+      }
+    } else if (b.outb === 'shed') {
+      const dw = Math.min(0.45, 1.0 / Math.max(1, lenM));
+      Q(0.5 - dw / 2, 0.5 + dw / 2, 0, Math.min(1.9, eave - 0.15), shade([110, 84, 60], f, mix, mixAmt));
+      if (L >= 1 && lenM > 2.6) Q(0.12, 0.28, 1.0, 1.5, `rgba(${Math.round(60 + 30 * f)},${Math.round(90 + 30 * f)},${Math.round(125 + 25 * f)},0.9)`);
+    }
+  }
+
   drawBuilding(g, P, b, L) {
     const w = this.world;
     const lot = b.lot >= 0 ? w.lots[b.lot] : null;
@@ -1048,6 +1144,7 @@ export class Renderer {
       b._trim = hexRgb(b.trim || '#f4f1ea');
     }
     const st = { mix, mixAmt, aband, stroke: L >= 1 ? 'rgba(0,0,0,0.3)' : null };
+    if (b.outb && !b.proc && b.obb) return this.drawOutb(g, P, b, L, st);
     if (b.obb && b.kind === 'house') return this.drawHouse(g, P, b, L, st);
     return this.drawBox(g, P, b, L, st);
   }
@@ -1979,6 +2076,8 @@ export class Renderer {
     if ((vx1 - vx0) * (vy1 - vy0) > 40000) return false;
     const t = sim.paused ? this.frozenT2 || this.time : this.time;
     const P = (x, y, hm = 0) => { const [rx, ry] = this.rxy(x, y); return [(rx - ry) * 16 * s + offX, (rx + ry) * 8 * s + offY - hm * HS * s]; };
+    const net = transitNet();
+    if (net) return this.drawTimetableBuses(ctx, s, P, t, net, [vx0, vy0, vx1, vy1]);
     let drew = false;
     for (const r of ROUTES) {
       const head = 28 / ((sim.transit.freq[r.id] || 1) * (sim.transit.lanes[r.id] ? 1.15 : 1)); // tiles between buses
@@ -2015,6 +2114,71 @@ export class Renderer {
         }
       }
     }
+    return drew;
+  }
+
+  // The real timetable: at the slow speeds, where the day goes by on the clock, every bus is where its
+  // schedule puts it at this minute (weekday, Saturday or Sunday service by the calendar). Faster, the days
+  // blur, so a midday weekday plays on a loop at sixty times real time. Extra service the City pays for adds
+  // buses between the scheduled ones; a bus lane doesn't change the timetable, just the crawl.
+  drawTimetableBuses(ctx, s, P, t, net, [vx0, vy0, vx1, vy1]) {
+    const sim = this.sim, T = sim.transit;
+    let now, kind = 'weekday';
+    if (this.dayCycle) {
+      now = this.tod * 3600;
+      const dow = new Date(sim.y || 2026, sim.m || 0, this.dom || 1).getDay();
+      kind = dow === 0 ? 'sunday' : dow === 6 ? 'saturday' : 'weekday';
+    } else now = 10 * 3600 + ((t * 0.06) % (5 * 3600));
+    const trips = net.trips[kind] || [];
+    let drew = false;
+    const drawAt = (tr, sec) => {
+      const { t: tt, d } = tr;
+      let k = 0;
+      while (k + 1 < tt.length && tt[k + 1] <= sec) k++;
+      if (k + 1 >= tt.length) return;
+      const span = tt[k + 1] - tt[k];
+      const f = span > 0 ? (sec - tt[k]) / span : 0;
+      const pc = net.pieces[tr.pc];
+      const [x, y, dx, dy] = pieceAt(pc, d[k] + (d[k + 1] - d[k]) * f);
+      if (x < vx0 - 2 || x > vx1 + 2 || y < vy0 - 2 || y > vy1 + 2) return;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+      const cx = x + nx * 0.2, cy = y + ny * 0.2; // keep right
+      const fx = ux * 0.36, fy = uy * 0.36, sx = nx * 0.11, sy = ny * 0.11;
+      const q = [[cx - fx - sx, cy - fy - sy], [cx + fx - sx, cy + fy - sy], [cx + fx + sx, cy + fy + sy], [cx - fx + sx, cy - fy + sy]];
+      const poly = (h, col) => { ctx.fillStyle = col; ctx.beginPath(); q.forEach((c, n) => { const pp = P(c[0], c[1], h); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); }); ctx.closePath(); ctx.fill(); };
+      poly(0, 'rgba(0,0,0,0.35)');
+      poly(2.8, '#e9ebe8');
+      const a = P(q[0][0], q[0][1], 1.6), b2 = P(q[1][0], q[1][1], 1.6), a2 = P(q[3][0], q[3][1], 1.6), b3 = P(q[2][0], q[2][1], 1.6);
+      ctx.strokeStyle = '#ffc72c'; ctx.lineWidth = Math.max(1, 1.1 * s);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(b3[0], b3[1]); ctx.stroke();
+      drew = true;
+    };
+    for (let n = 0; n < trips.length; n++) {
+      const tr = trips[n];
+      const r = net.routes[tr.r];
+      const fq = (T.freq && r && T.freq[r.id]) || 1;
+      // after midnight, last night's late trips (their times run past 24:00)
+      for (const sec of [now, now + 86400]) {
+        if (sec >= tr.t0 && sec < tr.t1) drawAt(tr, sec);
+        if (fq > 1.01 && hash2(n, 17, 3) < fq - 1) {
+          // an extra bus half a headway behind this one
+          const lag = ((headwayMin(ROUTES.find((x) => x.id === r.id), this.tod) || 15) * 60) / 2;
+          if (sec - lag >= tr.t0 && sec - lag < tr.t1) drawAt(tr, sec - lag);
+        }
+      }
+    }
+    // the stops: a post with the MBTA's yellow sign, close up
+    if (s >= 0.9)
+      for (const st of net.stops) {
+        if (st.x < vx0 - 1 || st.x > vx1 + 1 || st.y < vy0 - 1 || st.y > vy1 + 1) continue;
+        const g0 = P(st.x, st.y, 0), g1 = P(st.x, st.y, 3.2);
+        ctx.strokeStyle = '#5b5e60'; ctx.lineWidth = Math.max(1, 0.6 * s);
+        ctx.beginPath(); ctx.moveTo(g0[0], g0[1]); ctx.lineTo(g1[0], g1[1]); ctx.stroke();
+        const sw = Math.max(2, 2.2 * s), sh = Math.max(2, 2.6 * s);
+        ctx.fillStyle = '#ffc72c'; ctx.fillRect(g1[0] - sw / 2, g1[1] - sh, sw, sh);
+        ctx.fillStyle = '#1c1c1c'; ctx.fillRect(g1[0] - sw / 2, g1[1] - sh, sw, Math.max(1, sh * 0.3));
+      }
     return drew;
   }
 

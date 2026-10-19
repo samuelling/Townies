@@ -6,6 +6,7 @@ import { WALK_WEIGHTS } from './walkscore.js';
 import { CAT_WEIGHT } from './vibrancy.js';
 import { CFG } from './config.js';
 import { PATTERNS } from './patterns.js';
+import { ROUTES, transitNet } from './transit.js';
 
 const P = (...k) => el('p', {}, ...k);
 const H = (t) => el('h4', {}, t);
@@ -41,8 +42,9 @@ export const CHAPTERS = [
           [B('OpenStreetMap'), ': streets, footprints, rivers, parks and many businesses, via Geofabrik’s daily Massachusetts extract.'],
           [B('MassGIS tax parcels'), ': every parcel’s assessed land and building value, use code, year built, units and house style.'],
           [B('MassGIS building structures'), `: footprints that OpenStreetMap is missing${src.footprintsAdded ? ` (${fmtInt(src.footprintsAdded)} filled in)` : ''}.`],
-          [B('Watertown Assessor’s building records'), ': for each building, the wall material, roof shape and covering, fireplaces, porches, and the assessor’s street photo.'],
+          [B('Watertown Assessor’s building records'), ': for each building, the wall material, roof shape and covering, fireplaces, porches, and the assessor’s street photo, and each lot’s detached garages, sheds and pools.'],
           [B('USGS lidar (2021)'), ': a laser survey flown over eastern Massachusetts, about two and a half points per square metre over Watertown, which measures every roof and every tree’s height and spread.'],
+          [B('MBTA schedules and ridership'), ': every bus route through town on its real path and timetable, and each route’s measured weekday boardings at its Watertown stops.'],
           [B('Watertown Forestry’s 2022 tree inventory'), ': every street and park tree the town looks after, with its species, trunk size and condition.'],
           [B('Overture Maps places'), `: business listings${src.places ? ` (${fmtInt(src.places)} merged)` : ''}, combined with OpenStreetMap’s and cleaned of duplicates and non-businesses like ATMs, parking and car-share spots.`]
         ),
@@ -187,7 +189,9 @@ export const CHAPTERS = [
         P('The model’s settings (how much through traffic, travel speeds by street type, how far people go for errands) were tuned to match the MassDOT counts.' + (fit && fit.r2 ? ` Before any correction, the routed model explains about ${Math.round(fit.r2 * 100)}% of the street-to-street variation in counted traffic across ${fmtInt(fit.n)} counted street tiles${fit.nBusy ? `, and about ${Math.round(fit.r2Busy * 100)}% among busy streets (8,000+ a day), where counts are most reliable` : ''}, on a log scale. Placeholder figures MassDOT assigns to local streets (marked “not applicable”) are left out; only counts count.` : '')),
         P('The game then starts each counted street at its actual count, and the model only moves volumes up or down from there as the town changes (the “pivot-point” method). A street without a count starts from the typical count for its class of street (for ordinary side streets, MassDOT’s own default of about 1,150 a day, because the few local streets it does count are the busy ones), nudged a little by the routed model and corrected toward counted neighbours. That mix came out of a hold-out test (see “How accurate is it?”): on counts it never saw, it does better than either the routed model or street class alone.'),
         H('Buses'),
-        P('Watertown has no subway, so its transit is the MBTA bus: the 57 down Galen Street, the 70 along Main and Arsenal Streets, the 71 up Mount Auburn Street and the 73 on Belmont Street. Ridership on each is modeled from the people and jobs within a short walk of the route; it rises when car traffic gets worse (people switch) and falls when the buses are stuck in that same traffic, unless they have their own lane. The total is scaled to a round assumption of about 9,000 weekday boardings in town, not measured stop by stop (the only published route figure found was the 57’s 10,094 weekday boardings in 2012, most of them outside Watertown). Riders gained or lost change the number of car trips the traffic model routes.'),
+        P(transitNet()
+          ? `Watertown has no subway, so its transit is the MBTA bus. Every route through the map runs on its real path and its real timetable, from the MBTA’s own schedule feed: at the slow speeds, where the clock runs, a bus is wherever its weekday, Saturday or Sunday schedule puts it at that minute, and stops at the real stops. ${ROUTES.length} routes stop in town; the 70 on Main and Arsenal Streets and the 71 on Mount Auburn Street carry most of the riders. Each starts at its measured weekday boardings at its Watertown stops (the MBTA’s ${transitNet().season || 'Fall 2025'} counts, ${fmtInt(ROUTES.reduce((a, r) => a + (r.riders0 || 0), 0))} in all). From there ridership is modeled from the people and jobs within a short walk of the route; it rises when car traffic gets worse (people switch) and falls when the buses are stuck in that same traffic, unless they have their own lane. Riders gained or lost change the number of car trips the traffic model routes.`
+          : 'Watertown has no subway, so its transit is the MBTA bus: the 57 down Galen Street, the 70 along Main and Arsenal Streets, the 71 up Mount Auburn Street and the 73 on Belmont Street. Ridership on each is modeled from the people and jobs within a short walk of the route; it rises when car traffic gets worse (people switch) and falls when the buses are stuck in that same traffic, unless they have their own lane. The total is scaled to a round assumption of about 9,000 weekday boardings in town. Riders gained or lost change the number of car trips the traffic model routes.'),
         H('From volumes to jams'),
         P('Rush-hour volume is taken as 9% of daily traffic, 55% of it in the peak direction. That is compared with about 900 cars per lane per hour, a typical signalized arterial. Over 100% means queues. Mount Auburn, Main, North Beacon and Watertown Streets all come out near or over capacity, which matches anyone’s commute.'),
         H('Intersections'),
@@ -335,6 +339,7 @@ export const CHAPTERS = [
         [A('https://www.openstreetmap.org/copyright', 'OpenStreetMap'), ' contributors (ODbL), via ', A('https://download.geofabrik.de/north-america/us/massachusetts.html', 'Geofabrik')],
         [A('https://www.mass.gov/info-details/massgis-data-property-tax-parcels', 'MassGIS property tax parcels'), ' and ', A('https://www.mass.gov/info-details/massgis-data-building-structures-2-d', 'building structures'), ', Commonwealth of Massachusetts'],
         [A('https://www.usgs.gov/3d-elevation-program', 'USGS 3D Elevation Program'), ' lidar, 2021 Central Eastern Massachusetts (QL1), public domain, via the ', A('https://registry.opendata.aws/usgs-lidar/', 'AWS open data registry'), ' (roof heights and ridges, tree heights and crowns)'],
+        [A('https://www.mbta.com/developers/gtfs', 'MBTA GTFS schedules'), ' and ', A('https://mbta-massdot.opendata.arcgis.com/', 'MBTA bus ridership by stop'), ' (Fall 2025), Massachusetts Bay Transportation Authority'],
         [A('https://watertownma.mapgeo.io/', 'Town of Watertown Forestry'), ' 2022 street and park tree inventory, via MapGeo (species, trunk size, condition)'],
         [A('https://gis.vgsi.com/WatertownMA/', 'Town of Watertown Assessor'), ' building records, via Vision Government Solutions (wall and roof materials, fireplaces, porches; siding colours read from the street photos)'],
         [A('https://docs.overturemaps.org/guides/places/', 'Overture Maps places'), ' (CDLA-Permissive-2.0)'],

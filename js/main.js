@@ -1,7 +1,8 @@
 import { CFG } from './config.js';
-import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
-import { buildWorld, applyAssessor, applyLidar, applyTrees } from './world.js';
+import { setTransitData } from './transit.js';
+import { buildWorld, applyAssessor, applyLidar, applyTrees, applyYards } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
@@ -122,11 +123,14 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       if (lid && game.world.lidV !== lid.v) { log('Measuring roofs from the lidar…'); await nextFrame(); applyLidar(game.world, lid); }
       const trees = await fetchTrees();
       if (trees && game.world.treeV !== trees.v) { log('Planting every tree where it really stands…'); await nextFrame(); applyTrees(game.world, trees); }
+      const yards = await fetchYards();
+      if (asr || yards) applyYards(game.world, asr, yards);
     } else {
       const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
       raw.assessor = await fetchAssessor();
       raw.lidar = await fetchLidar();
       raw.trees = await fetchTrees();
+      raw.yards = await fetchYards();
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);
@@ -141,6 +145,8 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       const r = await fetch('data/peers.json', { cache: 'no-cache' });
       if (r.ok) game.peers = await r.json();
     } catch (e) {}
+    // the MBTA's real routes, stops and timetables (optional: without them the buses follow their streets)
+    setTransitData(await fetchTransit(), game.world);
     log('Waking up the City Council…');
     await nextFrame();
     boot(state, mode === 'continue' ? null : scen);
@@ -239,6 +245,7 @@ function frame(now) {
     // time of day: each month starts a little after 7 a.m. on the 1st
     const r = game.renderer;
     r.tod = ((game.frac * 30 + 0.3) % 1) * 24;
+    r.dom = Math.floor(game.frac * 30 + 0.3) + 1; // day of the month, for the bus timetable
     r.dayCycle = cycles(game.speed) || (game.speed === 0 && cycles(game.lastSpeed));
     if (game.ui && r.dayCycle) game.ui.refreshClock(r.tod, Math.floor(game.frac * 30 + 0.3) + 1);
   }

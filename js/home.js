@@ -7,7 +7,7 @@
 // To remove: delete this file and the "Step inside" button in ui.js.
 import { CFG, ZONE } from './config.js';
 import { clamp, hash2, el, fmtMoney } from './util.js';
-import { ROUTES, routeTiles } from './transit.js';
+import { ROUTES, routeTiles, transitNet, headwayMin } from './transit.js';
 import { weatherDay } from './weather.js';
 import { BEDTIMES, groupOf, clock, twilight, skyTint, SPEEDS } from './daynight.js';
 import { homeLot, irvingSeason } from './eggs.js';
@@ -78,7 +78,18 @@ function surroundings(game, lot) {
   near.splice(12);
   // the bus: nearest route within ~10 minutes' walk
   let bus = null;
-  if (s.transit)
+  const net = transitNet();
+  if (s.transit && net) {
+    // the nearest real stop within ~10 minutes' walk, and its most frequent route
+    for (const st of net.stops) {
+      const d = Math.hypot(st.x - lot.cx, st.y - lot.cy) * M;
+      if (d >= 800 || (bus && d >= bus.walkM)) continue;
+      const rs = st.routes.map((ri) => ROUTES.find((r) => r.net && r.net.k === ri)).filter(Boolean);
+      if (!rs.length) continue;
+      rs.sort((p, q) => (headwayMin(p, 8) || 99) - (headwayMin(q, 8) || 99));
+      bus = { r: rs[0], walkM: d, stop: st.name };
+    }
+  } else if (s.transit)
     for (const r of ROUTES) {
       let best = Infinity;
       for (const i of routeTiles(s, r)) best = Math.min(best, Math.hypot((i % w.W) + 0.5 - lot.cx, ((i / w.W) | 0) + 0.5 - lot.cy) * M);
@@ -99,7 +110,7 @@ function surroundings(game, lot) {
   if (bus) {
     const freq = (s.transit.freq && s.transit.freq[bus.r.id]) || 1;
     lanes = !!(s.transit.lanes && s.transit.lanes[bus.r.id]);
-    const wait = 10 / freq;
+    const wait = (bus.r.net ? headwayMin(bus.r, 8) || 30 : 10) / freq;
     const ride = 30 * (lanes ? 0.82 : 1) * (1 + 0.5 * clamp(cong - 0.6, 0, 1)) + (snowy ? 6 : 0);
     busMin = Math.round(bus.walkM / 80 + wait / 2 + ride);
   }
@@ -295,7 +306,7 @@ export function openHome(game, lot) {
     const pick = (m) => { st.mode = m; renderSide(); };
     const opts = [['drive', `🚗 Drive · ${env.drive} min`, true], ['bus', env.bus ? `🚌 The ${env.bus.r.id} · ${env.busMin} min${env.lanes ? ' (bus lane)' : ''}` : '🚌 No bus nearby', !!env.bus], ['bike', env.bike ? `🚲 Bike · ${env.bike} min` : '🚲 Not in this snow', !!env.bike]];
     side.append(el('div', { class: 'hv-choices' }, ...opts.map(([m, lab, ok]) => el('button', { class: `choice${cx.mode === m ? ' on' : ''}`, disabled: !ok, onclick: () => ok && pick(m) }, lab))));
-    side.append(el('p', { class: 'fine' }, `Rush hour on the main roads around here runs at ${Math.round(env.cong * 100)}% of capacity.${env.bus ? ` The nearest bus stop is a ${Math.max(1, Math.round(env.bus.walkM / 80))}-minute walk.` : ''}`));
+    side.append(el('p', { class: 'fine' }, `Rush hour on the main roads around here runs at ${Math.round(env.cong * 100)}% of capacity.${env.bus ? ` The nearest bus stop${env.bus.stop ? `, ${env.bus.stop},` : ''} is a ${Math.max(1, Math.round(env.bus.walkM / 80))}-minute walk.` : ''}`));
     sec('Within a 10-minute walk');
     side.append(el('p', {}, `${env.food} places to eat, ${env.shops} shops, ${env.auto} auto-oriented lots.`));
     if (env.near.length) {

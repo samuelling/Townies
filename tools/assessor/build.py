@@ -129,7 +129,8 @@ for ln in open(os.path.join(W, 'raw.jsonl')):
     ob = []
     for code, desc, size, _ in r.get('ob', []):
         kind = 'garage' if code.startswith('FGR') else 'shed' if code.startswith('SHD') else 'pool' if code.startswith('SPL') else 'barn' if code.startswith('BRN') else 'carport' if code.startswith('FCP') else None
-        sz = num(re.sub(r'[^0-9.]', '', size or '')) if size else None
+        m = re.search(r'[0-9][0-9,]*\.?[0-9]*', size or '')  # '537.00 S.F.'
+        sz = num(m.group(0).replace(',', '')) if m else None
         if kind: ob.append([kind, int(sz or 0)])
     e = {'a': r.get('addr') or None, 'b': out}
     if ob: e['ob'] = ob

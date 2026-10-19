@@ -3,7 +3,7 @@ import { CFG, ZONE, ZONE_NAME, SERVICES, ROAD_NAME } from './config.js';
 import { beginDecision, endDecision } from './chance.js';
 import { PATTERNS, patternsNow } from './patterns.js';
 import { monthWeather, WX_ICON, NORMALS } from './weather.js';
-import { ROUTES } from './transit.js';
+import { ROUTES, transitNet, headwayMin } from './transit.js';
 import { homeLot, irvingSeason, EGG_NOTE } from './eggs.js';
 import { reportCard, reportText } from './report.js';
 import { canStepInside, openHome } from './home.js';
@@ -117,6 +117,23 @@ function exteriorNote(lot, w) {
     if (ps.length) out.push(ps.join(', '));
   }
   return out.join(' · ');
+}
+
+// a lot's garages, sheds and pools: the assessor's card, the map and the lidar
+const OUTB_WORD = { garage: 'garage', shed: 'shed', carport: 'carport', barn: 'barn' };
+function outbackNote(w, lot) {
+  const items = [];
+  const one = (b) => {
+    const sq = b.outbSq || Math.round(b.area * 256 / 0.0929);
+    const cars = b.outb === 'garage' && b.outbSq ? (sq < 330 ? 'one-car ' : sq < 600 ? 'two-car ' : 'three-car ') : '';
+    return `a ${cars}${OUTB_WORD[b.outb] || b.outb}${b.outbSq ? ` (${Math.round(b.outbSq / 10) * 10} sq ft)` : ''}`;
+  };
+  for (const id of lot.bldgs) { const b = w.bldgs[id]; if (b && b.alive && b.outb && !b.proc) items.push(one(b)); }
+  for (const pb of w.yardProps || []) if (pb.lot === lot.id) items.push(one(pb));
+  if (lot.pools) items.push(lot.pools > 1 ? `${lot.pools} pools` : 'a pool');
+  if (!items.length) return '';
+  const txt = items.join(', ');
+  return txt[0].toUpperCase() + txt.slice(1);
 }
 
 // the trees on a tile: the street trees by species (the town's 2022 inventory), the rest by height
@@ -683,6 +700,7 @@ export class UI {
         if (lot.built > 0 && lot.year >= (s.y0 ?? CFG.START.y)) add(row('Note', 'Built during your term'));
       } else head = 'Open land';
       if (w.trees && w.tree[i] && w.trees.start[i + 1] > w.trees.start[i]) add(row('Trees', treeNote(w, i)));
+      if (lot && lot.zone === ZONE.R) add(row('Out back', outbackNote(w, lot)));
       if (w.inTown[i] && w.terrain[i] !== 1) {
         add(
           row('Street life', s.vibSat ? streetLife(s.vibSat[c]) : ''),
@@ -1082,9 +1100,14 @@ export class UI {
     this.win('buses', 'Buses', (body) => {
       const s = this.sim, T = s.transit;
       if (!T) return;
-      body.append(el('p', { class: 'fine' }, 'MBTA routes through town. Ridership is a model estimate: people and jobs within a walk of each route, more when car traffic is bad, less when the bus is stuck in it. Bus lanes and extra service come up on the Council agenda.'));
-      const t = el('table', { class: 'peers' }, el('tr', {}, el('th', {}, 'Route'), el('th', {}, 'Riders/day'), el('th', {}, 'Service')));
-      for (const r of ROUTES) t.append(el('tr', {}, el('td', {}, r.label), el('td', {}, fmtInt(T.riders[r.id] || 0)), el('td', {}, [T.lanes[r.id] ? 'bus lanes' : null, (T.freq[r.id] || 1) > 1.01 ? `${Math.round((T.freq[r.id] - 1) * 100)}% more trips` : null].filter(Boolean).join(' · ') || 'regular')));
+      const net = transitNet();
+      body.append(el('p', { class: 'fine' }, net
+        ? `MBTA routes that stop in town, running on the MBTA's own timetables. Riders started at each route's measured weekday boardings at its Watertown stops${net.season ? ` (${net.season})` : ''}; since then it's a model: people and jobs within a walk of the route, more when car traffic is bad, less when the bus is stuck in it. Bus lanes and extra service come up on the Council agenda.`
+        : 'MBTA routes through town. Ridership is a model estimate: people and jobs within a walk of each route, more when car traffic is bad, less when the bus is stuck in it. Bus lanes and extra service come up on the Council agenda.'));
+      const t = el('table', { class: 'peers' }, el('tr', {}, el('th', {}, 'Route'), el('th', {}, 'Riders/day'), el('th', { title: 'minutes between buses on a weekday: rush hour · midday' }, 'Every'), el('th', {}, 'Service')));
+      const every = (r) => { if (!r.net || !r.net.head) return ''; const a = headwayMin(r, 8), m = headwayMin(r, 12); if (!a && !m) return 'rush hours only'; return a && m && Math.round(a) !== Math.round(m) ? `${Math.round(a)} · ${Math.round(m)} min` : `${Math.round(a || m)} min${!m ? ' (rush hour)' : ''}`; };
+      for (const r of [...ROUTES].sort((p, q) => (T.riders[q.id] || 0) - (T.riders[p.id] || 0)))
+        t.append(el('tr', {}, el('td', {}, r.label), el('td', {}, fmtInt(T.riders[r.id] || 0)), el('td', {}, every(r)), el('td', {}, [T.lanes[r.id] ? 'bus lanes' : null, (T.freq[r.id] || 1) > 1.01 ? `${Math.round((T.freq[r.id] - 1) * 100)}% more trips` : null].filter(Boolean).join(' · ') || 'regular')));
       body.append(t);
       const d = (T.total || 0) - (T.riders0 || 0);
       body.append(el('p', {}, `${fmtInt(T.total || 0)} weekday boardings in town${Math.abs(d) >= 50 ? `, ${d > 0 ? 'up' : 'down'} ${fmtInt(Math.abs(d))} since you took office` : ''}. ${T.carF < 0.995 ? `That keeps about ${Math.round((1 - T.carF) * 100)}% of car trips off the road.` : T.carF > 1.005 ? `Lost riders add about ${Math.round((T.carF - 1) * 100)}% more car trips.` : ''}`));

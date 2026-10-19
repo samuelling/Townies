@@ -122,6 +122,7 @@ function cssHex(s) {
 }
 
 export function styleBuilding(b, lot) {
+  if (b.outb && !b.proc) return styleOutbuilding(b, lot);
   const r = hash2(b.id, 7, 3),
     r2 = hash2(b.id, 11, 5),
     r3 = hash2(b.id, 13, 9);
@@ -304,8 +305,10 @@ const baseAddr = (s) => { const t = normAddr(s).split(' '); const k = t.findInde
 // Attach assessor building records to lots and buildings and restyle the original buildings. Safe to run
 // again (a saved city from before the records existed gets them on load). New buildings the player or the
 // market builds keep their own look.
-export function applyAssessor(world, data) {
-  if (!data || !data.recs || world.asrV === data.v) return 0;
+// The assessor's cards for a lot: by the parcel's map/block/lot, or, for condominium units (numbered
+// differently in the two datasets), by street address.
+function cardIndex(data) {
+  if (data._idx) return data._idx;
   const byAddr = new Map(), byBase = new Map();
   for (const [id, rec] of Object.entries(data.recs)) {
     if (!rec.a) continue;
@@ -314,22 +317,32 @@ export function applyAssessor(world, data) {
     if (!byBase.has(k)) byBase.set(k, []);
     byBase.get(k).push(id);
   }
+  Object.defineProperty(data, '_idx', { value: { byAddr, byBase }, enumerable: false });
+  return data._idx;
+}
+function lotCards(data, lot) {
+  const { byAddr, byBase } = cardIndex(data);
+  let ids = (lot.mpids || []).filter((id) => data.recs[id]);
+  if (!ids.length) {
+    const set = new Set();
+    for (const a of lot.addrs || [lot.addr]) {
+      if (!a) continue;
+      const id = byAddr.get(normAddr(a));
+      if (id) set.add(id);
+      else for (const x of byBase.get(baseAddr(a)) || []) set.add(x);
+      if (set.size > 60) break;
+    }
+    ids = [...set];
+  }
+  return ids;
+}
+export function applyAssessor(world, data) {
+  styleOutbuilding.world = world;
+  if (!data || !data.recs || world.asrV === data.v) return 0;
   let n = 0;
   for (const lot of world.lots) {
     if (lot.dead || !lot.real) continue;
-    let ids = (lot.mpids || []).filter((id) => data.recs[id]);
-    if (!ids.length) {
-      // condominium units are numbered differently in the two datasets: match them by street address
-      const set = new Set();
-      for (const a of lot.addrs || [lot.addr]) {
-        if (!a) continue;
-        const id = byAddr.get(normAddr(a));
-        if (id) set.add(id);
-        else for (const x of byBase.get(baseAddr(a)) || []) set.add(x);
-        if (set.size > 60) break;
-      }
-      ids = [...set];
-    }
+    const ids = lotCards(data, lot);
     if (!ids.length) continue;
     const recs = ids.map((id) => data.recs[id]);
     let blds;
@@ -357,8 +370,135 @@ export function applyAssessor(world, data) {
   return n;
 }
 
+// ---- backyards: detached garages, sheds, carports and barns ----
+// The assessor's cards list each parcel's outbuildings with their size. Most already have a footprint on the
+// map (a small second building on the lot), which until now was drawn as a tiny house; those take the card's
+// kind. A garage or shed on the card with no footprint is placed where the 2021 lidar found an unmapped roof
+// of about that size on the lot (data/yards.json.gz, built by tools/yards/). Small second buildings on house
+// lots without a card entry are drawn as a garage or shed by size. Looks only: the sim keeps each building's
+// kind, floors and floor area.
+const SQM = 0.0929;
+export function applyYards(world, asr, yards) {
+  styleOutbuilding.world = world;
+  const v = `${asr ? asr.v : 0}.${yards ? yards.v : 0}`;
+  if (world.yardV === v) return 0;
+  const { W, bldgs, lotOf } = world;
+  for (const b of bldgs) if (b.outb) { b.outb = null; b.outbSq = 0; b.outbGuess = false; b.arch = null; styleBuilding(b, b.lot >= 0 ? world.lots[b.lot] : null); }
+  // the lidar's unmapped roofs, by the lot they stand on
+  const pr = worldProj(world);
+  const found = new Map();
+  for (const row of (yards && yards.rows) || []) {
+    const [la, lo, len, wid, brg, eave, top] = row;
+    const [x, y] = pr.toGrid(la / 1e5, lo / 1e5);
+    const xi = Math.floor(x), yi = Math.floor(y);
+    if (xi < 0 || yi < 0 || xi >= W || yi >= world.H) continue;
+    const li = lotOf[yi * W + xi];
+    if (li < 0) continue;
+    if (!found.has(li)) found.set(li, []);
+    found.get(li).push({ x, y, len: len / 10, wid: wid / 10, brg, eave: eave / 10, top: top / 10 });
+  }
+  const props = [];
+  let n = 0;
+  for (const lot of world.lots) {
+    if (lot.dead || lot.zone !== ZONE.R) continue;
+    const bs = lot.bldgs.map((id) => bldgs[id]).filter((b) => b && b.alive && !b.proc).sort((p, q) => q.area - p.area);
+    if (!bs.length) continue;
+    const main = bs[0];
+    if (main.kind !== 'house' && main.kind !== 'apt') continue;
+    const want = [];
+    lot.pools = 0;
+    if (asr && asr.recs && lot.real)
+      for (const id of lotCards(asr, lot))
+        for (const [kind, sq] of asr.recs[id].ob || []) {
+          if (kind === 'pool') lot.pools++;
+          else want.push({ kind, sq, m2: Math.max(6, sq * SQM) });
+        }
+    want.sort((p, q) => q.m2 - p.m2);
+    // small second buildings: not the house, and not a building with its own card
+    const cands = bs.slice(1).filter((b) => b.area * 256 < 150 && b.area < main.area * 0.6 && !(b.asr && b.area >= main.area * 0.45));
+    const left = [];
+    for (const wnt of want) {
+      let best = -1, bd = Math.log(3);
+      cands.forEach((b, k) => { if (b.outb) return; const d = Math.abs(Math.log((b.area * 256) / wnt.m2)); if (d < bd) { bd = d; best = k; } });
+      if (best >= 0) { const b = cands[best]; b.outb = wnt.kind; b.outbSq = wnt.sq; b.outbGuess = false; n++; }
+      else left.push(wnt);
+    }
+    for (const b of cands) if (!b.outb && b.area * 256 < 90) { b.outb = b.area * 256 >= 16 ? 'garage' : 'shed'; b.outbGuess = true; }
+    for (const b of cands) if (b.outb) { if (!b.obb) { const o = obb(b.pts); if (o) b.obb = o.c; } outbFront(world, b, lot); styleBuilding(b, lot); }
+    // what the card lists but the map lacks: an unmapped roof the lidar found on the lot, about the right size
+    const pool = found.get(lot.id) || [];
+    for (const wnt of left) {
+      let best = -1, bd = Math.log(2.6);
+      pool.forEach((f, k) => { if (f.used) return; const d = Math.abs(Math.log((f.len * f.wid) / wnt.m2)); if (d < bd) { bd = d; best = k; } });
+      if (best < 0) continue;
+      const f = pool[best];
+      f.used = true;
+      const a = (f.brg * Math.PI) / 180, ux = Math.sin(a), uy = -Math.cos(a), vx = -uy, vy = ux;
+      const hl = f.len / 2 / CFG.TILE_M, hw = f.wid / 2 / CFG.TILE_M;
+      const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, t]) => [f.x + s * ux * hl + t * vx * hw, f.y + s * uy * hl + t * vy * hw]);
+      const pb = { id: 900000 + props.length, prop: 1, lot: lot.id, pts: c, obb: c.slice(), cx: f.x, cy: f.y, area: (f.len * f.wid) / 256, kind: 'house', outb: wnt.kind, outbSq: wnt.sq, outbGuess: false, lid: { eave: f.eave, top: f.top, form: f.top - f.eave < 0.5 ? 'flat' : 'gable', q: 60 }, alive: 1, proc: 0 };
+      outbFront(world, pb, lot);
+      styleBuilding(pb, lot);
+      props.push(pb);
+      n++;
+    }
+  }
+  world.yardProps = props;
+  world.yardV = v;
+  return n;
+}
+// a garage door faces the driveway, which runs in from the street: the side toward the lot's road
+function outbFront(world, b, lot) {
+  const { W } = world;
+  const o = b.obb;
+  let tx, ty;
+  if (lot && lot.road >= 0) { tx = (lot.road % W) + 0.5; ty = ((lot.road / W) | 0) + 0.5; }
+  else { b.front = 0; return; }
+  let best = 0, bs = -Infinity;
+  for (let k = 0; k < 4; k++) {
+    const a = o[k], c = o[(k + 1) % 4];
+    const mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2;
+    const d = -Math.hypot(tx - mx, ty - my);
+    if (d > bs) { bs = d; best = k; }
+  }
+  b.obb = [o[best], o[(best + 1) % 4], o[(best + 2) % 4], o[(best + 3) % 4]];
+  b.front = 0;
+}
+// colours and heights: a garage often matches its house, a shed is stained wood or painted; walls and roof
+// from the lidar where it measured them
+function styleOutbuilding(b, lot) {
+  const r = hash2(b.id, 7, 3), r2 = hash2(b.id, 11, 5);
+  const world = styleOutbuilding.world;
+  const main = lot && lot.bldgs && world ? lot.bldgs.map((id) => world.bldgs[id]).filter((x) => x && x.alive && !x.outb).sort((p, q) => q.area - p.area)[0] : null;
+  const k = b.outb;
+  if (k === 'shed') {
+    b.col = pick(['#8a6f55', '#d9d4c5', '#7d8a6a', '#9aa3a8', '#a8553f', '#c9b48e'], r);
+    b.roofCol = pick(['#55524d', '#6b4f3a', '#3f4448'], r2);
+  } else if (k === 'barn') {
+    b.col = main && r < 0.5 ? main.col : '#9c3b2e';
+    b.roofCol = '#4a4a48';
+  } else {
+    b.col = main && r < 0.6 ? main.col : pick(['#e9e6de', '#d6d2c8', '#b9b6ae', '#c8bba3'], r);
+    b.roofCol = main && r2 < 0.7 ? main.roofCol : pick(PAL.flatRoof.concat(['#5a5753', '#6b6560']), r2);
+  }
+  const dflt = { garage: [2.6, 4.1], shed: [2.0, 2.8], carport: [2.4, 2.6], barn: [3.4, 6.5] }[k] || [2.6, 4];
+  let eave = dflt[0], top = dflt[1], flat = k === 'carport';
+  if (b.lid && b.lid.q >= 30 && b.lid.top >= 1.8 && b.lid.top <= 9) {
+    top = b.lid.top;
+    eave = Math.min(top, Math.max(1.9, Math.min(4.5, b.lid.form === 'flat' ? top : b.lid.eave)));
+    if (top - eave < 0.4 || b.lid.form === 'flat') { flat = true; eave = top; }
+  }
+  b.eaveH = eave;
+  b.h = top;
+  b.hMeasured = !!(b.lid && b.lid.q >= 30);
+  b.roof = flat ? 'flat' : 'gable';
+  b.arch = 'outb';
+  b._rgb = null;
+}
+
 // Attach the lidar roof fitted to each original building's footprint (data/lidar.json.gz) and restyle it.
 export function applyLidar(world, data) {
+  styleOutbuilding.world = world;
   if (!data || !data.rows || world.lidV === data.v) return 0;
   const pr = worldProj(world);
   const grid = new Map();
@@ -1004,6 +1144,7 @@ export function buildWorld(raw, progress = () => {}) {
   if (raw.assessor) { progress('Reading the assessor’s building cards…'); applyAssessor(world, raw.assessor); }
   if (raw.lidar) { progress('Measuring roofs from the lidar…'); applyLidar(world, raw.lidar); }
   if (raw.trees) { progress('Planting every tree where it really stands…'); applyTrees(world, raw.trees); }
+  if (raw.assessor || raw.yards) applyYards(world, raw.assessor, raw.yards);
   return world;
 }
 
