@@ -2,6 +2,8 @@
 // A mockup to see whether a citizen's-eye view adds anything. Everything the household feels comes from the
 // city model (traffic on the way to work, the buses, what's within walking distance, the weather, the tax rate,
 // the bedtimes the night lights already use); nothing here feeds back into the city except a diary.
+// The house itself follows the town assessor's card (js/floorplan.js): stories, attic and basement, units,
+// rooms, bedrooms, baths, heating, floors and fireplaces. Only the placement of the walls is a guess.
 // To remove: delete this file and the "Step inside" button in ui.js.
 import { CFG, ZONE } from './config.js';
 import { clamp, hash2, el, fmtMoney } from './util.js';
@@ -9,15 +11,24 @@ import { ROUTES, routeTiles } from './transit.js';
 import { weatherDay } from './weather.js';
 import { BEDTIMES, groupOf, clock, twilight, skyTint, SPEEDS } from './daynight.js';
 import { homeLot, irvingSeason } from './eggs.js';
+import { floorPlan, SLAB, ROOM_LABEL } from './floorplan.js';
 
 const M = CFG.TILE_M; // metres per tile
-const FLOOR_H = 2.7, SLAB = 0.35;
 const NAMES = ['Dana', 'Luis', 'Priya', 'Theo', 'Mara', 'Jun', 'Rosa', 'Ike', 'Noor', 'Ben', 'Ada', 'Kofi', 'Lena', 'Omar', 'June', 'Pavel'];
 const KID = ['Milo', 'Ana', 'Rui', 'Zoe', 'Kai', 'Lila', 'Sol', 'Bea'];
 const FOOD = /restaurant|eatery|fast_food|cafe|coffee|bakery|bar$|pub|pizza|diner|ice_cream|deli|sandwich|food/;
 const SHOP = /store|shop|market|grocery|pharmacy|book|florist|boutique|bakery/;
 const uniq = (list) => list.filter((x, i) => list.findIndex((y) => y.n === x.n) === i);
-const ROOM_COL = { living: '#c9b48f', bed: '#a9b7c9', kitchen: '#d8d2c2', bath: '#bfd6d6', dining: '#c7a98a', hall: '#bdb3a2', porch: '#9b8466' };
+// floors: what the assessor says the main finish is (hardwood in most of Watertown), tile in kitchens and baths,
+// concrete in an unfinished basement, boards in the attic
+const FLOOR_COL = { wood: '#b98b5e', carpet: '#a9a3b4', plank: '#b39470', tile: '#d6d2c8', vinyl: '#cfc6b0', concrete: '#a8a59d' };
+function floorCol(t, finish, kind) {
+  if (kind === 'basement') return t === 'rec' ? FLOOR_COL.carpet : FLOOR_COL.concrete;
+  if (t === 'kitchen' || t === 'bath' || t === 'half' || t === 'laundry') return t === 'kitchen' ? FLOOR_COL.vinyl : FLOOR_COL.tile;
+  if (kind === 'attic' || kind === 'loft') return '#b0956f';
+  if (finish === 'carpet' && (t === 'bed' || t === 'primary' || t === 'den')) return FLOOR_COL.carpet;
+  return FLOOR_COL[finish] || FLOOR_COL.wood;
+}
 
 export const canStepInside = (lot) => !!lot && !lot.dead && (lot.zone === ZONE.R || lot.mixed) && lot.units > 0 && lot.units <= 6 && lot.bldgs && lot.bldgs.length > 0;
 
@@ -35,43 +46,16 @@ function shell(world, lot) {
   }
   const W = clamp(Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) * M, 5, 30);
   const D = clamp(Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]) * M, 6, 30);
-  const floors = clamp(Math.round(b.levels || 2), 1, 6);
-  const units = clamp(lot.units || 1, 1, 6);
-  return { b, W, D, floors, units };
-}
-
-// room layouts in unit coordinates: u across the front (0..1), v from the street (0) to the back (1)
-const FLAT = [ // a whole-floor flat, the triple-decker way: parlour in front, bedrooms in the middle, kitchen at the back
-  { t: 'living', r: [0, 0, 1, 0.32] },
-  { t: 'bed', r: [0, 0.32, 0.55, 0.66] },
-  { t: 'bed', r: [0.55, 0.32, 1, 0.66] },
-  { t: 'kitchen', r: [0, 0.66, 0.62, 1] },
-  { t: 'bath', r: [0.62, 0.66, 1, 1] },
-];
-const DOWN = [ // a single-family ground floor
-  { t: 'living', r: [0, 0, 1, 0.45] },
-  { t: 'dining', r: [0, 0.45, 0.45, 1] },
-  { t: 'kitchen', r: [0.45, 0.45, 1, 1] },
-];
-const UP = [
-  { t: 'bed', r: [0, 0, 0.5, 0.5] },
-  { t: 'bed', r: [0.5, 0, 1, 0.5] },
-  { t: 'bed', r: [0, 0.5, 0.6, 1] },
-  { t: 'bath', r: [0.6, 0.5, 1, 1] },
-];
-function plan(sh) {
-  // which unit each floor belongs to, and what's on it
-  const out = [];
-  // one flat per floor in two- and three-deckers (the top unit gets the attic); a single-family house has
-  // its living rooms downstairs and bedrooms up
-  const unitOf = (f) => (sh.units >= 2 ? Math.min(sh.units - 1, f) : 0);
-  for (let f = 0; f < sh.floors; f++) {
-    const unit = unitOf(f);
-    const first = f === 0 || unitOf(f - 1) !== unit;
-    const rooms = sh.units >= 2 ? (first ? FLAT : UP) : first ? DOWN : UP;
-    out.push({ f, unit, rooms: rooms.map((r) => ({ ...r, r: [r.r[0] * sh.W, r.r[1] * sh.D, r.r[2] * sh.W, r.r[3] * sh.D] })) });
-  }
-  return out;
+  // the assessor's card: the building's own, or each condominium unit's
+  const card = b.asr || null;
+  // condominium units, ground floor first (each unit's card says which of its floor areas is the base)
+  const unitCards = lot.asrUnits && lot.asrUnits.length > 1 ? lot.asrUnits.slice().sort((p, q) => ((q.sa && q.sa.BAS) || 0) - ((p.sa && p.sa.BAS) || 0)) : null;
+  const units = clamp(unitCards ? unitCards.length : lot.units || 1, 1, 6);
+  // a condominium's cards describe units, not the building: its height comes from the map, or the unit count
+  let levels = b.levels || 2;
+  if (unitCards && b.lvSrc !== 'osm' && b.lvSrc !== 'assessor') levels = units <= 3 ? Math.max(2, units) + 0.5 : 3;
+  const fp = floorPlan({ W, D, levels, units, card: unitCards ? { ...card, sa: null, rm: 0 } : card, unitCards, seed: lot.id });
+  return { b, W, D, units, card, unitCards, fp };
 }
 
 // ---------- what the city looks like from this front door ----------
@@ -127,13 +111,14 @@ function surroundings(game, lot) {
 // ---------- the household ----------
 function household(lot, unit, sh) {
   const seed = lot.id * 7 + unit;
-  const area = (sh.W * sh.D * sh.floors) / sh.units;
-  const adults = hash2(seed, 1, 1) < (area > 90 ? 0.7 : 0.45) ? 2 : 1;
-  const kids = adults === 2 && area > 80 ? Math.floor(hash2(seed, 2, 1) * 3) : 0;
+  // sized to the bedrooms the assessor counts: a couple in the big one, children in the others
+  const beds = sh.fp.progs[unit] ? sh.fp.progs[unit].beds : 2;
+  const adults = beds >= 2 ? (hash2(seed, 1, 1) < 0.8 ? 2 : 1) : hash2(seed, 1, 1) < 0.45 ? 2 : 1;
+  const kids = beds >= 2 ? clamp(beds - 1 - (hash2(seed, 2, 1) < 0.35 ? 1 : 0), 0, 3) : 0;
   const tier = groupOf(hash2(lot.bldgs[0] || lot.id, 91, 3)); // the same bedtime group the city's night lights use
   const people = [];
-  for (let k = 0; k < adults; k++) people.push({ name: NAMES[Math.floor(hash2(seed, 3 + k, 1) * NAMES.length)], kid: false, col: ['#3d6db5', '#b5473d', '#4a8a4a', '#8a5ab5'][Math.floor(hash2(seed, 5 + k, 1) * 4)], wfh: hash2(seed, 9 + k, 1) < 0.28 });
-  for (let k = 0; k < kids; k++) people.push({ name: KID[Math.floor(hash2(seed, 13 + k, 1) * KID.length)], kid: true, col: ['#e3a83a', '#d0568f', '#3aa3a0'][k % 3] });
+  for (let k = 0; k < adults; k++) people.push({ name: NAMES[(Math.floor(hash2(seed, 3, 1) * NAMES.length) + k * 5) % NAMES.length], kid: false, col: ['#3d6db5', '#b5473d', '#4a8a4a', '#8a5ab5'][Math.floor(hash2(seed, 5 + k, 1) * 4)], wfh: hash2(seed, 9 + k, 1) < 0.28 });
+  for (let k = 0; k < kids; k++) people.push({ name: KID[(Math.floor(hash2(seed, 13, 1) * KID.length) + k * 3) % KID.length], kid: true, col: ['#e3a83a', '#d0568f', '#3aa3a0'][k % 3] });
   return { people, tier, unit };
 }
 
@@ -179,22 +164,77 @@ function poly(g, pts) {
 }
 const FURN = {
   living: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + 0.4, v1 - 1.2, Math.min(2.4, u1 - u0 - 0.8), 0.9, 0, 0.8, '#6b4f7a'); b(u0 + (u1 - u0) / 2 - 0.6, v0 + 0.5, 1.2, 0.35, 0, 0.9, '#2a2a30'); b(u0 + (u1 - u0) / 2 - 0.5, v0 + 1.4, 1, 0.6, 0, 0.4, '#8a6a4a'); },
-  bed: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + 0.3, v1 - 2.3, 1.5, 2.0, 0, 0.5, '#e8e2d6'); b(u0 + 0.3, v1 - 0.6, 1.5, 0.3, 0.5, 0.15, '#ffffff'); b(u1 - 1.0, v0 + 0.3, 0.8, 0.5, 0, 1.0, '#7a5a3a'); },
-  kitchen: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + 0.1, v1 - 0.7, u1 - u0 - 0.2, 0.6, 0, 0.9, '#efeae0'); b(u1 - 0.7, v0 + 0.4, 0.6, v1 - v0 - 1.2, 0, 0.9, '#efeae0'); b(u0 + 0.8, v0 + 0.8, 1.2, 0.9, 0, 0.75, '#9a7650'); },
-  bath: (b, r) => { const [u0, , u1, v1] = r; b(u0 + 0.2, v1 - 0.9, Math.min(1.7, u1 - u0 - 0.4), 0.75, 0, 0.55, '#f6f6f6'); b(u1 - 0.7, v1 - 1.9, 0.45, 0.5, 0, 0.45, '#ffffff'); },
+  bed: (b, r) => { const [u0, v0, u1, v1] = r; const w = Math.min(1.4, u1 - u0 - 0.8); b(u0 + 0.3, v1 - 2.2, w, 1.95, 0, 0.5, '#e8e2d6'); b(u0 + 0.3, v1 - 0.55, w, 0.3, 0.5, 0.15, '#ffffff'); b(u1 - 1.0, v0 + 0.3, 0.8, 0.5, 0, 1.0, '#7a5a3a'); },
+  primary: (b, r) => { const [u0, v0, u1, v1] = r; const w = Math.min(1.9, u1 - u0 - 0.8); b(u0 + 0.3, v1 - 2.3, w, 2.0, 0, 0.5, '#e8e2d6'); b(u0 + 0.3, v1 - 0.6, w, 0.3, 0.5, 0.15, '#ffffff'); b(u1 - 1.0, v0 + 0.3, 0.8, 0.5, 0, 1.0, '#7a5a3a'); },
+  kitchen: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + 0.1, v1 - 0.7, u1 - u0 - 0.2, 0.6, 0, 0.9, '#efeae0'); b(u1 - 0.7, v0 + 0.4, 0.6, Math.max(0.6, v1 - v0 - 1.2), 0, 0.9, '#efeae0'); b(u0 + 0.8, v0 + 0.8, 1.2, 0.9, 0, 0.75, '#9a7650'); },
+  bath: (b, r) => { const [u0, , u1, v1] = r; b(u0 + 0.15, v1 - 0.85, Math.min(1.6, u1 - u0 - 0.3), 0.72, 0, 0.55, '#f6f6f6'); b(u1 - 0.6, v1 - 1.8, 0.42, 0.5, 0, 0.45, '#ffffff'); },
+  half: (b, r) => { const [u0, , u1, v1] = r; b(u0 + 0.15, v1 - 0.65, 0.42, 0.5, 0, 0.45, '#ffffff'); b(Math.min(u1 - 0.6, u0 + 0.8), v1 - 0.55, 0.5, 0.4, 0, 0.85, '#f6f6f6'); },
   dining: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + (u1 - u0) / 2 - 0.8, v0 + (v1 - v0) / 2 - 0.5, 1.6, 1.0, 0, 0.75, '#7a5638'); },
+  den: (b, r) => { const [u0, v0, u1, v1] = r; b(u1 - 1.5, v0 + 0.3, 1.2, 0.6, 0, 0.75, '#7a5a3a'); b(u0 + 0.3, v1 - 0.5, Math.min(1.8, u1 - u0 - 0.6), 0.35, 0, 1.8, '#8a6a4a'); },
+  rec: (b, r) => { const [u0, v0, u1, v1] = r; b(u0 + 0.4, v1 - 1.2, Math.min(2.4, u1 - u0 - 0.8), 0.9, 0, 0.8, '#5a6b7a'); b(u0 + (u1 - u0) / 2 - 0.6, v0 + 0.5, 1.2, 0.35, 0, 0.9, '#2a2a30'); },
+  laundry: (b, r) => { const [u0, , , v1] = r; b(u0 + 0.2, v1 - 0.75, 0.65, 0.65, 0, 0.9, '#f2f2f2'); b(u0 + 0.95, v1 - 0.75, 0.65, 0.65, 0, 0.9, '#f2f2f2'); },
+  storage: (b, r) => { const [u0, v0, u1, v1] = r; for (let k = 0; k < 3; k++) b(u0 + 0.3 + k * 0.8, v1 - 0.8 - (k % 2) * 0.5, 0.6, 0.6, 0, 0.5 + 0.2 * (k % 2), '#a88a5e'); b(u1 - 0.6, v0 + 0.3, 0.4, clamp(v1 - v0 - 0.6, 0.5, 2.4), 0, 1.5, '#a39d90'); },
+  attic: (b, r) => { const [u0, v0, u1] = r; b(u0 + 0.5, v0 + 0.6, 1.1, 0.6, 0, 0.75, '#7a5a3a'); b(u1 - 1.2, v0 + 0.5, 0.8, 0.8, 0, 0.45, '#a88a5e'); },
 };
+// the boiler or furnace and water heater, by the assessor's heating type
+const UTILITY = (ht) => (b, r) => {
+  const [u0, , u1, v1] = r;
+  if (ht === 'air') b(u0 + 0.3, v1 - 1.1, 0.8, 0.8, 0, 1.4, '#9aa0a6'); // furnace
+  else if (ht === 'hp' || ht === 'bb') b(u0 + 0.3, v1 - 0.9, 0.6, 0.6, 0, 1.0, '#c9ccce'); // just a panel and the water heater
+  else b(u0 + 0.3, v1 - 1.2, 1.0, 0.9, 0, 1.2, ht === 'steam' ? '#5a4a3e' : '#7a3a32'); // boiler
+  b(Math.min(u1 - 0.7, u0 + 1.6), v1 - 0.7, 0.5, 0.5, 0, 1.5, '#d8dcdc'); // water heater
+};
+
+const WALL_WORD = { vinyl: 'vinyl siding', aluminum: 'aluminum siding', clapboard: 'clapboards', shingle: 'wood shingles', asbestos: 'asbestos shingles', brick: 'brick', stucco: 'stucco', stone: 'stone' };
+const HEAT_WORD = { hw: 'hot-water radiators', steam: 'steam radiators', air: 'forced hot air', hp: 'heat pumps', bb: 'electric baseboards' };
+function cardSummary(sh, unit) {
+  const c = sh.card, pr = sh.fp.progs[unit];
+  if (!c && !sh.unitCards) return 'No card for this building, so its rooms are sized from the floor area.';
+  const u = sh.unitCards ? sh.unitCards[unit] : c;
+  const bits = [];
+  if (u && u.y) bits.push(`Built ${u.y}`);
+  if (c && c.s) bits.push(c.s);
+  bits.push(`${pr.rooms} rooms, ${pr.beds} bedroom${pr.beds === 1 ? '' : 's'}, ${pr.fb} bath${pr.fb === 1 ? '' : 's'}${pr.hb ? ` and ${pr.hb} half` : ''}${sh.units > 1 ? (sh.unitCards ? ' in this unit' : ' per unit') : ''}`);
+  const fl = sh.fp;
+  bits.push(`${fl.main} stor${fl.main === 1 ? 'y' : 'ies'}${fl.atticFin ? ' plus a finished attic' : ''}, ${fl.baseFin ? 'finished' : 'unfinished'} basement`);
+  const src = (u && u.ht) ? u : c;
+  if (src && HEAT_WORD[src.ht]) bits.push(HEAT_WORD[src.ht] + (src.ac >= 50 ? ', central air' : ''));
+  if (src && src.fl) bits.push(`${{ wood: 'hardwood', carpet: 'carpeted', plank: 'plank', tile: 'tile', vinyl: 'vinyl', concrete: 'concrete' }[src.fl]} floors`);
+  if (c && c.f) bits.push(`${c.f} fireplace${c.f > 1 ? 's' : ''}`);
+  if (c && WALL_WORD[c.w]) bits.push(`${WALL_WORD[c.w]} outside`);
+  return bits.join(' · ') + '.';
+}
 
 export function openHome(game, lot) {
   const sh = shell(game.world, lot);
   if (!sh) return;
-  const floors = plan(sh);
+  const fp = sh.fp;
+  const floors = fp.floors;
   const mine = lot === homeLot(game.world);
   const myUnit = mine ? Math.min(sh.units - 1, 1) : Math.floor(hash2(lot.id, 5, 5) * sh.units);
   const hh = household(lot, myUnit, sh);
   const st = (lot.home = lot.home || {});
   st.mode = st.mode || null;
-  let view = floors.find((f) => f.unit === myUnit).f;
+  const finish = (sh.unitCards && sh.unitCards[myUnit] && sh.unitCards[myUnit].fl) || (sh.card && sh.card.fl) || 'wood';
+  const heat = (sh.unitCards && sh.unitCards[myUnit] && sh.unitCards[myUnit].ht) || (sh.card && sh.card.ht) || 'hw';
+  const roomUnit = (fl, rm) => (rm.unit != null && rm.unit >= 0 ? rm.unit : fl.unit);
+  const mineIn = (fl, rm) => roomUnit(fl, rm) === myUnit;
+  // where the household's rooms are: each person's bedroom, and which floor each room is on
+  const myRooms = [];
+  floors.forEach((fl, fi) => fl.rooms.forEach((rm) => { if (mineIn(fl, rm)) myRooms.push({ rm, fi }); }));
+  const bedsMine = myRooms.filter((x) => x.rm.t === 'primary' || x.rm.t === 'bed');
+  const roomFor = (p, t, work) => {
+    const pi = hh.people.indexOf(p);
+    if (t === 'bed') {
+      if (!p.kid) return bedsMine.find((x) => x.rm.t === 'primary') || bedsMine[0];
+      const kidIx = hh.people.filter((q) => q.kid).indexOf(p);
+      return bedsMine.filter((x) => x.rm.t === 'bed')[kidIx] || bedsMine[bedsMine.length - 1];
+    }
+    if (t === 'bath') { const bs = myRooms.filter((x) => x.rm.t === 'bath' || x.rm.t === 'half'); return bs[pi % Math.max(1, bs.length)]; }
+    if (t === 'living' && work) return myRooms.find((x) => x.rm.t === 'den') || myRooms.find((x) => x.rm.t === 'living');
+    return myRooms.find((x) => x.rm.t === t) || myRooms.find((x) => x.rm.t === 'living') || myRooms[0];
+  };
+  let view = Math.max(0, floors.findIndex((f, fi) => f.kind === 'main' && f.rooms.some((rm) => mineIn(f, rm) && rm.t === 'living')));
   const diary = [];
   const prevWhere = new Map();
   const pos = new Map();
@@ -211,10 +251,11 @@ export function openHome(game, lot) {
     el('div', { class: 'wbar' }, el('button', { class: 'wclose', title: 'Back to the city', onclick: close }, '×'), el('span', {}, `${title} — experimental`)),
     el('div', { class: 'hv-main' }, el('div', { class: 'hv-stage' }, cv, floorBtns), side));
   document.body.append(root);
+  const FLOOR_NAME = { B: 'Basement', A: 'Attic' };
   const drawFloorBtns = () => {
     floorBtns.innerHTML = '';
-    for (let f = sh.floors - 1; f >= 0; f--)
-      floorBtns.append(el('button', { class: `hv-fb${f === view ? ' on' : ''}`, title: `Floor ${f + 1}`, onclick: () => { view = f; drawFloorBtns(); } }, `${f + 1}`));
+    for (let f = floors.length - 1; f >= 0; f--)
+      floorBtns.append(el('button', { class: `hv-fb${f === view ? ' on' : ''}`, title: FLOOR_NAME[floors[f].key] || `Floor ${floors[f].key}`, onclick: () => { view = f; drawFloorBtns(); } }, floors[f].key));
   };
   drawFloorBtns();
 
@@ -263,6 +304,9 @@ export function openHome(game, lot) {
         el('button', { class: `choice${st.dinner !== today ? ' on' : ''}`, onclick: () => { st.dinner = null; renderSide(); } }, '🍳 Cook dinner at home'),
         ...uniq(env.near).slice(0, 3).map((pl) => el('button', { class: `choice${st.dinner === today && st.where === pl.n ? ' on' : ''}`, onclick: () => { st.dinner = today; st.where = pl.n; note(`Dinner out tonight at ${pl.n}: one more walking trip on the street.`); renderSide(); } }, `🚶 Walk to ${pl.n} · ${Math.max(1, Math.round(pl.d / 80))} min`))));
     }
+    sec('The assessor’s card');
+    side.append(el('p', {}, cardSummary(sh, myUnit)));
+    side.append(el('p', { class: 'fine' }, 'The rooms, bedrooms, baths, stories, attic, basement, heating, floors and fireplaces are from the town assessor. Where the walls go is a guess in the usual Watertown pattern: the assessor doesn’t record floor plans.'));
     sec('This month');
     kv('Property tax (per unit)', `${fmtMoney(taxMo)}/mo`);
     kv('If renting, about', `${fmtMoney(rentMo)}/mo`);
@@ -296,21 +340,33 @@ export function openHome(game, lot) {
     g.fillStyle = sky;
     g.fillRect(0, 0, cv.width, cv.height);
     // isometric projection: u across the front, v toward the back, z up; the street corner is nearest
+    const top = floors[floors.length - 1];
     const span = sh.W + sh.D + 6;
-    const S = Math.min(cv.width / (span * 0.92), cv.height / (span * 0.5 + (FLOOR_H + SLAB) * (sh.floors + 0.6))) * 0.92;
-    const ox = cv.width / 2 - (sh.W - sh.D) * 0.866 * S / 2, oy = cv.height - (sh.W + sh.D) * 0.03 * S - 3.5 * 0.5 * S - 8;
-    const zBase = (f) => f * (FLOOR_H + SLAB);
+    const S = Math.min(cv.width / (span * 0.92), cv.height / (span * 0.5 + top.z + top.h + 3.2)) * 0.92;
+    const ox = cv.width / 2 - (sh.W - sh.D) * 0.866 * S / 2, oy = cv.height - (sh.W + sh.D) * 0.03 * S - 3.5 * 0.5 * S - 8 - 2.6 * S;
     const P = (u, v, z) => [ox + (u - v) * 0.866 * S, oy - (u + v) * 0.5 * S - z * S];
     const B = (z0) => (u, v, w, d, z, h, col) => box(g, P, u, v, w, d, z0 + z, h, col, 1 - 0.55 * dark);
-    // ground and the yard
+    const card = sh.card || {};
+    const fl = floors[view];
+    const z0 = fl.z;
+    const below = fl.kind === 'basement';
+    // ground and the yard (seen from below when we're in the basement)
+    const zg = -SLAB;
     g.fillStyle = `rgb(${Math.round(92 * tint[0] / 255)},${Math.round(140 * tint[1] / 255)},${Math.round(70 * tint[2] / 255)})`;
     const yard = 3;
-    poly(g, [P(-yard, -yard - 3, zBase(0) - SLAB), P(sh.W + yard, -yard - 3, zBase(0) - SLAB), P(sh.W + yard, sh.D + yard, zBase(0) - SLAB), P(-yard, sh.D + yard, zBase(0) - SLAB)]);
-    g.fillStyle = `rgb(${Math.round(120 * tint[0] / 255)},${Math.round(118 * tint[1] / 255)},${Math.round(112 * tint[2] / 255)})`;
-    poly(g, [P(-yard, -yard - 3, zBase(0) - SLAB + 0.01), P(sh.W + yard, -yard - 3, zBase(0) - SLAB + 0.01), P(sh.W + yard, -yard - 0.5, zBase(0) - SLAB + 0.01), P(-yard, -yard - 0.5, zBase(0) - SLAB + 0.01)]); // sidewalk
+    const porch = card.p && card.p[0] + card.p[1] >= 25, deck = card.p && card.p[3] >= 40;
+    if (!below) {
+      poly(g, [P(-yard, -yard - 3, zg), P(sh.W + yard, -yard - 3, zg), P(sh.W + yard, sh.D + yard, zg), P(-yard, sh.D + yard, zg)]);
+      g.fillStyle = `rgb(${Math.round(120 * tint[0] / 255)},${Math.round(118 * tint[1] / 255)},${Math.round(112 * tint[2] / 255)})`;
+      poly(g, [P(-yard, -yard - 3, zg + 0.01), P(sh.W + yard, -yard - 3, zg + 0.01), P(sh.W + yard, -yard - 0.5, zg + 0.01), P(-yard, -yard - 0.5, zg + 0.01)]); // sidewalk
+    } else {
+      // the earth around the cellar, cut away
+      g.fillStyle = '#6b5440';
+      poly(g, [P(sh.W, -0.3, z0 - SLAB), P(sh.W + 0.6, -0.3, z0 - SLAB), P(sh.W + 0.6, sh.D + 0.6, z0 - SLAB), P(sh.W + 0.6, sh.D + 0.6, zg), P(sh.W, sh.D, zg), P(sh.W, -0.3, zg)]);
+      poly(g, [P(-0.3, sh.D, z0 - SLAB), P(sh.W + 0.6, sh.D, z0 - SLAB), P(sh.W + 0.6, sh.D + 0.6, z0 - SLAB), P(sh.W + 0.6, sh.D + 0.6, zg), P(-0.3, sh.D + 0.6, zg), P(-0.3, sh.D, zg)]);
+    }
     // September and October, after dark, at the one house in town that goes all out
-    if (mine && irvingSeason(game.sim) && dark > 0.35) {
-      const zg = zBase(0) - SLAB;
+    if (mine && irvingSeason(game.sim) && dark > 0.35 && !below) {
       const c0 = P(sh.W * 0.5, -2.2, zg);
       const gr = g.createRadialGradient(c0[0], c0[1], 0, c0[0], c0[1], 7 * S);
       gr.addColorStop(0, `rgba(215,20,24,${0.75 * dark})`);
@@ -329,33 +385,62 @@ export function openHome(game, lot) {
         g.beginPath(); g.arc(t0[0], t0[1] - 0.15 * S, 0.2 * S, 0, Math.PI * 2); g.fill();
       }
     }
-    // floors below the one we're looking at: solid, closed
-    for (const fl of floors) {
-      if (fl.f >= view) continue;
-      B(zBase(fl.f) - SLAB)(0, 0, sh.W, sh.D, 0, FLOOR_H + SLAB, '#d9cdb5');
-      // windows on the two street-facing walls
+    // the back deck, and the front porch the card lists (drawn on the ground floor)
+    if (deck && !below) B(zg)(sh.W * 0.3, sh.D, Math.min(4, sh.W * 0.6), 2.6, 0, 0.5, '#9a7a56');
+    // floors below the one we're looking at: solid, closed (the cellar is underground)
+    for (let fi = 0; fi < view; fi++) {
+      const lo = floors[fi];
+      if (lo.kind === 'basement') continue;
+      B(lo.z - SLAB)(0, 0, sh.W, sh.D, 0, lo.h + SLAB, '#d9cdb5');
       for (let k = 0; k < 3; k++) {
         const u = (k + 0.3) * sh.W / 3;
-        const lit = dark > 0.3 && hash2(fl.f, k, lot.id) < 0.5;
-        g.fillStyle = lit ? '#ffd27f' : `rgba(40,55,85,${0.85})`;
-        poly(g, [P(u, 0, zBase(fl.f) + 0.9), P(u + 1, 0, zBase(fl.f) + 0.9), P(u + 1, 0, zBase(fl.f) + 2.1), P(u, 0, zBase(fl.f) + 2.1)]);
+        const lit = dark > 0.3 && hash2(fi, k, lot.id) < 0.5;
+        g.fillStyle = lit ? '#ffd27f' : 'rgba(40,55,85,0.85)';
+        poly(g, [P(u, 0, lo.z + 0.9), P(u + 1, 0, lo.z + 0.9), P(u + 1, 0, lo.z + 2.1), P(u, 0, lo.z + 2.1)]);
       }
     }
+    if (porch && view > 0 && !below) {
+      // the porch roof seen past the first floor
+      const pz = floors.find((f) => f.kind === 'main').z;
+      B(pz + 2.6)(sh.W * 0.08, -2.2, sh.W * 0.84, 2.2, 0, 0.18, '#7d7266');
+    }
     // the floor we're on, cut away: slab, back walls, rooms, furniture, people
-    const fl = floors[view];
-    const z0 = zBase(view);
-    g.fillStyle = '#5c5246';
+    g.fillStyle = below ? '#4d4a45' : '#5c5246';
     poly(g, [P(0, 0, z0), P(sh.W, 0, z0), P(sh.W, 0, z0 - SLAB), P(0, 0, z0 - SLAB)]);
     poly(g, [P(0, 0, z0), P(0, sh.D, z0), P(0, sh.D, z0 - SLAB), P(0, 0, z0 - SLAB)]);
-    const home = fl.unit === myUnit;
-    const someoneIn = (t) => home && hh.people.some((p) => { const w = whereIs(p, hour, cx); return !w.out && !w.sleep && w.t === t; });
+    if (porch && fl.kind === 'main' && fl === floors.find((f) => f.kind === 'main')) {
+      const enc = card.p[1] > card.p[0];
+      B(z0 - SLAB)(sh.W * 0.08, -2.2, sh.W * 0.84, 2.2, 0, SLAB, '#9b8466');
+      if (enc) {
+        B(z0)(sh.W * 0.08, -2.2, sh.W * 0.84, 0.12, 0, 0.9, '#e8dcc4');
+        g.fillStyle = 'rgba(150,190,230,0.55)';
+        poly(g, [P(sh.W * 0.1, -2.2, z0 + 0.95), P(sh.W * 0.9, -2.2, z0 + 0.95), P(sh.W * 0.9, -2.2, z0 + 2.2), P(sh.W * 0.1, -2.2, z0 + 2.2)]);
+      } else for (const u of [sh.W * 0.1, sh.W * 0.5, sh.W * 0.88]) B(z0)(u, -2.15, 0.14, 0.14, 0, 2.5, '#f2ede2');
+    }
+    const someoneIn = (rm) => hh.people.some((p) => { const w = whereIs(p, hour, cx); if (w.out || w.sleep) return false; const rf = roomFor(p, w.t, w.work); return rf && rf.rm === rm; });
+    // hall and stairs
+    if (fl.stair) {
+      const hw = fl.stair[2];
+      g.fillStyle = floorCol('hall', finish, fl.kind);
+      poly(g, [P(0, 0, z0), P(hw, 0, z0), P(hw, sh.D, z0), P(0, sh.D, z0)]);
+    }
     for (const rm of fl.rooms) {
       const [u0, v0, u1, v1] = rm.r;
-      const c = ROOM_COL[rm.t].match(/\w\w/g).map((x) => parseInt(x, 16));
-      const lit = dark > 0.25 && (home ? someoneIn(rm.t) : hash2(view, rm.r[0] * 7 + rm.r[1], lot.id) < 0.4);
+      const c = floorCol(rm.t, finish, fl.kind).match(/\w\w/g).map((x) => parseInt(x, 16));
+      const home = mineIn(fl, rm);
+      const lit = dark > 0.25 && (home ? someoneIn(rm) : hash2(view, rm.r[0] * 7 + rm.r[1], lot.id) < 0.4);
       const k = lit ? 1 : 1 - 0.6 * dark;
-      g.fillStyle = `rgb(${c.map((x) => Math.round(x * k)).join(',')})`;
+      g.fillStyle = `rgb(${c.map((x) => Math.round(x * k * (home ? 1 : 0.9))).join(',')})`;
       poly(g, [P(u0, v0, z0), P(u1, v0, z0), P(u1, v1, z0), P(u0, v1, z0)]);
+      if (rm.t === 'kitchen' || rm.t === 'bath' || rm.t === 'half') {
+        // tile joints
+        g.strokeStyle = 'rgba(0,0,0,0.08)';
+        g.lineWidth = 1;
+        g.beginPath();
+        for (let u = Math.ceil(u0 / 0.6) * 0.6; u < u1; u += 0.6) { const a2 = P(u, v0, z0), b2 = P(u, v1, z0); g.moveTo(a2[0], a2[1]); g.lineTo(b2[0], b2[1]); }
+        for (let v = Math.ceil(v0 / 0.6) * 0.6; v < v1; v += 0.6) { const a2 = P(u0, v, z0), b2 = P(u1, v, z0); g.moveTo(a2[0], a2[1]); g.lineTo(b2[0], b2[1]); }
+        g.stroke();
+      }
       if (lit) {
         const m = P((u0 + u1) / 2, (v0 + v1) / 2, z0);
         const gr = g.createRadialGradient(m[0], m[1], 0, m[0], m[1], (u1 - u0 + v1 - v0) * 0.45 * S);
@@ -366,106 +451,152 @@ export function openHome(game, lot) {
       }
     }
     // room names, faintly, on the floor
-    g.font = `${Math.round(Math.max(9, 0.55 * S))}px Geneva, Tahoma, sans-serif`;
+    g.font = `${Math.round(Math.max(9, 0.5 * S))}px Geneva, Tahoma, sans-serif`;
     g.textAlign = 'center';
-    g.fillStyle = 'rgba(60,45,30,0.45)';
+    g.fillStyle = 'rgba(60,45,30,0.5)';
     for (const rm of fl.rooms) {
       const [u0, v0, u1, v1] = rm.r;
       const m = P(u0 + (u1 - u0) * 0.5, v0 + (v1 - v0) * 0.22, z0);
-      g.fillText({ living: 'Living room', bed: 'Bedroom', kitchen: 'Kitchen', bath: 'Bath', dining: 'Dining' }[rm.t] || '', m[0], m[1]);
+      const lab = rm.label || ROOM_LABEL[rm.t] || '';
+      g.fillText(fp.cols > 1 && fl.kind === 'main' ? `${lab} (${roomUnit(fl, rm) + 1})` : lab, m[0], m[1]);
     }
     g.textAlign = 'left';
-    // back walls, full height, with windows onto the night or the day
-    const wallC = home ? '#e8dcc4' : '#d9d0bf';
+    // back walls, full height, with windows onto the night or the day (none below ground)
+    const H = fl.h;
+    const wallC = below ? '#b4b0a6' : '#e8dcc4';
     const wc = wallC.match(/\w\w/g).map((x) => parseInt(x, 16));
     const wk = 1 - 0.5 * dark;
     g.fillStyle = `rgb(${wc.map((x) => Math.round(x * wk * 0.82)).join(',')})`;
-    poly(g, [P(sh.W, 0, z0), P(sh.W, sh.D, z0), P(sh.W, sh.D, z0 + FLOOR_H), P(sh.W, 0, z0 + FLOOR_H)]);
+    poly(g, [P(sh.W, 0, z0), P(sh.W, sh.D, z0), P(sh.W, sh.D, z0 + H), P(sh.W, 0, z0 + H)]);
     g.fillStyle = `rgb(${wc.map((x) => Math.round(x * wk * 0.94)).join(',')})`;
-    poly(g, [P(0, sh.D, z0), P(sh.W, sh.D, z0), P(sh.W, sh.D, z0 + FLOOR_H), P(0, sh.D, z0 + FLOOR_H)]);
-    const winC = `rgb(${Math.round(150 * tint[0] / 255)},${Math.round(190 * tint[1] / 255)},${Math.round(230 * tint[2] / 255)})`;
-    g.fillStyle = winC;
-    for (let k = 0; k < Math.max(2, Math.floor(sh.W / 3)); k++) { const u = (k + 0.35) * sh.W / Math.max(2, Math.floor(sh.W / 3)); poly(g, [P(u, sh.D, z0 + 0.9), P(u + 0.9, sh.D, z0 + 0.9), P(u + 0.9, sh.D, z0 + 2.2), P(u, sh.D, z0 + 2.2)]); }
-    for (let k = 0; k < Math.max(2, Math.floor(sh.D / 3.5)); k++) { const v = (k + 0.35) * sh.D / Math.max(2, Math.floor(sh.D / 3.5)); poly(g, [P(sh.W, v, z0 + 0.9), P(sh.W, v + 0.9, z0 + 0.9), P(sh.W, v + 0.9, z0 + 2.2), P(sh.W, v, z0 + 2.2)]); }
-    // furniture and people, far to near
-    const items = [];
-    for (const rm of fl.rooms) {
-      const f = FURN[rm.t];
-      if (!f) continue;
-      f((u, v, w, d, z, h, col) => items.push({ depth: u + w / 2 + v + d / 2, draw: () => B(z0)(u, v, w, d, z, h, col) }), rm.r);
+    poly(g, [P(0, sh.D, z0), P(sh.W, sh.D, z0), P(sh.W, sh.D, z0 + H), P(0, sh.D, z0 + H)]);
+    if (fl.kind === 'attic' || fl.kind === 'loft') {
+      // under the roof: the slope comes down to knee walls
+      g.fillStyle = `rgba(90,70,55,${0.35 + 0.3 * dark})`;
+      poly(g, [P(sh.W, 0, z0 + H), P(sh.W, sh.D, z0 + H), P(sh.W * 0.5, sh.D, z0 + H + 1.6), P(sh.W * 0.5, 0, z0 + H + 1.6)]);
     }
-    // interior partitions: low walls, the Sims way
+    const winC = `rgb(${Math.round(150 * tint[0] / 255)},${Math.round(190 * tint[1] / 255)},${Math.round(230 * tint[2] / 255)})`;
+    const winsBack = [], winsSide = [];
+    const wz0 = below ? z0 + H - 0.55 : z0 + 0.9, wz1 = below ? z0 + H - 0.15 : z0 + Math.min(2.2, H - 0.3);
+    const nb = Math.max(2, Math.floor(sh.W / 3)), ns = Math.max(2, Math.floor(sh.D / 3.5));
+    g.fillStyle = winC;
+    for (let k = 0; k < nb; k++) { const u = (k + 0.35) * sh.W / nb; winsBack.push(u); poly(g, [P(u, sh.D, wz0), P(u + 0.9, sh.D, wz0), P(u + 0.9, sh.D, wz1), P(u, sh.D, wz1)]); }
+    for (let k = 0; k < ns; k++) { const v = (k + 0.35) * sh.D / ns; winsSide.push(v); poly(g, [P(sh.W, v, wz0), P(sh.W, v + 0.9, wz0), P(sh.W, v + 0.9, wz1), P(sh.W, v, wz1)]); }
+    // furniture, stairs, heat and people, far to near
+    const items = [];
+    const put = (u, v, w, d, z, h, col) => items.push({ depth: u + w / 2 + v + d / 2, draw: () => B(z0)(u, v, w, d, z, h, col) });
+    for (const rm of fl.rooms) {
+      const f = rm.t === 'utility' ? UTILITY(heat) : FURN[rm.t];
+      if (f) f(put, rm.r);
+    }
+    // the stair: treads climbing toward the back, in the hall by the front door
+    if (fl.stair && view < floors.length - 1) {
+      const [s0, , s1, sv1] = fl.stair;
+      const n = 10, run = (sv1 - 0.4) / n, rise = (fl.h + SLAB) / n;
+      for (let k = 0; k < n; k++) put(s0 + 0.08, 0.4 + k * run, s1 - s0 - 0.16, run, k * rise, rise, below ? '#8f8a80' : '#8a6a4a');
+    }
+    // a fireplace in the living room for each one the card counts (the first one, at least)
+    if (card.f > 0 && !below) {
+      const lr = fl.rooms.find((rm) => rm.t === 'living' && mineIn(fl, rm)) || (fl.kind === 'main' && fp.cols === 1 ? fl.rooms.find((rm) => rm.t === 'living') : null);
+      if (lr) {
+        const [, v0, u1, v1] = lr.r;
+        const vm = (v0 + v1) / 2;
+        put(u1 - 0.55, vm - 0.8, 0.55, 1.6, 0, 1.15, '#9c4f3c');
+        put(u1 - 0.4, vm - 0.45, 0.4, 0.9, 1.15, fl.h - 1.15, '#a8604a');
+        if (dark > 0.4 && (game.sim.m >= 10 || game.sim.m <= 2)) items.push({ depth: u1 - 0.6 + vm, draw: () => { const m = P(u1 - 0.58, vm, z0 + 0.35); g.fillStyle = 'rgba(255,150,60,0.85)'; g.beginPath(); g.ellipse(m[0], m[1], 0.22 * S, 0.14 * S, 0, 0, Math.PI * 2); g.fill(); } });
+      }
+    }
+    // radiators under the windows (hot water or steam), registers in the floor (forced air), heat pump heads
+    if (!below && fl.kind !== 'loft') {
+      for (const u of winsBack) {
+        if (heat === 'hw' || heat === 'steam') put(u - 0.05, sh.D - 0.22, 1.0, 0.16, 0.05, 0.6, heat === 'steam' ? '#d8d4c8' : '#f0eee8');
+        else if (heat === 'bb') put(u - 0.4, sh.D - 0.1, 1.8, 0.08, 0.05, 0.18, '#f0eee8');
+        else if (heat === 'air') items.push({ depth: u + sh.D - 0.3, draw: () => { g.fillStyle = 'rgba(40,40,40,0.55)'; poly(g, [P(u + 0.2, sh.D - 0.45, z0 + 0.01), P(u + 0.6, sh.D - 0.45, z0 + 0.01), P(u + 0.6, sh.D - 0.3, z0 + 0.01), P(u + 0.2, sh.D - 0.3, z0 + 0.01)]); } });
+      }
+      if (heat === 'hp') put(sh.W * 0.5, sh.D - 0.25, 0.9, 0.2, 2.0, 0.3, '#f4f4f4');
+    }
+    // interior partitions: low walls, the Sims way, with a doorway in each
+    const wallBits = (u0, v0, u1, v1, along) => {
+      const len = along === 'u' ? u1 - u0 : v1 - v0;
+      if (len < 1.6) return put(u0 - (along === 'v' ? 0.06 : 0), v0 - (along === 'u' ? 0.06 : 0), along === 'u' ? len : 0.12, along === 'u' ? 0.12 : len, 0, 0.9, '#cfc4ae');
+      const d0 = 0.35, d1 = d0 + 0.85;
+      if (along === 'u') { put(u0, v0 - 0.06, d0, 0.12, 0, 0.9, '#cfc4ae'); put(u0 + d1, v0 - 0.06, len - d1, 0.12, 0, 0.9, '#cfc4ae'); }
+      else { put(u0 - 0.06, v0, 0.12, d0, 0, 0.9, '#cfc4ae'); put(u0 - 0.06, v0 + d1, 0.12, len - d1, 0, 0.9, '#cfc4ae'); }
+    };
     for (const rm of fl.rooms) {
       const [u0, v0, u1, v1] = rm.r;
-      if (v0 > 0.01) items.push({ depth: (u0 + u1) / 2 + v0 + 0.01, draw: () => B(z0)(u0, v0 - 0.06, u1 - u0, 0.12, 0, 0.9, '#cfc4ae') });
-      if (u0 > 0.01) items.push({ depth: u0 + (v0 + v1) / 2 + 0.01, draw: () => B(z0)(u0 - 0.06, v0, 0.12, v1 - v0, 0, 0.9, '#cfc4ae') });
+      if (v0 > 0.01) wallBits(u0, v0, u1, v0, 'u');
+      if (u0 > 0.01) wallBits(u0, v0, u0, v1, 'v');
     }
-    if (home)
-      hh.people.forEach((p, i) => {
-        const w = whereIs(p, hour, cx);
-        const key = w.out ? 'out:' + w.out : w.sleep ? 'sleep' : w.t;
-        const was = prevWhere.get(p.name);
-        if (was !== undefined && was !== key) {
-          if (w.out === 'work') note(`${p.name} leaves for work: ${cx.mode === 'bus' ? `the ${env.bus ? env.bus.r.id : ''} bus, ${cx.commute} min${env.lanes ? ', and the bus lane helps' : ''}` : cx.mode === 'bike' ? `bike, ${cx.commute} min` : `driving, ${cx.commute} min${env.cong > 0.85 ? ' in heavy traffic' : ''}`}.`);
-          else if (was === 'out:work') note(`${p.name} is home from work.`);
-          else if (w.out === 'school') note(`${p.name} heads to school${env.schoolM < 1200 ? `, a ${Math.round(env.schoolM / 80)}-minute walk` : ' by car'}.`);
-          else if (w.out === 'square') note(`${p.name} walks to the Square.`);
-          else if (w.out === 'dinner') note(`Out to dinner at ${st.where || 'a place nearby'}.`);
-          else if (w.sleep && !p.kid) note(`${p.name} goes to bed.`);
+    hh.people.forEach((p, i) => {
+      const w = whereIs(p, hour, cx);
+      const key = w.out ? 'out:' + w.out : w.sleep ? 'sleep' : w.t;
+      const was = prevWhere.get(p.name);
+      if (was !== undefined && was !== key) {
+        if (w.out === 'work') note(`${p.name} leaves for work: ${cx.mode === 'bus' ? `the ${env.bus ? env.bus.r.id : ''} bus, ${cx.commute} min${env.lanes ? ', and the bus lane helps' : ''}` : cx.mode === 'bike' ? `bike, ${cx.commute} min` : `driving, ${cx.commute} min${env.cong > 0.85 ? ' in heavy traffic' : ''}`}.`);
+        else if (was === 'out:work') note(`${p.name} is home from work.`);
+        else if (w.out === 'school') note(`${p.name} heads to school${env.schoolM < 1200 ? `, a ${Math.round(env.schoolM / 80)}-minute walk` : ' by car'}.`);
+        else if (w.out === 'square') note(`${p.name} walks to the Square.`);
+        else if (w.out === 'dinner') note(`Out to dinner at ${st.where || 'a place nearby'}.`);
+        else if (w.sleep && !p.kid) note(`${p.name} goes to bed.`);
+      }
+      prevWhere.set(p.name, key);
+      let tgt = null;
+      if (!w.out) {
+        const rf = roomFor(p, w.sleep ? 'bed' : w.t, w.work);
+        if (rf && rf.fi === view) {
+          const [u0, v0, u1, v1] = rf.rm.r;
+          tgt = [u0 + (u1 - u0) * (0.3 + 0.4 * hash2(i, 1, 7)), v0 + (v1 - v0) * (0.3 + 0.4 * hash2(i, 2, 7))];
+          if (w.sleep) { const bw = Math.min(rf.rm.t === 'primary' ? 1.9 : 1.4, u1 - u0 - 0.8); tgt = [u0 + 0.3 + bw * (rf.rm.t === 'primary' && !p.kid ? (i % 2 ? 0.7 : 0.3) : 0.5), v1 - 1.3]; }
         }
-        prevWhere.set(p.name, key);
-        let tgt = null;
-        if (!w.out) {
-          const rm = fl.rooms.find((r) => r.t === w.t) || fl.rooms[0];
-          const [u0, v0, u1, v1] = rm.r;
-          tgt = [u0 + (u1 - u0) * (0.3 + 0.4 * hash2(i, 1, rm.r[0])), v0 + (v1 - v0) * (0.3 + 0.4 * hash2(i, 2, rm.r[1]))];
+      }
+      let ps = pos.get(p.name);
+      if (!ps || ps.f !== view) ps = { u: tgt ? tgt[0] : 0.6, v: tgt ? tgt[1] : 1.5, a: tgt ? 1 : 0, f: view };
+      const goal = tgt || [0.6, 1.5]; // off up (or down) the stairs
+      const sp = 0.004 * dt * (game.speed === 0 ? 0 : 1) * 2;
+      const du = goal[0] - ps.u, dv = goal[1] - ps.v, dist = Math.hypot(du, dv);
+      if (dist > 0.05) { ps.u += (du / dist) * Math.min(dist, sp); ps.v += (dv / dist) * Math.min(dist, sp); }
+      ps.a = clamp(ps.a + (tgt ? 1 : dist < 0.3 ? -1 : 0) * dt / 400, 0, 1);
+      pos.set(p.name, ps);
+      if (ps.a <= 0.01) return;
+      items.push({ depth: ps.u + ps.v, draw: () => {
+        const ht = p.kid ? 1.2 : 1.75, z = z0 + (w.sleep ? 0.55 : 0);
+        const base = P(ps.u, ps.v, z), top2 = P(ps.u, ps.v, z + (w.sleep ? 0.3 : ht));
+        g.globalAlpha = ps.a;
+        g.fillStyle = 'rgba(0,0,0,0.25)';
+        g.beginPath(); g.ellipse(base[0], base[1], 0.35 * S, 0.18 * S, 0, 0, Math.PI * 2); g.fill();
+        if (w.sleep) { g.fillStyle = p.col; g.beginPath(); g.ellipse(top2[0], top2[1], 0.5 * S, 0.22 * S, -0.5, 0, Math.PI * 2); g.fill(); g.fillStyle = '#f0c9a0'; g.beginPath(); g.arc(top2[0] - 0.45 * S, top2[1] - 0.15 * S, 0.17 * S, 0, Math.PI * 2); g.fill(); }
+        else {
+          g.fillStyle = p.col;
+          g.beginPath(); g.ellipse(base[0], (base[1] + top2[1]) / 2 + 0.1 * S, 0.22 * S, (base[1] - top2[1]) / 2, 0, 0, Math.PI * 2); g.fill();
+          g.fillStyle = '#f0c9a0';
+          g.beginPath(); g.arc(top2[0], top2[1] - 0.05 * S, 0.17 * S, 0, Math.PI * 2); g.fill();
         }
-        let ps = pos.get(p.name);
-        if (!ps) ps = { u: tgt ? tgt[0] : sh.W / 2, v: tgt ? tgt[1] : 0.3, a: tgt ? 1 : 0 };
-        const goal = tgt || [sh.W * 0.5, 0.2];
-        const sp = 0.004 * dt * (game.speed === 0 ? 0 : 1) * 2;
-        const du = goal[0] - ps.u, dv = goal[1] - ps.v, dist = Math.hypot(du, dv);
-        if (dist > 0.05) { ps.u += (du / dist) * Math.min(dist, sp); ps.v += (dv / dist) * Math.min(dist, sp); }
-        ps.a = clamp(ps.a + (tgt ? 1 : dist < 0.3 ? -1 : 0) * dt / 400, 0, 1);
-        pos.set(p.name, ps);
-        if (ps.a <= 0.01) return;
-        items.push({ depth: ps.u + ps.v, draw: () => {
-          const ht = p.kid ? 1.2 : 1.75, z = z0 + (w.sleep ? 0.55 : 0);
-          const base = P(ps.u, ps.v, z), top = P(ps.u, ps.v, z + (w.sleep ? 0.3 : ht));
-          g.globalAlpha = ps.a;
-          g.fillStyle = 'rgba(0,0,0,0.25)';
-          g.beginPath(); g.ellipse(base[0], base[1], 0.35 * S, 0.18 * S, 0, 0, Math.PI * 2); g.fill();
-          if (w.sleep) { g.fillStyle = p.col; g.beginPath(); g.ellipse(top[0], top[1], 0.5 * S, 0.22 * S, -0.5, 0, Math.PI * 2); g.fill(); g.fillStyle = '#f0c9a0'; g.beginPath(); g.arc(top[0] - 0.45 * S, top[1] - 0.15 * S, 0.17 * S, 0, Math.PI * 2); g.fill(); }
-          else {
-            g.fillStyle = p.col;
-            g.beginPath(); g.ellipse(base[0], (base[1] + top[1]) / 2 + 0.1 * S, 0.22 * S, (base[1] - top[1]) / 2, 0, 0, Math.PI * 2); g.fill();
-            g.fillStyle = '#f0c9a0';
-            g.beginPath(); g.arc(top[0], top[1] - 0.05 * S, 0.17 * S, 0, Math.PI * 2); g.fill();
-          }
-          g.globalAlpha = 1;
-          if (w.sleep && Math.floor(now / 900 + i) % 2) { g.fillStyle = '#fff'; g.font = `${Math.round(0.45 * S)}px sans-serif`; g.fillText('z', top[0] + 0.2 * S, top[1] - 0.6 * S); }
-        } });
-      });
-    items.sort((a, b) => b.depth - a.depth);
+        g.globalAlpha = 1;
+        if (w.sleep && Math.floor(now / 900 + i) % 2) { g.fillStyle = '#fff'; g.font = `${Math.round(0.45 * S)}px sans-serif`; g.fillText('z', top2[0] + 0.2 * S, top2[1] - 0.6 * S); }
+      } });
+    });
+    items.sort((a2, b2) => b2.depth - a2.depth);
     for (const it of items) it.draw();
     // stubs of the cut-away front walls
-    B(z0)(0, -0.08, sh.W, 0.16, 0, 0.35, '#e8dcc4');
-    B(z0)(-0.08, 0, 0.16, sh.D, 0, 0.35, '#e8dcc4');
+    B(z0)(0, -0.08, sh.W, 0.16, 0, 0.35, below ? '#b4b0a6' : '#e8dcc4');
+    B(z0)(-0.08, 0, 0.16, sh.D, 0, 0.35, below ? '#b4b0a6' : '#e8dcc4');
     // floors above: just a ghost outline
     g.strokeStyle = 'rgba(255,255,255,0.35)';
     g.lineWidth = 1;
-    for (let f = view + 1; f < sh.floors; f++) {
-      const z = zBase(f) + 0.6;
+    for (let f = view + 1; f < floors.length; f++) {
+      const z = floors[f].z + 0.6;
       g.beginPath();
-      [[0, 0], [sh.W, 0], [sh.W, sh.D], [0, sh.D], [0, 0]].forEach(([u, v], k) => { const p = P(u, v, z); k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); });
+      [[0, 0], [sh.W, 0], [sh.W, sh.D], [0, sh.D], [0, 0]].forEach(([u, v], k) => { const p2 = P(u, v, z); k ? g.lineTo(p2[0], p2[1]) : g.moveTo(p2[0], p2[1]); });
       g.stroke();
     }
     // labels
     g.font = `${Math.round(11 * dpr)}px Geneva, Tahoma, sans-serif`;
     g.fillStyle = dark > 0.5 ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
-    g.fillText(`Floor ${view + 1}${sh.units > 1 ? ` · unit ${fl.unit + 1}${home ? ' (this household)' : ''}` : ''}`, 10 * dpr, 18 * dpr);
+    const unitsHere = [...new Set(fl.rooms.map((rm) => roomUnit(fl, rm)).filter((u) => u >= 0))];
+    g.fillText(`${FLOOR_NAME[fl.key] || `Floor ${fl.key}`}${sh.units > 1 && unitsHere.length ? ` · unit ${unitsHere.map((u) => u + 1).join(' & ')}${unitsHere.includes(myUnit) ? ' (this household)' : ''}` : ''}`, 10 * dpr, 18 * dpr);
     const away = hh.people.filter((p) => whereIs(p, hour, cx).out);
-    if (home && away.length) g.fillText(`Out: ${away.map((p) => p.name).join(', ')}`, 10 * dpr, 34 * dpr);
+    if (away.length) g.fillText(`Out: ${away.map((p) => p.name).join(', ')}`, 10 * dpr, 34 * dpr);
     if (now - lastSide > 700) { lastSide = now; renderSide(); }
   };
   renderSide();

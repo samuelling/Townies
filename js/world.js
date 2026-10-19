@@ -302,7 +302,9 @@ export function applyAssessor(world, data) {
     if (recs.length > 1 && recs.every((rc) => rc.b.length <= 1)) {
       // a condominium: every unit carries the building's walls and roof; take the commonest of each
       const vote = (f) => { const c = new Map(); for (const rc of recs) { const v = rc.b[0] && rc.b[0][f]; if (v != null && v !== '') c.set(v, (c.get(v) || 0) + 1); } let best = null, bn = 0; for (const [v, k] of c) if (k > bn) { best = v; bn = k; } return best; };
-      const one = { w: vote('w'), r: vote('r'), c: vote('c'), n: vote('n'), s: vote('s'), f: null };
+      const one = { w: vote('w'), r: vote('r'), c: vote('c'), n: vote('n'), s: vote('s'), f: null, sa: (recs.find((rc) => rc.b[0] && rc.b[0].sa && rc.b[0].sa.BAS) || { b: [{}] }).b[0].sa };
+      // a small condominium keeps each unit's own card (rooms, bedrooms, baths) for the view inside
+      if (recs.length <= 6) lot.asrUnits = recs.map((rc) => rc.b[0]).filter(Boolean);
       const cols = recs.map((rc) => rc.b[0]).filter((x) => x && x.col).sort((p, q) => (q.cs || 0) - (p.cs || 0));
       if (cols.length) one.col = cols[0].col;
       blds = [one];

@@ -7,7 +7,7 @@ from color import facade_color, paint
 
 W = os.environ.get('ASSESSOR_WORK', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'work'))
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data', 'assessor.json.gz')
-VERSION = 1
+VERSION = 2
 
 def wall(v):
     v = (v or '').lower()
@@ -42,6 +42,29 @@ def cover(v):
     if 'wood' in v or 'shake' in v: return 'wood'
     if 'tile' in v or 'clay' in v: return 'tile'
     return None
+
+def floor_kind(v):
+    v = (v or '').lower()
+    if 'hard' in v or 'parquet' in v or 'soft' in v or 'pine' in v or 'engineer' in v: return 'wood'
+    if 'carpet' in v: return 'carpet'
+    if 'lamin' in v or 'plank' in v: return 'plank'
+    if 'ceram' in v or 'tile' in v or 'ston' in v: return 'tile'
+    if 'vinyl' in v or 'lino' in v: return 'vinyl'
+    if 'conc' in v: return 'concrete'
+    return None
+
+def heat_kind(v):
+    v = (v or '').lower()
+    if 'steam' in v: return 'steam'
+    if 'h/w' in v or 'hot w' in v or 'radiant' in v: return 'hw'
+    if 'h/a' in v: return 'air'
+    if 'pump' in v: return 'hp'
+    if 'bb' in v or 'baseb' in v: return 'bb'
+    return None
+
+# the sub-areas that say how the house is stacked: base floor, upper stories, half / three-quarter stories,
+# finished and unfinished attics and basements
+STACK = ('BAS', 'FUS', 'FHS', 'TQS', 'FAT', 'ATC', 'UAT', 'UBM', 'FBM', 'LLV')
 
 def num(v):
     try: return float(str(v).replace(',', ''))
@@ -81,6 +104,17 @@ for ln in open(os.path.join(W, 'raw.jsonl')):
             'rm': int(num(a.get('Total Rooms')) or 0) or None,
         }
         if any(p): rec['p'] = [int(x) for x in p]
+        sa = {k: int(sub[k]) for k in STACK if sub.get(k)}
+        if sa: rec['sa'] = sa
+        fk = floor_kind(a.get('Int Floor 1'))
+        if fk: rec['fl'] = fk
+        hk = heat_kind(a.get('Heat Type'))
+        if hk: rec['ht'] = hk
+        kt = int(num(a.get('Kitchens')) or 0)
+        if 0 < kt < 20: rec['kt'] = kt
+        ac = num(a.get('AC Percent'))
+        if ac: rec['ac'] = int(ac)
+        if (a.get('Model') or '').startswith('Res Condo'): rec['condo'] = 1
         if sub.get('FGR'): rec['g'] = int(sub['FGR'])
         if b.get('ph'):
             ph = os.path.join(W, 'thumbs', b['ph'])
