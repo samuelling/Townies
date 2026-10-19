@@ -23,7 +23,7 @@ On phones: one finger uses the tool, two fingers pan and pinch.
 Music is generated live in the browser.
 
 ## iPhone and iPad
-`ios/` is a native app that runs the same game offline, full screen, on iPhone and iPad. The game's files are copied into the app when it builds and served to a web view from a tiny server inside the app (`ios/Townies/LocalServer.swift`), so saves, music and sound work exactly as on the web. The app also keeps the screen awake at the slow, day-and-night speeds. A GitHub Action compile-checks it on every change.
+`ios/` is a native app that runs the same game offline, full screen, on iPhone and iPad. The game's files are copied into the app when it builds and served to a web view from a tiny server inside the app (`ios/Townies/LocalServer.swift`), so saves, music, sound and the Mac OS 9-style menus and windows are exactly as on the web. The app adds haptics on the same moments as the sound effects, the iOS share sheet for the report card, and keeps the screen awake at the slow, day-and-night speeds. A GitHub Action compile-checks it on every change.
 
 To install it, you need a Mac with Xcode 16 or newer:
 

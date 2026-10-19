@@ -1,8 +1,8 @@
 import SwiftUI
 import WebKit
 
-/// The game itself: a WKWebView pointed at the local server, with the web's alert/confirm dialogs
-/// turned into native ones, outside links opened in Safari, and a small message channel the game
+/// The game itself: a WKWebView pointed at the local server, with any stray alert/confirm/prompt
+/// shown as a native alert (the game draws its own OS 9 ones), outside links opened in Safari, and a small message channel the game
 /// uses to ask for the screen to stay awake (at the slow, day-and-night speeds).
 struct GameWebView: UIViewRepresentable {
     let url: URL
@@ -48,11 +48,6 @@ struct GameWebView: UIViewRepresentable {
         weak var webView: WKWebView?
         init(home: URL, bridge: GameBridge) { self.home = home; self.bridge = bridge }
 
-        // the title screen and restarts show the page full screen until the game sends its setup again
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            bridge.reset()
-        }
-
         // the game's own pages load here; anything else (credits, sources) opens in Safari
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -74,7 +69,6 @@ struct GameWebView: UIViewRepresentable {
 
         // if the web content process is killed in the background, reload rather than show a blank page
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            bridge.reset()
             webView.load(URLRequest(url: home))
         }
 

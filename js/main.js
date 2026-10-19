@@ -279,7 +279,8 @@ async function save(manual) {
 game.save = save;
 game.loadSave = () => location.reload();
 game.restart = async (refresh) => {
-  if (!confirm(refresh ? 'Re-download Watertown from OpenStreetMap and MassGIS? Your saved game stays.' : 'Leave this city? Unsaved progress since the last save will be lost.')) return;
+  const msg = refresh ? 'Re-download Watertown from OpenStreetMap and MassGIS? Your saved game stays.' : 'Leave this city? Unsaved progress since the last save will be lost.';
+  if (!(game.ui ? await game.ui.ask(msg, refresh ? 'Re-download' : 'Leave') : confirm(msg))) return;
   if (refresh) await kvDel(CFG.RAW_KEY);
   location.href = location.pathname;
 };

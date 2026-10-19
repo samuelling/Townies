@@ -19,13 +19,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .logo { font-family: Silkscreen, monospace; font-weight: 700; font-size: 15px; letter-spacing: 1px; margin-right: 10px; color: #20307a; text-shadow: 1px 1px 0 #fff; }
 .menu { position: relative; }
 .mlabel, .mbtn { background: none; border: 1px solid transparent; padding: 3px 8px; }
-.mlabel:hover, .menu.open .mlabel, .mbtn:hover { background: var(--accent); color: #fff; }
+.menu.open .mlabel, .mlabel:active, .mbtn:active { background: var(--accent); color: #fff; }
+@media (hover: hover) { .mlabel:hover, .mbtn:hover { background: var(--accent); color: #fff; } }
 .mbtn { min-width: 40px; font-weight: bold; font-size: 15px; }
 .mbtn.muted { opacity: 0.45; text-decoration: line-through; }
 .dropdown { display: none; position: absolute; top: 100%; left: 0; min-width: 190px; background: var(--chrome); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); padding: 2px; z-index: 60; }
 .menu.open .dropdown { display: block; }
 .dropdown button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 5px 10px; }
-.dropdown button:hover { background: var(--accent); color: #fff; }
+.dropdown button:active { background: var(--accent); color: #fff; }
+@media (hover: hover) { .dropdown button:hover { background: var(--accent); color: #fff; } }
 .dropdown hr { border: 0; border-top: 1px solid var(--chrome-lo); margin: 2px 0; }
 .spacer { flex: 1; }
 
@@ -186,7 +188,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .agdate { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; }
 .choices { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .choice { text-align: left; background: var(--chrome); border: 2px solid; border-color: var(--chrome-hi) #000 #000 var(--chrome-hi); padding: 7px 10px; }
-.choice:hover { background: #dcdcf4; }
+.choice:active { background: #dcdcf4; }
+@media (hover: hover) { .choice:hover { background: #dcdcf4; } }
 .choice b { display: block; }
 .choice small { display: block; color: #333; margin-top: 2px; }
 .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; }
@@ -418,7 +421,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .search-list { display: none; position: absolute; right: 0; top: calc(100% + 2px); width: 300px; max-height: 60vh; overflow-y: auto; background: #fff; border: 2px solid #000; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35); z-index: 1000; }
 .search-item { display: flex; gap: 6px; width: 100%; text-align: left; background: none; border: 0; padding: 4px 8px; }
 .search-item small { color: #666; }
-.search-item.on, .search-item:hover { background: #dcdcf4; }
+.search-item.on, .search-item:active { background: #dcdcf4; }
+@media (hover: hover) { .search-item:hover { background: #dcdcf4; } }
 .si-icon { width: 18px; flex: none; }
 .search-none { padding: 6px 8px; color: #666; }
 @media (max-width: 700px) { .search { width: 110px; } .search-list { width: 260px; } }
@@ -453,13 +457,44 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .search-list { position: fixed; left: 8px; right: 8px; width: auto; top: calc(env(safe-area-inset-top) + 40px); }
 }
 
-/* iOS app: the menu bar, status bar and toolbar are native (js/native.js); web windows look like iOS sheets */
-.native-chrome #menubar, .native-chrome #statusbar, .native-chrome #toolbar, .native-chrome .apprchip { display: none !important; }
-.native-chrome body, .native-chrome .win, .native-chrome .wbody { font-family: -apple-system, system-ui, sans-serif; }
-.native-chrome .win { border: 0; border-radius: 14px; background: #f2f2f7; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); overflow: hidden; }
-.native-chrome .wbar { background: #f2f2f7; height: 34px; border-bottom: 1px solid #d1d1d6; cursor: default; }
-.native-chrome .wbar span { background: none; font-weight: 600; font-size: 15px; }
-.native-chrome .wclose { border: 0; background: #e3e3e8; border-radius: 50%; width: 24px; height: 24px; line-height: 22px; font-size: 16px; color: #555; }
-.native-chrome .choice { border: 0; border-radius: 10px; background: #fff; padding: 9px 12px; }
-.native-chrome .choice:active { background: #e5e5ea; }
-@media (max-width: 700px) { .native-chrome .win, .native-chrome .win.wide { border-radius: 14px 14px 0 0; } }
+/* Platinum form controls, so sliders, checkboxes and pop-ups look the same everywhere (iOS draws its own otherwise) */
+input[type='range'] { -webkit-appearance: none; appearance: none; height: 18px; background: none; margin: 0; padding: 0; touch-action: none; }
+input[type='range']::-webkit-slider-runnable-track { height: 6px; background: #fff; border: 1px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); box-shadow: inset 1px 1px 0 #000; }
+input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; margin-top: -7px; background: var(--chrome); border: 1px solid #000; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--chrome-lo); }
+input[type='range']::-moz-range-track { height: 6px; background: #fff; border: 1px solid var(--chrome-lo); }
+input[type='range']::-moz-range-thumb { width: 12px; height: 18px; border-radius: 0; background: var(--chrome); border: 1px solid #000; }
+input[type='checkbox'] { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; margin: 0 4px 0 0; vertical-align: -2px; background: #fff; border: 1px solid #000; box-shadow: inset 1px 1px 0 var(--chrome-lo); flex: none; }
+input[type='checkbox']:checked { background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Cpath d='M2 2l9 9M11 2l-9 9' stroke='%23000' stroke-width='1.6'/%3E%3C/svg%3E") center/11px no-repeat; }
+select { -webkit-appearance: none; appearance: none; font: inherit; color: inherit; padding: 1px 22px 1px 6px; border: 1px solid #000; border-radius: 0; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 12'%3E%3Cpath d='M1 5l3.5-4L8 5zM1 7l3.5 4L8 7z' fill='%23000'/%3E%3C/svg%3E") right 6px center/8px no-repeat; box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35); }
+input[type='text'] { font: inherit; border: 2px solid; border-color: var(--chrome-lo) var(--chrome-hi) var(--chrome-hi) var(--chrome-lo); border-radius: 0; background: #fff; padding: 2px 4px; }
+input[type='search'] { -webkit-appearance: none; appearance: none; border-radius: 0; }
+
+/* alert box (in place of the browser's confirm) */
+.alertback { z-index: 400; }
+.win.alertbox { position: relative; max-width: 380px; width: 100%; padding: 14px 14px 12px; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45); outline: 1px solid #000; }
+.abody { display: flex; gap: 14px; align-items: flex-start; }
+.abody p { margin: 2px 0 0; line-height: 1.4; }
+.acaution { flex: 0 0 34px; height: 30px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; font: bold 18px/1 Georgia, serif; background: #ffd200; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.abtns { display: flex; justify-content: flex-end; gap: 14px; margin-top: 16px; }
+.abtns .btn { min-width: 72px; padding: 4px 12px; border-radius: 4px; border: 1px solid #000; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 var(--chrome-lo); }
+.abtns .btn.default { outline: 3px solid #000; outline-offset: 2px; }
+.abtns .btn:active { background: #888; color: #fff; }
+@media (max-width: 700px) { .alertback { align-items: center; padding: 16px; } }
+
+/* touch screens (and the iOS app): no grey tap flash or long-press callouts, and fingertip-sized controls */
+html { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%; }
+@media (pointer: coarse) {
+  .mlabel { min-height: 34px; }
+  .mbtn { min-height: 34px; min-width: 44px; }
+  .dropdown button { padding: 10px 14px; }
+  .wbar { height: 30px; }
+  .wclose { width: 28px; height: 24px; font-size: 16px; line-height: 20px; }
+  .btn { min-height: 30px; }
+  input[type='range'] { height: 30px; }
+  input[type='range']::-webkit-slider-thumb { width: 18px; height: 26px; margin-top: -11px; }
+  input[type='checkbox'] { width: 20px; height: 20px; vertical-align: -5px; }
+  input[type='checkbox']:checked { background-size: 16px; }
+  select { min-height: 30px; }
+  .choice { padding: 10px 12px; }
+  .search-item { padding: 9px 10px; }
+}
