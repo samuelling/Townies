@@ -1189,7 +1189,7 @@ export class Renderer {
     const { mix, mixAmt, stroke } = st;
     const q = b.obb;
     // a mansard's top floor is inside the roof
-    const h = b.roof === 'mansard' ? Math.max(CFG.FLOOR_M, b.h - CFG.FLOOR_M * 0.85) : b.h;
+    const h = b.roof === 'mansard' && !b.hMeasured ? Math.max(CFG.FLOOR_M, b.h - CFG.FLOOR_M * 0.85) : b.h;
     const wall = b._rgb, roofC = b._roof, trim = b._trim;
     const wF = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) || 0.01;
     const dD = Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]) || 0.01;
@@ -1203,7 +1203,7 @@ export class Renderer {
     let planes = [], gables = [];
     let ridge = null;
     if (type === 'gableFB') {
-      const rh = Math.min(7.5, ((wF * CFG.TILE_M) / 2) * slope);
+      const rh = b.rise || Math.min(7.5, ((wF * CFG.TILE_M) / 2) * slope);
       const Ra = H3(mid(q[0], q[1]), h + rh), Rb = H3(mid(q[2], q[3]), h + rh);
       planes = [[qh[3], qh[0], Ra, Rb], [Ra, qh[1], qh[2], Rb]];
       gables = [{ e: 0, tri: [qh[0], qh[1], Ra] }, { e: 2, tri: [qh[2], qh[3], Rb] }];
@@ -1212,7 +1212,7 @@ export class Renderer {
       // barn roof: a steep lower slope to a knee, then a shallow one to the ridge, on both sides
       const fb = type === 'gambrelFB';
       const span = fb ? wF : dD, ax = fb ? u : v;
-      const rh = Math.min(8.5, ((span * CFG.TILE_M) / 2) * 1.05);
+      const rh = b.rise || Math.min(8.5, ((span * CFG.TILE_M) / 2) * 1.05);
       const kin = span * 0.2, kh = rh * 0.66;
       const K = (p, s) => [p[0] + ax[0] * kin * s, p[1] + ax[1] * kin * s, h + kh];
       if (fb) {
@@ -1231,14 +1231,14 @@ export class Renderer {
       }
     } else if (type === 'mansard') {
       // Second Empire: steep slopes all round up to a low, nearly flat top
-      const mh = Math.min(CFG.FLOOR_M * 0.95, 3.4);
+      const mh = b.rise ? Math.min(4.5, b.rise) : Math.min(CFG.FLOOR_M * 0.95, 3.4);
       const ins = Math.min(wF, dD) * 0.16;
       const c = [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2];
       const I = q.map((p) => { const dx = c[0] - p[0], dy = c[1] - p[1], d = Math.hypot(dx, dy) || 1; return [p[0] + (dx / d) * ins * 1.41, p[1] + (dy / d) * ins * 1.41, h + mh]; });
       planes = [0, 1, 2, 3].map((k) => [qh[k], qh[(k + 1) % 4], I[(k + 1) % 4], I[k]]).concat([I]);
       b._mansard = { I, mh };
     } else if (type === 'gableS' || type === 'hip') {
-      const rh = Math.min(7.5, ((dD * CFG.TILE_M) / 2) * slope);
+      const rh = b.rise || Math.min(7.5, ((dD * CFG.TILE_M) / 2) * slope);
       let Ra = H3(mid(q[3], q[0]), h + rh), Rb = H3(mid(q[1], q[2]), h + rh);
       if (type === 'hip') {
         const ins = Math.min(dD / 2, wF / 2);

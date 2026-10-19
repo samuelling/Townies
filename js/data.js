@@ -179,9 +179,9 @@ export async function fetchSnapshot(progress) {
 // ---------- the town assessor's building records (data/assessor.json.gz, built by tools/assessor/) ----------
 // Wall material, roof shape and cover, fireplaces, porches and a siding colour read from the assessor's photo.
 // Optional: without it, buildings fall back to the state parcel data alone.
-export async function fetchAssessor() {
+export async function fetchAssessor(path = 'data/assessor.json.gz') {
   try {
-    const r = await fetch('data/assessor.json.gz', { cache: 'no-cache' });
+    const r = await fetch(path, { cache: 'no-cache' });
     if (!r.ok) return null;
     const bytes = new Uint8Array(await r.arrayBuffer());
     let text;
@@ -191,10 +191,13 @@ export async function fetchAssessor() {
     } else text = new TextDecoder().decode(bytes);
     return JSON.parse(text);
   } catch (e) {
-    console.warn('No assessor building records', e);
+    console.warn('Missing ' + path, e);
     return null;
   }
 }
+
+// roofs measured from the 2021 USGS lidar (data/lidar.json.gz, built by tools/lidar/): optional too
+export const fetchLidar = () => fetchAssessor('data/lidar.json.gz');
 
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
   const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');

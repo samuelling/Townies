@@ -156,6 +156,7 @@ export function styleBuilding(b, lot) {
     b.porch = porch;
     b.porchEnc = false;
     b.chim = null;
+    b.rise = null;
     if (b.lvSrc !== 'osm' && b.lvSrc !== 'assessor') b.levels = lv;
     const shape = b.roofShape;
     if (shape === 'flat') b.roof = 'flat';
@@ -166,6 +167,7 @@ export function styleBuilding(b, lot) {
     if (b.material === 'brick') b.col = pick(BRICK, r);
     if (arch === 'victorian') b.trim = r3 < 0.5 ? '#f4f1ea' : '#e8d9a8';
     if (b.asr) houseFromAssessor(b, b.asr, arch, r, r2);
+    if (b.lid) houseFromLidar(b, b.lid);
   } else {
     if (k === 'apt') arch = yr >= 2005 || b.proc ? 'modern' : yr && yr < 1950 ? 'brick' : yr ? 'garden' : r < 0.5 ? 'brick' : 'garden';
     else if (k === 'shop') arch = m2 > 2500 && b.levels <= 2.2 ? 'bigbox' : yr >= 2005 || b.proc ? 'modern' : (yr && yr < 1960) || (!yr && r < 0.6) ? 'brick' : 'strip';
@@ -205,6 +207,12 @@ export function styleBuilding(b, lot) {
   if (orc) b.roofCol = orc;
   b.arch = arch;
   b.h = (k === 'garage' ? 1 : b.levels) * CFG.FLOOR_M;
+  // measured from the 2021 lidar where the fit is good: the walls' real height (the sim keeps its floor count)
+  b.hMeasured = false;
+  if (b.lid && b.lid.q >= 45) {
+    const hm = k === 'house' && b.roof !== 'flat' ? b.lid.eave : b.lid.top;
+    if (hm >= 2.2 && hm <= 160) { b.h = hm; b.hMeasured = true; }
+  }
   b._rgb = null;
 }
 
@@ -243,6 +251,32 @@ function houseFromAssessor(b, a, arch, r, r2) {
   if (ROOF_PAL[a.c] && b.roof !== 'flat') b.roofCol = pick(ROOF_PAL[a.c], r2);
   else if (FLAT_COVERS.has(a.c) || b.roof === 'flat') b.roofCol = b.roof === 'flat' ? pick(PAL.flatRoof, r2) : b.roofCol;
 }
+// the roof the lidar measured: its form (where the assessor didn't name a gambrel or mansard), which way
+// the ridge runs relative to the street, and how high it rises above the eaves
+function houseFromLidar(b, l) {
+  if (!(l.q >= 45)) return;
+  // The assessor's roof type, where there is one, is the more reliable read of the form (checked against
+  // its photos); the lidar adds which way the ridge runs and how high it rises. Without a card, the lidar
+  // decides: flat, a hip if the ridge stops well short of the ends, otherwise a gable.
+  const card = b.asr && b.asr.r;
+  const form = card || (l.form === 'flat' ? 'flat' : l.sb > 0.3 ? 'hip' : 'gable');
+  if (form === 'flat' || form === 'shed') { b.roof = 'flat'; return; }
+  if (l.form === 'flat') return; // the lidar didn't see a pitched roof here: leave the style's guess
+  if (form === 'hip') b.roof = 'hip';
+  else if (form === 'mansard') b.roof = 'mansard';
+  else if (b.obb && l.ridge) {
+    // ridge parallel to the front wall: a side gable; across it: the gable faces the street
+    const q = b.obb, ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], n = Math.hypot(ux, uy) || 1;
+    const along = Math.abs((ux * l.ridge[0] + uy * l.ridge[1]) / n) > 0.7;
+    const across = Math.abs((ux * l.ridge[0] + uy * l.ridge[1]) / n) < 0.3;
+    if (along || across) {
+      if (form === 'gambrel') b.roof = along ? 'gambrel' : 'gambrelFB';
+      else b.roof = along ? 'gableS' : 'gableFB';
+    }
+  }
+  if (l.top - l.eave > 0.6) b.rise = Math.min(9, l.top - l.eave);
+}
+
 function boxFromAssessor(b, a, k, arch, r, r2) {
   const m = a.w;
   if (m === 'brick' && ['apt', 'shop', 'office', 'civic', 'school', 'church'].includes(k) && arch !== 'bigbox') {
@@ -323,9 +357,95 @@ export function applyAssessor(world, data) {
   return n;
 }
 
+// Attach the lidar roof fitted to each original building's footprint (data/lidar.json.gz) and restyle it.
+export function applyLidar(world, data) {
+  if (!data || !data.rows || world.lidV === data.v) return 0;
+  const pr = worldProj(world);
+  const grid = new Map();
+  const cell = (x, y) => `${Math.floor(x)},${Math.floor(y)}`;
+  for (const row of data.rows) {
+    const [la, lo, eave, top, form, brg, q, sb] = row;
+    const [x, y] = pr.toGrid(la / 1e5, lo / 1e5);
+    const k = cell(x, y);
+    if (!grid.has(k)) grid.set(k, []);
+    const a = (brg * Math.PI) / 180;
+    grid.get(k).push({ x, y, eave: eave / 10, top: top / 10, form: data.forms[form], ridge: [Math.sin(a), -Math.cos(a)], q, sb: sb / 100 });
+  }
+  let n = 0;
+  for (const b of world.bldgs) {
+    if (!b.alive || b.proc) continue;
+    let best = null, bd = 0.3; // within about 5 m of the footprint's centre
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (const c of grid.get(cell(b.cx + dx, b.cy + dy)) || []) {
+          const d = Math.hypot(c.x - b.cx, c.y - b.cy);
+          if (d < bd) { bd = d; best = c; }
+        }
+    if (!best) continue;
+    b.lid = { eave: best.eave, top: best.top, form: best.form, ridge: best.ridge, q: best.q, sb: best.sb };
+    assignFront(world, b); // (a saved city's houses face their own streets too)
+    styleBuilding(b, b.lot >= 0 ? world.lots[b.lot] : null);
+    n++;
+  }
+  world.lidV = data.v;
+  return n;
+}
+
+// "28 Mt Auburn St 2" -> ["mount", "auburn"]: the street's distinctive words, for matching a road's name
+const STREET_ABBR = { mt: 'mount', st: '', av: '', ave: '', rd: '', ln: '', pl: '', ct: '', tr: '', ter: '', dr: '', pk: '', pkwy: '', sq: '', cir: '', cr: '', street: '', avenue: '', road: '', lane: '', place: '', court: '', terrace: '', drive: '', park: '', parkway: '', square: '', circle: '', no: 'north', so: 'south', e: 'east', w: 'west' };
+function streetWords(s) {
+  const t = String(s || '').toLowerCase().replace(/[.,#]/g, ' ').split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < t.length && /\d/.test(t[i])) i++; // the house number (and "2-4")
+  const out = [];
+  for (let k = i; k < t.length; k++) {
+    if (/\d/.test(t[k])) break; // a unit number after the street
+    const w = t[k] in STREET_ABBR ? STREET_ABBR[t[k]] : t[k];
+    if (w) out.push(w);
+  }
+  return out.join(' ');
+}
+
 export function assignFront(world, b) {
   const { W, H, road } = world;
   const lot = b.lot >= 0 ? world.lots[b.lot] : null;
+  // a house faces the street it's numbered on: its front is the side of the footprint that runs along that
+  // street, on the street's side
+  const want = lot && lot.addr && b.obb && world.roadLines ? streetWords(lot.addr) : '';
+  if (want) {
+    if (!world._linesByName) {
+      const m = new Map();
+      world.roadLines.forEach((ln, i) => { if (!ln.name) return; const k = streetWords('0 ' + ln.name); if (!m.has(k)) m.set(k, []); m.get(k).push(i); });
+      Object.defineProperty(world, '_linesByName', { value: m, enumerable: false, writable: true });
+    }
+    let bd = 36, seg = null; // within 6 tiles
+    for (const li of world._linesByName.get(want) || []) {
+      const p = world.roadLines[li].pts;
+      for (let k = 0; k + 3 < p.length; k += 2) {
+        const ax = p[k], ay = p[k + 1], ex = p[k + 2] - ax, ey = p[k + 3] - ay;
+        const L2 = ex * ex + ey * ey || 1e-9;
+        const t = Math.max(0, Math.min(1, ((b.cx - ax) * ex + (b.cy - ay) * ey) / L2));
+        const px = ax + ex * t, py = ay + ey * t, d = (px - b.cx) ** 2 + (py - b.cy) ** 2;
+        if (d < bd) { bd = d; seg = { px, py, ex, ey }; }
+      }
+    }
+    if (seg) {
+      const o = b.obb, tl = Math.hypot(seg.ex, seg.ey) || 1;
+      let best = -1, bs = -Infinity;
+      for (let k = 0; k < 4; k++) {
+        const a2 = o[k], c2 = o[(k + 1) % 4];
+        const dx = c2[0] - a2[0], dy = c2[1] - a2[1], dl = Math.hypot(dx, dy) || 1;
+        const par = Math.abs((dx * seg.ex + dy * seg.ey) / (dl * tl)); // runs along the street
+        const mx = (a2[0] + c2[0]) / 2, my = (a2[1] + c2[1]) / 2;
+        const toward = ((seg.px - b.cx) * (mx - b.cx) + (seg.py - b.cy) * (my - b.cy)) > 0 ? 1 : 0; // on the street's side
+        const sc = par + toward;
+        if (sc > bs) { bs = sc; best = k; }
+      }
+      b.obb = [o[best], o[(best + 1) % 4], o[(best + 2) % 4], o[(best + 3) % 4]];
+      b.front = 0;
+      return;
+    }
+  }
   let tx = null, ty = null;
   if (lot && lot.road >= 0) { tx = (lot.road % W) + 0.5; ty = ((lot.road / W) | 0) + 0.5; }
   else {
@@ -840,6 +960,7 @@ export function buildWorld(raw, progress = () => {}) {
   }
   world.trafficCounts = nSeg ? { segments: nSeg, yearMin: Math.min(...years), yearMax: Math.max(...years), yearMedian: median(years) } : null;
   if (raw.assessor) { progress('Reading the assessor’s building cards…'); applyAssessor(world, raw.assessor); }
+  if (raw.lidar) { progress('Measuring roofs from the lidar…'); applyLidar(world, raw.lidar); }
   return world;
 }
 

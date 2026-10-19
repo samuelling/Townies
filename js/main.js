@@ -1,7 +1,7 @@
 import { CFG } from './config.js';
-import { loadRawData, fetchAssessor, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, fetchLidar, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
-import { buildWorld, applyAssessor } from './world.js';
+import { buildWorld, applyAssessor, applyLidar } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
@@ -118,9 +118,12 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       // a city saved before the assessor's building records were added picks them up now
       const asr = await fetchAssessor();
       if (asr && game.world.asrV !== asr.v) { log('Reading the assessor’s building cards…'); await nextFrame(); applyAssessor(game.world, asr); }
+      const lid = await fetchLidar();
+      if (lid && game.world.lidV !== lid.v) { log('Measuring roofs from the lidar…'); await nextFrame(); applyLidar(game.world, lid); }
     } else {
       const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
       raw.assessor = await fetchAssessor();
+      raw.lidar = await fetchLidar();
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);
