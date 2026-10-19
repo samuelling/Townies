@@ -44,6 +44,7 @@ export const CHAPTERS = [
           [B('MassGIS building structures'), `: footprints that OpenStreetMap is missing${src.footprintsAdded ? ` (${fmtInt(src.footprintsAdded)} filled in)` : ''}.`],
           [B('Watertown Assessor’s building records'), ': for each building, the wall material, roof shape and covering, fireplaces, porches, and the assessor’s street photo, and each lot’s detached garages, sheds and pools.'],
           [B('USGS lidar (2021)'), ': a laser survey flown over eastern Massachusetts, about two and a half points per square metre over Watertown, which measures every roof and every tree’s height and spread.'],
+          [B('MassGIS 2025 aerial photos'), ': colour and infrared photos flown in spring 2025, which show what covers the ground between buildings: driveways, parking lots, lawns, ball fields and pools.'],
           [B('MBTA schedules and ridership'), ': every bus route through town on its real path and timetable, and each route’s measured weekday boardings at its Watertown stops.'],
           [B('Watertown Forestry’s 2022 tree inventory'), ': every street and park tree the town looks after, with its species, trunk size and condition.'],
           [B('Overture Maps places'), `: business listings${src.places ? ` (${fmtInt(src.places)} merged)` : ''}, combined with OpenStreetMap’s and cleaned of duplicates and non-businesses like ATMs, parking and car-share spots.`]
@@ -339,6 +340,7 @@ export const CHAPTERS = [
         [A('https://www.openstreetmap.org/copyright', 'OpenStreetMap'), ' contributors (ODbL), via ', A('https://download.geofabrik.de/north-america/us/massachusetts.html', 'Geofabrik')],
         [A('https://www.mass.gov/info-details/massgis-data-property-tax-parcels', 'MassGIS property tax parcels'), ' and ', A('https://www.mass.gov/info-details/massgis-data-building-structures-2-d', 'building structures'), ', Commonwealth of Massachusetts'],
         [A('https://www.usgs.gov/3d-elevation-program', 'USGS 3D Elevation Program'), ' lidar, 2021 Central Eastern Massachusetts (QL1), public domain, via the ', A('https://registry.opendata.aws/usgs-lidar/', 'AWS open data registry'), ' (roof heights and ridges, tree heights and crowns)'],
+        [A('https://www.mass.gov/orgs/massgis-bureau-of-geographic-information', 'MassGIS'), ' 2025 aerial imagery (colour and colour-infrared), Commonwealth of Massachusetts (driveways, parking, lawns and pools)'],
         [A('https://www.mbta.com/developers/gtfs', 'MBTA GTFS schedules'), ' and ', A('https://mbta-massdot.opendata.arcgis.com/', 'MBTA bus ridership by stop'), ' (Fall 2025), Massachusetts Bay Transportation Authority'],
         [A('https://watertownma.mapgeo.io/', 'Town of Watertown Forestry'), ' 2022 street and park tree inventory, via MapGeo (species, trunk size, condition)'],
         [A('https://gis.vgsi.com/WatertownMA/', 'Town of Watertown Assessor'), ' building records, via Vision Government Solutions (wall and roof materials, fireplaces, porches; siding colours read from the street photos)'],

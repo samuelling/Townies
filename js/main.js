@@ -1,8 +1,8 @@
 import { CFG } from './config.js';
-import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, fetchGround, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
 import { setTransitData } from './transit.js';
-import { buildWorld, applyAssessor, applyLidar, applyTrees, applyYards } from './world.js';
+import { buildWorld, applyAssessor, applyLidar, applyTrees, applyYards, applyGround } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
@@ -125,12 +125,15 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       if (trees && game.world.treeV !== trees.v) { log('Planting every tree where it really stands…'); await nextFrame(); applyTrees(game.world, trees); }
       const yards = await fetchYards();
       if (asr || yards) applyYards(game.world, asr, yards);
+      const ground = await fetchGround();
+      if (ground) applyGround(game.world, ground);
     } else {
       const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
       raw.assessor = await fetchAssessor();
       raw.lidar = await fetchLidar();
       raw.trees = await fetchTrees();
       raw.yards = await fetchYards();
+      raw.ground = await fetchGround();
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);

@@ -28,6 +28,11 @@ const C = {
   civic: hexRgb('#7aa64a'),
   svc: hexRgb('#9b9890'),
   dirt: hexRgb('#9c7b55'),
+  // the real ground (world.ground)
+  drive: hexRgb('#9a978f'),
+  lotPave: hexRgb('#7f7e79'),
+  bare: hexRgb('#b39b77'),
+  pool: hexRgb('#5ab6d8'),
 };
 const ZONE_RGB = ZONE_COLOR.map(hexRgb);
 
@@ -373,6 +378,9 @@ export class Renderer {
       }
     };
     const { terrain, road, cover, lotOf, inTown, svcAt, path } = w;
+    const Gd = w.ground && w.ground.length === W * H * 16 ? w.ground : null, GW = W * 4;
+    const bl = w.bldgs;
+    const realGround = (lot) => !lot.under && !lot.reconstructed && !lot.hist && !lot.bldgs.some((id) => bl[id] && bl[id].alive && bl[id].proc);
     const osmRoad = this.lineIdx ? w.osmRoad : null, roadCut = w.roadCut;
     const tileRoads = [], cutTiles = [];
     const lots = w.lots;
@@ -410,8 +418,57 @@ export class Renderer {
           } else if (cv === COVER.PAVED) col = C.paved;
           else col = C.grass;
         }
+        // the real ground, four cells to a tile edge: driveways, parking lots, lawns and pools from the aerials,
+        // on land that hasn't been rebuilt since
+        let sub = null;
+        if (Gd && kind === 0 && col !== C.svc && !road[i] && (cover[i] === COVER.GRASS || cover[i] === COVER.PAVED) && (!lots[lotOf[i]] || realGround(lots[lotOf[i]]))) {
+          const lot = lotOf[i] >= 0 ? lots[lotOf[i]] : null;
+          const res = !lot || lot.zone === ZONE.R;
+          const base = lot ? C.lawn : C.grass;
+          const pave = res ? C.drive : C.lotPave;
+          sub = new Array(16);
+          const cnt = new Map();
+          for (let j = 0; j < 4; j++)
+            for (let k = 0; k < 4; k++) {
+              const gcl = Gd[(y * 4 + j) * GW + x * 4 + k];
+              const cl = gcl === 1 ? pave : gcl === 2 ? C.bare : gcl === 3 ? C.pool : gcl === 4 ? C.sport : gcl === 5 ? (res ? base : pave) : base;
+              sub[j * 4 + k] = cl;
+              cnt.set(cl, (cnt.get(cl) || 0) + 1);
+            }
+          let best = base, bn = -1;
+          for (const [cl, n] of cnt) if (n > bn || (n === bn && cl === base)) { bn = n; best = cl; }
+          col = best;
+          if (bn === 16) sub = null;
+          else sub.major = best;
+        }
         const fill = shade(col, v);
         diamond(x, y, fill, true);
+        if (Gd && col === C.lotPave && !sub && L >= 1 && !road[i]) {
+          // a parking lot: two rows of stalls
+          g.strokeStyle = 'rgba(240,240,232,0.38)';
+          g.lineWidth = Math.max(0.6, 0.5 * L);
+          g.beginPath();
+          for (let k = 0; k < 4; k++)
+            for (const [y0, y1] of [[0.06, 0.4], [0.6, 0.94]]) {
+              const a = P(x + 0.125 + k / 4, y + y0), b = P(x + 0.125 + k / 4, y + y1);
+              g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
+            }
+          g.stroke();
+        }
+        if (sub && detail)
+          for (let j = 0; j < 4; j++)
+            for (let k = 0; k < 4; ) {
+              const cl = sub[j * 4 + k];
+              let k2 = k + 1;
+              while (k2 < 4 && sub[j * 4 + k2] === cl) k2++;
+              if (cl !== sub.major) {
+                const a = P(x + k / 4, y + j / 4), b = P(x + k2 / 4, y + j / 4), d = P(x + k2 / 4, y + (j + 1) / 4), e = P(x + k / 4, y + (j + 1) / 4);
+                const f2 = shade(cl, v);
+                g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(d[0], d[1]); g.lineTo(e[0], e[1]); g.closePath();
+                g.fillStyle = f2; g.fill(); g.strokeStyle = f2; g.lineWidth = 0.6; g.stroke();
+              }
+              k = k2;
+            }
         if (roadCut && roadCut[i] && osmRoad && osmRoad[i]) cutTiles.push([x, y, fill]);
         if (detail) {
           if (kind === 1) {
@@ -445,7 +502,7 @@ export class Renderer {
             const m = P(x + 0.5, y + 0.5);
             g.fillStyle = shade(zc, 1);
             g.fillRect(m[0] - 1.5 * L, m[1] - 1.5 * L, 3 * L, 3 * L);
-          } else if (!road[i] && col !== C.paved && col !== C.plaza && col !== C.yard && col !== C.svc) {
+          } else if (!road[i] && col !== C.paved && col !== C.plaza && col !== C.yard && col !== C.svc && col !== C.drive && col !== C.lotPave && col !== C.bare && col !== C.pool) {
             g.fillStyle = 'rgba(30,60,10,0.28)';
             for (let k = 0; k < 2; k++) {
               const p = P(x + 0.15 + 0.7 * hash2(x, y, 40 + k), y + 0.15 + 0.7 * hash2(x, y, 50 + k));

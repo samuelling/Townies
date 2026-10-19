@@ -202,6 +202,26 @@ export const fetchLidar = () => fetchAssessor('data/lidar.json.gz');
 export const fetchTrees = () => fetchAssessor('data/trees.json.gz');
 // unmapped backyard roofs the lidar found (data/yards.json.gz, built by tools/yards/)
 export const fetchYards = () => fetchAssessor('data/yards.json.gz');
+// the ground between the buildings, 4 m cells (data/ground.bin.gz, built by tools/ground/): a JSON header
+// line, then one byte per cell
+export async function fetchGround(path = 'data/ground.bin.gz') {
+  try {
+    const r = await fetch(path, { cache: 'no-cache' });
+    if (!r.ok) return null;
+    let bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') return null;
+      bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    }
+    const nl = bytes.indexOf(10);
+    const head = JSON.parse(new TextDecoder().decode(bytes.subarray(0, nl)));
+    head.cells = bytes.subarray(nl + 1, nl + 1 + head.w * head.h);
+    return head.cells.length === head.w * head.h ? head : null;
+  } catch (e) {
+    console.warn('Missing ' + path, e);
+    return null;
+  }
+}
 // MBTA bus routes, stops and timetables (data/transit.json.gz, built by tools/transit/)
 export const fetchTransit = () => fetchAssessor('data/transit.json.gz');
 

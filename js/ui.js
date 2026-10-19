@@ -130,7 +130,18 @@ function outbackNote(w, lot) {
   };
   for (const id of lot.bldgs) { const b = w.bldgs[id]; if (b && b.alive && b.outb && !b.proc) items.push(one(b)); }
   for (const pb of w.yardProps || []) if (pb.lot === lot.id) items.push(one(pb));
-  if (lot.pools) items.push(lot.pools > 1 ? `${lot.pools} pools` : 'a pool');
+  let pools = lot.pools || 0;
+  if (!pools && w.ground && w.ground.length === w.W * w.H * 16) {
+    // a pool the 2025 aerials show, though the card doesn't list one
+    let n = 0;
+    for (const i of lot.tiles || []) {
+      if (w.terrain[i] === 1) continue;
+      const x = i % w.W, y = (i / w.W) | 0;
+      for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) if (w.ground[(y * 4 + j) * w.W * 4 + x * 4 + k] === 3) n++;
+    }
+    if (n >= 1 && n <= 40) pools = 1;
+  }
+  if (pools) items.push(pools > 1 ? `${pools} pools` : 'a pool');
   if (!items.length) return '';
   const txt = items.join(', ');
   return txt[0].toUpperCase() + txt.slice(1);

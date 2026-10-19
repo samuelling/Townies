@@ -370,6 +370,39 @@ export function applyAssessor(world, data) {
   return n;
 }
 
+// ---- the ground: driveways, parking lots, lawns, pools (data/ground.bin.gz) ----
+// Four cells to a tile edge, classed from the 2025 aerials (with infrared) and the lidar. Stored on the world
+// as world.ground (W*4 x H*4 bytes; 0 grass, 1 paved, 2 bare, 3 water, 4 turf, 5 roof, 6 canopy, 255 none),
+// resampled if the file was cut to a different box. Looks only.
+export const GROUND = { GRASS: 0, PAVED: 1, BARE: 2, WATER: 3, TURF: 4, ROOF: 5, CANOPY: 6, NONE: 255 };
+export function applyGround(world, g) {
+  if (!g || !g.cells) return 0;
+  let hsh = 0;
+  for (let k = 0; k < g.cells.length; k += 61) hsh = (hsh * 31 + g.cells[k]) | 0; // a rebuilt file re-applies
+  const v = `${g.v}.${g.fetched || ''}.${hsh}`;
+  if (world.groundV === v) return 0;
+  const GW = world.W * 4, GH = world.H * 4;
+  let out;
+  const b = world.bbox, gb = g.bbox || b;
+  const same = g.w === GW && g.h === GH && Math.abs(gb.s - b.s) < 1e-9 && Math.abs(gb.n - b.n) < 1e-9 && Math.abs(gb.w - b.w) < 1e-9 && Math.abs(gb.e - b.e) < 1e-9;
+  if (same) out = new Uint8Array(g.cells);
+  else {
+    // nearest cell by latitude and longitude
+    out = new Uint8Array(GW * GH).fill(255);
+    const pr = makeProj(b), gp = makeProj(gb);
+    for (let j = 0; j < GH; j++)
+      for (let i = 0; i < GW; i++) {
+        const [la, lo] = pr.toLatLon((i + 0.5) / 4, (j + 0.5) / 4);
+        const [gx, gy] = gp.toGrid(la, lo);
+        const si = Math.floor(gx * 4), sj = Math.floor(gy * 4);
+        if (si >= 0 && sj >= 0 && si < g.w && sj < g.h) out[j * GW + i] = g.cells[sj * g.w + si];
+      }
+  }
+  world.ground = out;
+  world.groundV = v;
+  return 1;
+}
+
 // ---- backyards: detached garages, sheds, carports and barns ----
 // The assessor's cards list each parcel's outbuildings with their size. Most already have a footprint on the
 // map (a small second building on the lot), which until now was drawn as a tiny house; those take the card's
@@ -1145,6 +1178,7 @@ export function buildWorld(raw, progress = () => {}) {
   if (raw.lidar) { progress('Measuring roofs from the lidar…'); applyLidar(world, raw.lidar); }
   if (raw.trees) { progress('Planting every tree where it really stands…'); applyTrees(world, raw.trees); }
   if (raw.assessor || raw.yards) applyYards(world, raw.assessor, raw.yards);
+  if (raw.ground) applyGround(world, raw.ground);
   return world;
 }
 
