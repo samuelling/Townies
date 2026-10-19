@@ -36,16 +36,17 @@ export const CHAPTERS = [
     build: (g) => {
       const w = g.world, s = g.sim, st = w.stats || {}, src = w.sources || {};
       return [
-        P(`Every tile is ${CFG.TILE_M} m (about 52 ft) across, true to scale. What you see is assembled from four public sources:`),
+        P(`Every tile is ${CFG.TILE_M} m (about 52 ft) across, true to scale. What you see is assembled from five public sources:`),
         LIST(
           [B('OpenStreetMap'), ': streets, footprints, rivers, parks and many businesses, via Geofabrik’s daily Massachusetts extract.'],
           [B('MassGIS tax parcels'), ': every parcel’s assessed land and building value, use code, year built, units and house style.'],
           [B('MassGIS building structures'), `: footprints that OpenStreetMap is missing${src.footprintsAdded ? ` (${fmtInt(src.footprintsAdded)} filled in)` : ''}.`],
+          [B('Watertown Assessor’s building records'), ': for each building, the wall material, roof shape and covering, fireplaces, porches, and the assessor’s street photo.'],
           [B('Overture Maps places'), `: business listings${src.places ? ` (${fmtInt(src.places)} merged)` : ''}, combined with OpenStreetMap’s and cleaned of duplicates and non-businesses like ATMs, parking and car-share spots.`]
         ),
         P(`That adds up to ${st.buildings ? fmtInt(st.buildings) + ' buildings on ' + fmtInt(st.lots) + ' lots' : 'every building and lot in town'}. Your browser doesn’t query any map servers. A scheduled job on GitHub rebuilds a single compressed snapshot (about 2 MB) every other month, and the game loads that.`),
         H('Buildings that look like the real ones'),
-        P('Heights come from OpenStreetMap floor counts or the assessor’s story count. Houses take their shape from the assessor’s style field: a “Decker” gets a triple-decker’s stacked porches, a “Cape” a steep low roof, a “Colonial” two full stories under a gable, and so on. Where the style is blank, the year built makes the guess (a 1955 house is likely a ranch or cape). Colors are randomized within realistic palettes, because no public dataset records what color your neighbor painted their siding.'),
+        P('Heights come from OpenStreetMap floor counts or the assessor’s story count. Houses take their shape from the assessor’s style field: a “Decker” gets a triple-decker’s stacked porches, a “Cape” a steep low roof, a “Colonial” two full stories under a gable, and so on. Where the style is blank, the year built makes the guess (a 1955 house is likely a ranch or cape). The town assessor’s building records fill in the rest: a gambrel or mansard roof where the card says so, slate or asphalt or tar and gravel on top, brick, wood shingles, stucco or clapboards on the walls, a chimney where there’s a fireplace, porches and upstairs porches where there are some, and a glassed-in porch where it’s enclosed. The siding colour is read off the assessor’s street photo of each building: the biggest patch of the frame that isn’t sky, trees, shadow or road. Photos are taken in all weathers and seasons, so colours are brightened toward house paint, and where the read isn’t confident the house takes a colour typical of its material instead. The photos themselves aren’t kept or shown.'),
         H('People'),
         P(`Population is homes × 2.3 people × occupancy. Unit counts come from the assessor, or from the use code or floor area when they’re missing. That gives about ${fmtInt(Math.round(s.pop / 100) * 100)} residents today, against ${fmtInt(CENSUS_2020)} in the 2020 Census, which is close enough to trust the shape of the town.`),
       ];
@@ -329,6 +330,7 @@ export const CHAPTERS = [
       LIST(
         [A('https://www.openstreetmap.org/copyright', 'OpenStreetMap'), ' contributors (ODbL), via ', A('https://download.geofabrik.de/north-america/us/massachusetts.html', 'Geofabrik')],
         [A('https://www.mass.gov/info-details/massgis-data-property-tax-parcels', 'MassGIS property tax parcels'), ' and ', A('https://www.mass.gov/info-details/massgis-data-building-structures-2-d', 'building structures'), ', Commonwealth of Massachusetts'],
+        [A('https://gis.vgsi.com/WatertownMA/', 'Town of Watertown Assessor'), ' building records, via Vision Government Solutions (wall and roof materials, fireplaces, porches; siding colours read from the street photos)'],
         [A('https://docs.overturemaps.org/guides/places/', 'Overture Maps places'), ' (CDLA-Permissive-2.0)'],
         [A('https://geo-massdot.opendata.arcgis.com/', 'MassDOT Road Inventory'), ' (traffic counts, lanes); ', A('https://highways.dot.gov/safety/proven-safety-countermeasures/roundabouts', 'FHWA on roundabouts'), ' (crash effects); Highway Capacity Manual, 6th ed. (signal and roundabout capacity and delay)'],
         [A('https://lehd.ces.census.gov/data/', 'US Census Bureau LEHD LODES'), ' (commute flows; public domain)'],

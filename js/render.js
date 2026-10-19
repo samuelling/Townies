@@ -1188,7 +1188,8 @@ export class Renderer {
   drawHouse(g, P, b, L, st) {
     const { mix, mixAmt, stroke } = st;
     const q = b.obb;
-    const h = b.h;
+    // a mansard's top floor is inside the roof
+    const h = b.roof === 'mansard' ? Math.max(CFG.FLOOR_M, b.h - CFG.FLOOR_M * 0.85) : b.h;
     const wall = b._rgb, roofC = b._roof, trim = b._trim;
     const wF = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) || 0.01;
     const dD = Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]) || 0.01;
@@ -1207,6 +1208,35 @@ export class Renderer {
       planes = [[qh[3], qh[0], Ra, Rb], [Ra, qh[1], qh[2], Rb]];
       gables = [{ e: 0, tri: [qh[0], qh[1], Ra] }, { e: 2, tri: [qh[2], qh[3], Rb] }];
       ridge = [Ra, Rb];
+    } else if (type === 'gambrel' || type === 'gambrelFB') {
+      // barn roof: a steep lower slope to a knee, then a shallow one to the ridge, on both sides
+      const fb = type === 'gambrelFB';
+      const span = fb ? wF : dD, ax = fb ? u : v;
+      const rh = Math.min(8.5, ((span * CFG.TILE_M) / 2) * 1.05);
+      const kin = span * 0.2, kh = rh * 0.66;
+      const K = (p, s) => [p[0] + ax[0] * kin * s, p[1] + ax[1] * kin * s, h + kh];
+      if (fb) {
+        // ridge runs front to back (along v); eaves along the side walls q0-q3 and q1-q2
+        const Ra = H3(mid(q[0], q[1]), h + rh), Rb = H3(mid(q[2], q[3]), h + rh);
+        const L0 = K(q[0], 1), L3 = K(q[3], 1), R1 = K(q[1], -1), R2 = K(q[2], -1);
+        planes = [[qh[3], qh[0], L0, L3], [L3, L0, Ra, Rb], [qh[1], qh[2], R2, R1], [R1, R2, Rb, Ra]];
+        gables = [{ e: 0, tri: [qh[0], qh[1], R1, Ra, L0], apex: Ra }, { e: 2, tri: [qh[2], qh[3], L3, Rb, R2], apex: Rb }];
+        ridge = [Ra, Rb];
+      } else {
+        const Ra = H3(mid(q[3], q[0]), h + rh), Rb = H3(mid(q[1], q[2]), h + rh);
+        const F0 = K(q[0], 1), F1 = K(q[1], 1), B3 = K(q[3], -1), B2 = K(q[2], -1);
+        planes = [[qh[0], qh[1], F1, F0], [F0, F1, Rb, Ra], [qh[2], qh[3], B3, B2], [B2, B3, Ra, Rb]];
+        gables = [{ e: 1, tri: [qh[1], qh[2], B2, Rb, F1], apex: Rb }, { e: 3, tri: [qh[3], qh[0], F0, Ra, B3], apex: Ra }];
+        ridge = [Ra, Rb];
+      }
+    } else if (type === 'mansard') {
+      // Second Empire: steep slopes all round up to a low, nearly flat top
+      const mh = Math.min(CFG.FLOOR_M * 0.95, 3.4);
+      const ins = Math.min(wF, dD) * 0.16;
+      const c = [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2];
+      const I = q.map((p) => { const dx = c[0] - p[0], dy = c[1] - p[1], d = Math.hypot(dx, dy) || 1; return [p[0] + (dx / d) * ins * 1.41, p[1] + (dy / d) * ins * 1.41, h + mh]; });
+      planes = [0, 1, 2, 3].map((k) => [qh[k], qh[(k + 1) % 4], I[(k + 1) % 4], I[k]]).concat([I]);
+      b._mansard = { I, mh };
     } else if (type === 'gableS' || type === 'hip') {
       const rh = Math.min(7.5, ((dD * CFG.TILE_M) / 2) * slope);
       let Ra = H3(mid(q[3], q[0]), h + rh), Rb = H3(mid(q[1], q[2]), h + rh);
@@ -1229,7 +1259,8 @@ export class Renderer {
     for (const wl of vis.filter((x) => x.v).sort((p, r) => p.d - r.d)) {
       const k = wl.k, k2 = (k + 1) % 4;
       this.fillPoly(g, [G0[k], G0[k2], T0[k2], T0[k]], shade(wall, wl.f, mix, mixAmt), stroke);
-      if (L >= 1 && !st.aband) this.houseWindows(g, P, b, q[k], q[k2], L, wl.f, k === 0, st);
+      if (L >= 2 && !st.aband) this.wallTexture(g, P, b, q[k], q[k2], h, wl.f, st);
+      if (L >= 1 && !st.aband) this.houseWindows(g, P, b, q[k], q[k2], L, wl.f, k === 0, st, h);
       if (type === 'flat' && L >= 0.5) this.wallQuad(g, P, q[k], q[k2], -0.02, 1.02, h - 0.6, h + 0.25, shade(trim, wl.f * 0.95, mix, mixAmt));
     }
     // porches on the street side
@@ -1243,7 +1274,7 @@ export class Renderer {
       if (L >= 1 && !st.aband) {
         // attic window
         const a = q[gb.e], c = q[(gb.e + 1) % 4];
-        const rh = gb.tri[2][2] - h;
+        const rh = (gb.apex || gb.tri[2])[2] - h;
         if (rh > 2.2) this.wallQuad(g, P, a, c, 0.44, 0.56, h + rh * 0.18, h + rh * 0.5, 'rgba(35,45,70,0.8)');
       }
     }
@@ -1267,6 +1298,21 @@ export class Renderer {
     });
     planesD.sort((p, r) => p.d - r.d);
     for (const { pl, f } of planesD) this.fillPoly(g, pl.map(S), shade(roofC, f, mix, mixAmt), stroke);
+    if (type === 'mansard' && L >= 1 && !st.aband) {
+      // dormer windows in the mansard's street-facing slopes
+      const { I, mh } = b._mansard;
+      for (const wl of vis.filter((x) => x.v)) {
+        const k = wl.k, k2 = (k + 1) % 4;
+        const lenM = Math.hypot(q[k2][0] - q[k][0], q[k2][1] - q[k][1]) * CFG.TILE_M;
+        const n = Math.max(1, Math.min(5, Math.floor(lenM / 3.4)));
+        for (let j = 0; j < n; j++) {
+          const t0 = (j + 0.34) / n, t1 = (j + 0.66) / n;
+          const at = (t, z) => { const lo = [q[k][0] + (q[k2][0] - q[k][0]) * t, q[k][1] + (q[k2][1] - q[k][1]) * t], hi = [I[k][0] + (I[k2][0] - I[k][0]) * t, I[k][1] + (I[k2][1] - I[k][1]) * t]; const fz = z / mh; return P(lo[0] + (hi[0] - lo[0]) * fz, lo[1] + (hi[1] - lo[1]) * fz, h + z); };
+          this.fillPoly(g, [at(t0, mh * 0.22), at(t1, mh * 0.22), at(t1, mh * 0.72), at(t0, mh * 0.72)], shade(trim, wl.f, mix, mixAmt));
+          this.fillPoly(g, [at(t0 + 0.04 / n, mh * 0.28), at(t1 - 0.04 / n, mh * 0.28), at(t1 - 0.04 / n, mh * 0.66), at(t0 + 0.04 / n, mh * 0.66)], 'rgba(38,48,72,0.85)');
+        }
+      }
+    }
     if (L >= 0.5 && !st.aband && hash2(b.id, 41, 3) < this.techA('solar')) {
       // panels on the sunniest roof plane
       let best = null;
@@ -1283,7 +1329,8 @@ export class Renderer {
       g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke();
       // chimney on older houses
       const lot = b.lot >= 0 ? this.world.lots[b.lot] : null;
-      if (lot && lot.year && lot.year < 1945 && hash2(b.id, 2, 2) < 0.6) {
+      // chimneys where the assessor counts fireplaces; a guess from the year where it doesn't
+      if (b.chim != null ? b.chim > 0 : lot && lot.year && lot.year < 1945 && hash2(b.id, 2, 2) < 0.6) {
         const t = 0.72;
         const x = ridge[0][0] + (ridge[1][0] - ridge[0][0]) * t, y = ridge[0][1] + (ridge[1][1] - ridge[0][1]) * t;
         this.box(g, P, x - 0.04, y - 0.04, 0.08, 0.08, ridge[0][2] - 1.2, 2.2, [140, 72, 55], mix, mixAmt);
@@ -1300,9 +1347,9 @@ export class Renderer {
     }
   }
 
-  houseWindows(g, P, b, a, c, L, f, front, st) {
-    const floors = Math.max(1, Math.round(b.levels));
+  houseWindows(g, P, b, a, c, L, f, front, st, hw = b.h) {
     const fh = b.h / Math.max(1, b.levels);
+    const floors = Math.max(1, Math.round(hw / fh));
     const lenM = Math.hypot(c[0] - a[0], c[1] - a[1]) * CFG.TILE_M;
     const nWin = Math.max(1, Math.min(6, Math.floor(lenM / 3.2)));
     const dark = 'rgba(38,48,72,0.85)';
@@ -1320,6 +1367,37 @@ export class Renderer {
       const k = Math.floor(nWin / 2);
       this.wallQuad(g, P, a, c, (k + 0.36) / nWin, (k + 0.64) / nWin, 0, 2.2, shade([92, 58, 42], f, st.mix, st.mixAmt));
     }
+  }
+
+  // close up, the assessor's wall material shows: clapboard and vinyl lap lines, shingle courses, brick
+  wallTexture(g, P, b, a, c, h, f, st) {
+    const m = b.material;
+    if (!m || m === 'stucco' || m === 'stone') return;
+    const lenM = Math.hypot(c[0] - a[0], c[1] - a[1]) * CFG.TILE_M;
+    const col = shade(b._rgb, f * (m === 'brick' ? 1.18 : 0.86), st.mix, st.mixAmt);
+    g.strokeStyle = col;
+    g.lineWidth = 0.5;
+    g.globalAlpha = m === 'brick' ? 0.35 : 0.45;
+    g.beginPath();
+    const step = m === 'shingle' ? 0.55 : m === 'brick' ? 0.5 : 0.42;
+    for (let z = step; z < h - 0.1; z += step) {
+      const p0 = P(a[0], a[1], z), p1 = P(c[0], c[1], z);
+      g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]);
+    }
+    if (m === 'shingle') {
+      // staggered butt joints
+      const n = Math.max(2, Math.floor(lenM / 0.9));
+      let row = 0;
+      for (let z = 0; z < h - 0.1; z += step, row++) {
+        for (let j = (row % 2) * 0.5 + 0.25; j < n; j += 1.5) {
+          const t = j / n, x = a[0] + (c[0] - a[0]) * t, y = a[1] + (c[1] - a[1]) * t;
+          const p0 = P(x, y, z), p1 = P(x, y, Math.min(h, z + step));
+          g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]);
+        }
+      }
+    }
+    g.stroke();
+    g.globalAlpha = 1;
   }
 
   porches(g, P, b, q, u, v, L, f, st) {
@@ -1349,7 +1427,14 @@ export class Renderer {
       }
       g.stroke();
       const r0 = P(A2[0], A2[1], z0), r1 = P(B2[0], B2[1], z0), r2 = P(B2[0], B2[1], z0 + 0.95), r3 = P(A2[0], A2[1], z0 + 0.95);
-      this.fillPoly(g, [r0, r1, r2, r3], trim);
+      if (b.porchEnc && fl === 0) {
+        // an enclosed (glassed-in) porch: walled to the roof, with a band of windows
+        const e0 = P(A2[0], A2[1], z1), e1 = P(B2[0], B2[1], z1);
+        this.fillPoly(g, [r0, r1, e1, e0], shade(b._rgb, f * 0.96, mix, mixAmt));
+        const zz0 = z0 + 0.9, zz1 = z1 - 0.35;
+        const w0 = P(A2[0], A2[1], zz0), w1 = P(B2[0], B2[1], zz0), w2 = P(B2[0], B2[1], zz1), w3 = P(A2[0], A2[1], zz1);
+        this.fillPoly(g, [w0, w1, w2, w3], 'rgba(38,48,72,0.8)');
+      } else this.fillPoly(g, [r0, r1, r2, r3], trim);
       if (fl === floors - 1) this.fillPoly(g, quad([A, B, B2, A2], z1), trimTop);
     }
   }

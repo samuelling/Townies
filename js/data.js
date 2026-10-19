@@ -176,6 +176,26 @@ export async function fetchSnapshot(progress) {
   return expandSnapshot(JSON.parse(text));
 }
 
+// ---------- the town assessor's building records (data/assessor.json.gz, built by tools/assessor/) ----------
+// Wall material, roof shape and cover, fireplaces, porches and a siding colour read from the assessor's photo.
+// Optional: without it, buildings fall back to the state parcel data alone.
+export async function fetchAssessor() {
+  try {
+    const r = await fetch('data/assessor.json.gz', { cache: 'no-cache' });
+    if (!r.ok) return null;
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    let text;
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') return null;
+      text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    } else text = new TextDecoder().decode(bytes);
+    return JSON.parse(text);
+  } catch (e) {
+    console.warn('No assessor building records', e);
+    return null;
+  }
+}
+
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
   const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');
   if (!forceLive) {

@@ -101,6 +101,24 @@ const OVERLAYS = [
   ['none', 'None'], ['vibrancy', 'Vibrancy (street life)'], ['walk', 'Walkability'], ['zones', 'Zones'], ['landvalue', 'Land value'], ['traffic', 'Traffic'], ['crime', 'Crime'], ['pollution', 'Pollution'], ['police', 'Police coverage'], ['fire', 'Fire coverage'], ['growth', 'New & abandoned'],
 ];
 
+// the assessor's card for the main building, in a phrase: "Vinyl siding · gambrel roof, slate · 1 fireplace"
+const WALL_WORDS = { vinyl: 'vinyl siding', aluminum: 'aluminum siding', clapboard: 'clapboards', shingle: 'wood shingles', asbestos: 'asbestos shingles', brick: 'brick', stucco: 'stucco', stone: 'stone', concrete: 'concrete', metal: 'metal panels', glass: 'glass' };
+const COVER_WORDS = { asphalt: 'asphalt shingles', slate: 'slate', tar: 'tar and gravel', membrane: 'membrane', rubber: 'rubber', metal: 'metal', wood: 'wood shakes', tile: 'tile' };
+function exteriorNote(lot, w) {
+  const b = lot.bldgs.map((id) => w.bldgs[id]).find((x) => x && x.alive && x.asr);
+  if (!b) return '';
+  const a = b.asr, out = [];
+  if (WALL_WORDS[a.w]) out.push(WALL_WORDS[a.w][0].toUpperCase() + WALL_WORDS[a.w].slice(1));
+  if (a.r) out.push(`${a.r === 'flat' ? 'flat' : a.r} roof${COVER_WORDS[a.c] ? `, ${COVER_WORDS[a.c]}` : ''}`);
+  if (a.f) out.push(`${a.f} fireplace${a.f > 1 ? 's' : ''}`);
+  if (a.p) {
+    const [open, enc, up, deck] = a.p;
+    const ps = [open >= 25 && 'open porch', enc >= 25 && 'enclosed porch', up >= 20 && 'upper porches', deck >= 40 && 'deck'].filter(Boolean);
+    if (ps.length) out.push(ps.join(', '));
+  }
+  return out.join(' · ');
+}
+
 export class UI {
   constructor(game) {
     this.g = game;
@@ -629,6 +647,7 @@ export class UI {
           row('Use', (lot.useDesc || ZONE_NAME[lot.zone]) + (lot.auto ? ' — auto-oriented, dead frontage' : '')),
           row('Zone', `${ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''}${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
           row('Style', lot.style),
+          row('Exterior', exteriorNote(lot, w)),
           row('Built', lot.year ? String(lot.year) : ''),
           row('Assessed', `${fmtMoney(v)}${lot.real && s.t < 12 ? (w.startYear ? ` (estimated for ${w.startYear})` : ` (FY${lot.fy || ''})`) : ''}`),
           row('  land / bldg', `${fmtMoney(lot.landVal)} / ${fmtMoney(lot.bldgVal + (lot.otherVal || 0))}`),

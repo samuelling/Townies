@@ -1,7 +1,7 @@
 import { CFG } from './config.js';
-import { loadRawData, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
-import { buildWorld } from './world.js';
+import { buildWorld, applyAssessor } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
@@ -115,8 +115,12 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
       const sv = await kvGet(CFG.SAVE_KEY);
       game.world = sv.world;
       state = sv;
+      // a city saved before the assessor's building records were added picks them up now
+      const asr = await fetchAssessor();
+      if (asr && game.world.asrV !== asr.v) { log('Reading the assessor’s building cards…'); await nextFrame(); applyAssessor(game.world, asr); }
     } else {
       const raw = await loadRawData({ refresh: mode === 'refresh', progress: log });
+      raw.assessor = await fetchAssessor();
       log('Building Watertown tile by tile…');
       await nextFrame();
       game.world = buildWorld(raw, log);

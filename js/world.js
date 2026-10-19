@@ -83,6 +83,21 @@ const BRICK = ['#a4523c', '#9a4a36', '#b0603f', '#8c4a3a', '#a85a46'];
 const GARDEN = ['#b89a74', '#a88a66', '#c7ad86', '#9c8466'];
 const MODERN = [['#3a3d42', '#e8e6e1'], ['#b4593e', '#c9c6bf'], ['#6d7680', '#efece6'], ['#2f3a45', '#c8b89a'], ['#e9e7e2', '#7d8790'], ['#8a5a44', '#d9d4ca']];
 const SIGNS = ['#c0392b', '#1f5fa8', '#e67e22', '#2e7d32', '#7b3f99'];
+// what the assessor's wall and roof materials look like when the photo doesn't settle the colour
+const STUCCO = ['#d9cdb4', '#e3d8c2', '#cfc3a8', '#e6dccb'];
+const CEDAR = ['#8a7560', '#7d6b5a', '#9a8a78', '#6e6a64', '#857463'];
+const ASBESTOS = ['#d8d6cc', '#c9cfc8', '#d6cdb8', '#c7cdd2', '#ddd3bd'];
+const STONE = ['#a8a296', '#9c978c', '#b3ab9c'];
+const CONCRETE = ['#c9c4b8', '#bdb8ad', '#d2cdc2'];
+const METAL = ['#a9adb0', '#9ea6a8', '#b5b8b4'];
+const SLATE = ['#3e4652', '#465060', '#3a4049', '#4a4f58'];
+const METAL_ROOF = ['#6f777c', '#4e6656', '#7a3f36'];
+const WALL_PAL = { brick: BRICK, stucco: STUCCO, shingle: CEDAR, asbestos: ASBESTOS, stone: STONE, concrete: CONCRETE, metal: METAL };
+const ROOF_PAL = { slate: SLATE, asphalt: ROOFS, metal: METAL_ROOF, wood: ['#6e5a46', '#7a6450'], tile: ['#a35a3c', '#b0663f'] };
+const FLAT_COVERS = new Set(['tar', 'membrane', 'rubber']);
+const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+// is a photo colour plausibly brick (a red-brown), rather than paint over it?
+const bricky = (h) => { const [r, g, b] = hexToRgb(h); return r > g * 1.15 && r > b * 1.25 && r < 215; };
 // arch -> [roof type, slope, default storeys, front porch floors]
 export const HOUSE_ARCH = {
   decker: ['flat', 0, 3, 3],
@@ -139,6 +154,8 @@ export function styleBuilding(b, lot) {
     b.roof = roof;
     b.slope = slope;
     b.porch = porch;
+    b.porchEnc = false;
+    b.chim = null;
     if (b.lvSrc !== 'osm' && b.lvSrc !== 'assessor') b.levels = lv;
     const shape = b.roofShape;
     if (shape === 'flat') b.roof = 'flat';
@@ -148,6 +165,7 @@ export function styleBuilding(b, lot) {
     b.roofCol = pick(ROOFS, r2);
     if (b.material === 'brick') b.col = pick(BRICK, r);
     if (arch === 'victorian') b.trim = r3 < 0.5 ? '#f4f1ea' : '#e8d9a8';
+    if (b.asr) houseFromAssessor(b, b.asr, arch, r, r2);
   } else {
     if (k === 'apt') arch = yr >= 2005 || b.proc ? 'modern' : yr && yr < 1950 ? 'brick' : yr ? 'garden' : r < 0.5 ? 'brick' : 'garden';
     else if (k === 'shop') arch = m2 > 2500 && b.levels <= 2.2 ? 'bigbox' : yr >= 2005 || b.proc ? 'modern' : (yr && yr < 1960) || (!yr && r < 0.6) ? 'brick' : 'strip';
@@ -171,6 +189,7 @@ export function styleBuilding(b, lot) {
     else if (arch === 'garage') b.col = pick(PAL.garage, r);
     else b.col = pick(PAL.shop, r);
     b.roofCol = arch === 'lab' ? '#cfd3d6' : flatRoof;
+    if (b.asr && !b.svcType) arch = boxFromAssessor(b, b.asr, k, arch, r, r2);
     if (k === 'shop' && arch !== 'bigbox') b.awning = pick(['#c0392b', '#2e7d32', '#1f5fa8', '#d68910', '#7b3f99'], r2);
     if (k === 'police') { b.col = '#c9ccd4'; b.roofCol = '#3a5fbf'; arch = 'precast'; }
     if (k === 'fire') { b.col = '#b5523e'; b.roofCol = '#c8352b'; }
@@ -190,6 +209,118 @@ export function styleBuilding(b, lot) {
 }
 
 // Which side of each building faces the street.
+// ---- the town assessor's building records (data/assessor.json.gz) ----
+// Each record: s style, n stories, w/w2 wall material, r roof structure, c roof cover, f fireplaces,
+// p porch areas in sq ft [open, enclosed, upper/balcony, deck], g attached garage, col siding colour
+// read from the assessor's street photo (only when the read was confident).
+function houseFromAssessor(b, a, arch, r, r2) {
+  // roof shape: the assessor says which; the house style still decides which way the ridge runs
+  const fb = HOUSE_ARCH[arch][0] === 'gableFB';
+  if (a.r === 'gambrel') { b.roof = fb ? 'gambrelFB' : 'gambrel'; b.slope = 1; }
+  else if (a.r === 'mansard') { b.roof = 'mansard'; b.slope = 1; }
+  else if (a.r === 'hip') { b.roof = 'hip'; if (b.slope < 0.6) b.slope = 0.6; }
+  else if (a.r === 'flat' || a.r === 'shed') b.roof = 'flat';
+  else if (a.r === 'gable' || a.r === 'saltbox') {
+    if (b.roof === 'hip' || b.roof === 'flat') { b.roof = arch === 'decker' || arch === 'twofam' ? 'gableFB' : 'gableS'; b.slope = arch === 'ranch' ? 0.55 : 0.9; }
+  }
+  // porches: ground floor from open/screened/enclosed porch area, upper floors from balconies
+  if (a.p) {
+    const [open, enc, up] = a.p;
+    const ground = open + enc;
+    let fl = ground >= 25 ? 1 : 0;
+    if (fl && up >= 20) fl += up >= ground * 1.4 ? 2 : 1;
+    b.porch = Math.min(fl, Math.max(1, Math.round(b.levels)));
+    b.porchEnc = enc > open;
+  }
+  if (a.f != null) b.chim = Math.min(2, a.f);
+  // walls: the photo's colour where the read was confident, otherwise the material's palette
+  const m = a.w;
+  b.material = m === 'brick' ? 'brick' : m === 'stucco' || m === 'stone' ? m : m === 'shingle' ? 'shingle' : m ? 'siding' : b.material;
+  if (m === 'brick') b.col = a.col && bricky(a.col) ? a.col : pick(BRICK, r);
+  else if (a.col) b.col = a.col;
+  else if (WALL_PAL[m]) b.col = pick(WALL_PAL[m], r);
+  // roof cover
+  if (ROOF_PAL[a.c] && b.roof !== 'flat') b.roofCol = pick(ROOF_PAL[a.c], r2);
+  else if (FLAT_COVERS.has(a.c) || b.roof === 'flat') b.roofCol = b.roof === 'flat' ? pick(PAL.flatRoof, r2) : b.roofCol;
+}
+function boxFromAssessor(b, a, k, arch, r, r2) {
+  const m = a.w;
+  if (m === 'brick' && ['apt', 'shop', 'office', 'civic', 'school', 'church'].includes(k) && arch !== 'bigbox') {
+    arch = arch === 'church' ? 'church' : 'brick';
+    b.col = a.col && bricky(a.col) ? a.col : pick(BRICK, r);
+    b.trim = '#e8e2d4';
+  } else if (m === 'glass' && (k === 'office' || k === 'lab')) {
+    arch = 'glass'; b.col = '#7f95ab'; b.col2 = '#cfd6dc';
+  } else if ((m === 'concrete' || m === 'stucco' || m === 'stone') && arch === 'brick') {
+    arch = k === 'shop' ? 'strip' : 'precast';
+    b.col = a.col || pick(WALL_PAL[m], r);
+  } else if (m === 'metal' && (k === 'ind' || k === 'shop')) {
+    arch = k === 'ind' ? 'warehouse' : arch;
+    b.col = a.col || pick(METAL, r);
+  } else if (a.col && arch !== 'glass' && arch !== 'lab' && arch !== 'modern' && !(arch === 'brick' && !bricky(a.col))) b.col = a.col;
+  if (FLAT_COVERS.has(a.c)) b.roofCol = pick(PAL.flatRoof, r2);
+  b.material = m === 'brick' ? 'brick' : b.material;
+  return arch;
+}
+
+const normAddr = (s) => String(s || '').toUpperCase().replace(/[.,#]/g, ' ').replace(/\s+/g, ' ').trim();
+// "80 HOVEY ST 82 #80" -> "80 HOVEY ST": the number and street, without unit designations
+const SUFFIX = new Set(['ST', 'RD', 'AV', 'AVE', 'LN', 'PL', 'CT', 'TR', 'TER', 'DR', 'WAY', 'PK', 'PKWY', 'SQ', 'CIR', 'CR', 'HWY', 'BLVD', 'ROW', 'PATH', 'PARK', 'ST E', 'EXT']);
+const baseAddr = (s) => { const t = normAddr(s).split(' '); const k = t.findIndex((x, i) => i > 0 && SUFFIX.has(x)); return (k > 0 ? t.slice(0, k + 1) : t).join(' '); };
+// Attach assessor building records to lots and buildings and restyle the original buildings. Safe to run
+// again (a saved city from before the records existed gets them on load). New buildings the player or the
+// market builds keep their own look.
+export function applyAssessor(world, data) {
+  if (!data || !data.recs || world.asrV === data.v) return 0;
+  const byAddr = new Map(), byBase = new Map();
+  for (const [id, rec] of Object.entries(data.recs)) {
+    if (!rec.a) continue;
+    byAddr.set(normAddr(rec.a), id);
+    const k = baseAddr(rec.a);
+    if (!byBase.has(k)) byBase.set(k, []);
+    byBase.get(k).push(id);
+  }
+  let n = 0;
+  for (const lot of world.lots) {
+    if (lot.dead || !lot.real) continue;
+    let ids = (lot.mpids || []).filter((id) => data.recs[id]);
+    if (!ids.length) {
+      // condominium units are numbered differently in the two datasets: match them by street address
+      const set = new Set();
+      for (const a of lot.addrs || [lot.addr]) {
+        if (!a) continue;
+        const id = byAddr.get(normAddr(a));
+        if (id) set.add(id);
+        else for (const x of byBase.get(baseAddr(a)) || []) set.add(x);
+        if (set.size > 60) break;
+      }
+      ids = [...set];
+    }
+    if (!ids.length) continue;
+    const recs = ids.map((id) => data.recs[id]);
+    let blds;
+    if (recs.length > 1 && recs.every((rc) => rc.b.length <= 1)) {
+      // a condominium: every unit carries the building's walls and roof; take the commonest of each
+      const vote = (f) => { const c = new Map(); for (const rc of recs) { const v = rc.b[0] && rc.b[0][f]; if (v != null && v !== '') c.set(v, (c.get(v) || 0) + 1); } let best = null, bn = 0; for (const [v, k] of c) if (k > bn) { best = v; bn = k; } return best; };
+      const one = { w: vote('w'), r: vote('r'), c: vote('c'), n: vote('n'), s: vote('s'), f: null };
+      const cols = recs.map((rc) => rc.b[0]).filter((x) => x && x.col).sort((p, q) => (q.cs || 0) - (p.cs || 0));
+      if (cols.length) one.col = cols[0].col;
+      blds = [one];
+    } else blds = recs.flatMap((rc) => rc.b).sort((p, q) => (q.la || 0) - (p.la || 0));
+    if (!blds.length) continue;
+    const mine = lot.bldgs.map((id) => world.bldgs[id]).filter((b) => b && b.alive && !b.proc && b.kind !== 'garage').sort((p, q) => q.area - p.area);
+    mine.forEach((b, i) => {
+      // a building the assessor doesn't list separately (a small outbuilding) keeps its own look
+      if (i >= blds.length && b.area < mine[0].area * 0.45) return;
+      b.asr = blds[Math.min(i, blds.length - 1)];
+      styleBuilding(b, lot);
+      n++;
+    });
+  }
+  world.asrV = data.v;
+  return n;
+}
+
 export function assignFront(world, b) {
   const { W, H, road } = world;
   const lot = b.lot >= 0 ? world.lots[b.lot] : null;
@@ -500,6 +631,7 @@ export function buildWorld(raw, progress = () => {}) {
         year: years.length ? Math.min(...years) : 0,
         addr: titleCase(prim.SITE_ADDR || ''), useDesc: titleCase(prim.USE_DESC || '').replace(/^Imputed\s*-\s*/i, ''), style: titleCase(prim.STYLE || ''),
         stories: num(prim.STORIES), zoning: String(prim.ZONING || '').trim(), fy: prim.FY || '',
+        mpids: P.map((p) => p.MAP_PAR_ID).filter(Boolean), addrs: P.length > 1 ? [...new Set(P.map((p) => p.SITE_ADDR).filter(Boolean))].slice(0, 40) : undefined,
         biz: [], bldgs: [], occ: 0.95, dens: 0, jobs: 0, pop: 0, road: -1, dense: false, inTown: 1, built: 0,
       };
       if (!lot.totalVal) lot.totalVal = lot.landVal + lot.bldgVal + lot.otherVal;
@@ -705,6 +837,7 @@ export function buildWorld(raw, progress = () => {}) {
     };
   }
   world.trafficCounts = nSeg ? { segments: nSeg, yearMin: Math.min(...years), yearMax: Math.max(...years), yearMedian: median(years) } : null;
+  if (raw.assessor) { progress('Reading the assessor’s building cards…'); applyAssessor(world, raw.assessor); }
   return world;
 }
 
