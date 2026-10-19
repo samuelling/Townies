@@ -2,6 +2,7 @@ import { CFG } from './config.js';
 import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, fetchGround, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
 import { setTransitData } from './transit.js';
+import { nativeLog, reportError } from './native.js';
 import { buildWorld, applyAssessor, applyLidar, applyTrees, applyYards, applyGround } from './world.js';
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
@@ -102,7 +103,9 @@ function titleScreen() {
 
 async function start(mode, status, btns, scen = 'sandbox', year = null, preset = 'thesis') {
   btns.style.display = 'none';
+  const t0 = performance.now();
   const log = (msg) => {
+    nativeLog(`${Math.round(performance.now() - t0)} ms: ${msg}`);
     status.innerHTML = '';
     status.append(el('div', { class: 'tmsg' }, msg), el('div', { class: 'tquip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]));
   };
@@ -230,7 +233,15 @@ function boot(state, scen = null) {
 }
 
 let last = performance.now();
+let frameErrs = 0;
 function frame(now) {
+  // whatever goes wrong in one frame, the next one still comes (an uncaught error here used to stop the game cold)
+  requestAnimationFrame(frame);
+  try { frameBody(now); } catch (e) {
+    if (frameErrs++ < 3) { console.error('frame', e); reportError(e); }
+  }
+}
+function frameBody(now) {
   const dt = Math.min(250, now - last);
   last = now;
   const s = game.sim;
@@ -254,7 +265,6 @@ function frame(now) {
   }
   if (game.renderer && game.renderer.needs) game.renderer.draw(dt);
   else if (game.renderer) game.renderer.idle();
-  requestAnimationFrame(frame);
 }
 
 function monthTick() {

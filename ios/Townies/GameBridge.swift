@@ -15,6 +15,7 @@ final class GameBridge: ObservableObject {
         switch type {
         case "haptic": Haptics.play(msg["kind"] as? String ?? "")
         case "share": shareText = msg["text"] as? String
+        case "log": print("[Townies] \(msg["msg"] as? String ?? "")")
         default: break
         }
     }
