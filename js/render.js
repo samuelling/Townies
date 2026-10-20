@@ -2174,57 +2174,76 @@ export class Renderer {
     return drew;
   }
 
-  // The real timetable: at the slow speeds, where the day goes by on the clock, every bus is where its
-  // schedule puts it at this minute (weekday, Saturday or Sunday service by the calendar). Faster, the days
-  // blur, so a midday weekday plays on a loop at sixty times real time. Extra service the City pays for adds
-  // buses between the scheduled ones; a bus lane doesn't change the timetable, just the crawl.
+  // The real timetable decides how many buses are out on each stretch of route: as many as the schedule has
+  // running at this hour on this kind of day (weekday, Saturday or Sunday by the calendar; a midday weekday at
+  // the fast speeds), plus any extra service the City pays for. The buses themselves drive at an easy, steady
+  // pace and pause at every real stop, whatever the game clock is doing, so a day going by in seconds doesn't
+  // send them flying. As service picks up or winds down, buses fade in and out.
   drawTimetableBuses(ctx, s, P, t, net, [vx0, vy0, vx1, vy1]) {
     const sim = this.sim, T = sim.transit;
-    let now, kind = 'weekday';
+    let now = 12 * 3600, kind = 'weekday';
     if (this.dayCycle) {
       now = this.tod * 3600;
       const dow = new Date(sim.y || 2026, sim.m || 0, this.dom || 1).getDay();
       kind = dow === 0 ? 'sunday' : dow === 6 ? 'saturday' : 'weekday';
-    } else now = 10 * 3600 + ((t * 0.06) % (5 * 3600));
-    const trips = net.trips[kind] || [];
-    let drew = false;
-    const drawAt = (tr, sec) => {
-      const { t: tt, d } = tr;
-      let k = 0;
-      while (k + 1 < tt.length && tt[k + 1] <= sec) k++;
-      if (k + 1 >= tt.length) return;
-      const span = tt[k + 1] - tt[k];
-      const f = span > 0 ? (sec - tt[k]) / span : 0;
-      const pc = net.pieces[tr.pc];
-      const [x, y, dx, dy] = pieceAt(pc, d[k] + (d[k + 1] - d[k]) * f);
-      if (x < vx0 - 2 || x > vx1 + 2 || y < vy0 - 2 || y > vy1 + 2) return;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-      const cx = x + nx * 0.2, cy = y + ny * 0.2; // keep right
-      const fx = ux * 0.36, fy = uy * 0.36, sx = nx * 0.11, sy = ny * 0.11;
-      const q = [[cx - fx - sx, cy - fy - sy], [cx + fx - sx, cy + fy - sy], [cx + fx + sx, cy + fy + sy], [cx - fx + sx, cy - fy + sy]];
-      const poly = (h, col) => { ctx.fillStyle = col; ctx.beginPath(); q.forEach((c, n) => { const pp = P(c[0], c[1], h); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); }); ctx.closePath(); ctx.fill(); };
-      poly(0, 'rgba(0,0,0,0.35)');
-      poly(2.8, '#e9ebe8');
-      const a = P(q[0][0], q[0][1], 1.6), b2 = P(q[1][0], q[1][1], 1.6), a2 = P(q[3][0], q[3][1], 1.6), b3 = P(q[2][0], q[2][1], 1.6);
-      ctx.strokeStyle = '#ffc72c'; ctx.lineWidth = Math.max(1, 1.1 * s);
-      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(b3[0], b3[1]); ctx.stroke();
-      drew = true;
-    };
-    for (let n = 0; n < trips.length; n++) {
-      const tr = trips[n];
-      const r = net.routes[tr.r];
-      const fq = (T.freq && r && T.freq[r.id]) || 1;
-      // after midnight, last night's late trips (their times run past 24:00)
-      for (const sec of [now, now + 86400]) {
-        if (sec >= tr.t0 && sec < tr.t1) drawAt(tr, sec);
-        if (fq > 1.01 && hash2(n, 17, 3) < fq - 1) {
-          // an extra bus half a headway behind this one
-          const lag = ((headwayMin(ROUTES.find((x) => x.id === r.id), this.tod) || 15) * 60) / 2;
-          if (sec - lag >= tr.t0 && sec - lag < tr.t1) drawAt(tr, sec - lag);
+    }
+    const L = this.busLayout(net, kind);
+    // how many trips are on each piece right now (cached for a few game minutes)
+    const slot = `${kind}:${Math.floor(now / 600)}`;
+    if (this._busSlot !== slot) {
+      this._busSlot = slot;
+      this._busOn = new Map();
+      // the average number running over the surrounding hour, so a single trip coming or going doesn't flicker
+      for (let m = -30; m <= 30; m += 5) {
+        const at = now + m * 60;
+        for (const tr of net.trips[kind] || []) {
+          if (!((at >= tr.t0 && at < tr.t1) || (at + 86400 >= tr.t0 && at + 86400 < tr.t1))) continue;
+          const r = net.routes[tr.r];
+          const fq = (T.freq && r && T.freq[r.id]) || 1;
+          this._busOn.set(tr.pc, (this._busOn.get(tr.pc) || 0) + fq / 13);
         }
       }
     }
+    const SPEED = 0.00055, DWELL = 1800; // tiles per ms, and ms at each stop
+    const st = this._busState || (this._busState = new Map());
+    let drew = false;
+    for (const [pc, lay] of L) {
+      const want = this._busOn.get(pc) || 0;
+      const pcs = net.pieces[pc];
+      const len = pcs.cum[pcs.n - 1];
+      if (len < 1) continue;
+      // virtual distance: the run plus a pause's worth at each stop
+      const dw = SPEED * DWELL, Lv = len + lay.stops.length * dw;
+      const N = lay.slots;
+      let ps = st.get(pc);
+      if (!ps || ps.a.length !== N) st.set(pc, (ps = { a: new Float32Array(N).fill(-1) }));
+      const fade = Math.min(1, Math.max(0, (t - (this._busT || t)) / 1200));
+      for (let k = 0; k < N; k++) {
+        const v = t * SPEED + (k * Lv) / N + lay.seed * Lv;
+        const lap = Math.floor(v / Lv);
+        // this bus is out if the schedule has that many running now; it fades in and out over a second
+        const on = lay.rank[k] < Math.round(want) ? 1 : 0;
+        if (ps.a[k] < 0) ps.a[k] = on;
+        else ps.a[k] += Math.max(-fade, Math.min(fade, on - ps.a[k]));
+        if (ps.a[k] <= 0.02) continue;
+        // where that puts it along the street: driving between stops, or standing at one
+        const vd = v - lap * Lv;
+        let d = vd, acc = 0;
+        for (const sd of lay.stops) {
+          if (vd < sd + acc) { d = vd - acc; break; }
+          if (vd < sd + acc + dw) { d = sd; break; }
+          acc += dw;
+          d = vd - acc;
+        }
+        const [x, y, dx, dy] = pieceAt(pcs, Math.min(len, d));
+        if (x < vx0 - 2 || x > vx1 + 2 || y < vy0 - 2 || y > vy1 + 2) continue;
+        ctx.globalAlpha = ps.a[k];
+        this.drawBus(ctx, s, P, x, y, dx, dy);
+        ctx.globalAlpha = 1;
+        drew = true;
+      }
+    }
+    this._busT = t;
     // the stops: a post with the MBTA's yellow sign, close up
     if (s >= 0.9)
       for (const st of net.stops) {
@@ -2237,6 +2256,48 @@ export class Renderer {
         ctx.fillStyle = '#1c1c1c'; ctx.fillRect(g1[0] - sw / 2, g1[1] - sh, sw, Math.max(1, sh * 0.3));
       }
     return drew;
+  }
+
+  // per piece of route: where its stops are along it, and how many bus slots it needs at its busiest
+  busLayout(net, kind) {
+    if (this._busLay && this._busLay.kind === kind && this._busLay.net === net) return this._busLay.m;
+    const m = new Map();
+    const peak = new Map();
+    for (const tr of net.trips[kind] || []) {
+      let e = m.get(tr.pc);
+      if (!e) m.set(tr.pc, (e = { stops: new Set() }));
+      for (let j = 0; j < tr.st.length; j++) if (tr.st[j] >= 0) e.stops.add(Math.round(tr.d[j] * 4) / 4);
+    }
+    // the most trips on a piece at once, sampled through the day
+    for (let h = 5; h < 24; h += 0.25) {
+      const now = h * 3600, c = new Map();
+      for (const tr of net.trips[kind] || []) if (now >= tr.t0 && now < tr.t1) c.set(tr.pc, (c.get(tr.pc) || 0) + 1);
+      for (const [pc, n] of c) peak.set(pc, Math.max(peak.get(pc) || 0, n));
+    }
+    for (const [pc, e] of m) {
+      e.stops = [...e.stops].sort((a, b) => a - b);
+      e.slots = Math.max(2, Math.ceil((peak.get(pc) || 1) * 1.6) + 1);
+      e.seed = hash2(pc, 5, 9);
+      // which slots go out first as service picks up: spread around the run
+      e.rank = new Int32Array(e.slots);
+      const order = [...Array(e.slots).keys()].sort((a, b) => hash2(a, pc, 11) - hash2(b, pc, 11));
+      order.forEach((k, r) => (e.rank[k] = r));
+    }
+    this._busLay = { kind, net, m };
+    return m;
+  }
+  drawBus(ctx, s, P, x, y, dx, dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const cx = x + nx * 0.2, cy = y + ny * 0.2; // keep right
+    const fx = ux * 0.36, fy = uy * 0.36, sx = nx * 0.11, sy = ny * 0.11;
+    const q = [[cx - fx - sx, cy - fy - sy], [cx + fx - sx, cy + fy - sy], [cx + fx + sx, cy + fy + sy], [cx - fx + sx, cy - fy + sy]];
+    const poly = (h, col) => { ctx.fillStyle = col; ctx.beginPath(); q.forEach((c, n) => { const pp = P(c[0], c[1], h); n ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); }); ctx.closePath(); ctx.fill(); };
+    poly(0, 'rgba(0,0,0,0.35)');
+    poly(2.8, '#e9ebe8');
+    const a = P(q[0][0], q[0][1], 1.6), b2 = P(q[1][0], q[1][1], 1.6), a2 = P(q[3][0], q[3][1], 1.6), b3 = P(q[2][0], q[2][1], 1.6);
+    ctx.strokeStyle = '#ffc72c'; ctx.lineWidth = Math.max(1, 1.1 * s);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(b3[0], b3[1]); ctx.stroke();
   }
 
   // ---- moments: ribbon cuttings, lab openings, plazas, the first big snow ----
