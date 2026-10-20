@@ -10,7 +10,7 @@ import { canStepInside, openHome } from './home.js';
 import { buildIndex, search } from './search.js';
 import { NATIVE, initNative, post as nativePost } from './native.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
-import { SPEEDS, DEFAULT_SPEED, cycles, clock, sunHeight } from './daynight.js';
+import { SPEEDS, DEFAULT_SPEED, REALTIME, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES } from './storefronts.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
@@ -440,6 +440,14 @@ export class UI {
   }
   setSpeed(v) {
     v = clamp(Math.round(v) || 0, 0, SPEEDS.length - 1);
+    // leaving Real time for a faster speed: pick the game's clock up from the wall clock's hour, not a jump
+    const was = this.g.speed === REALTIME || (this.g.speed === 0 && this.g.lastSpeed === REALTIME);
+    if (was && v !== REALTIME && v !== 0 && this.r.tod != null) {
+      const day = Math.min(30, this.r.dom || 1);
+      let f = ((day - 1) + this.r.tod / 24 - 0.3) / 30;
+      if (f < 0) f += 1 / 30;
+      this.g.frac = Math.max(this.g.frac, Math.min(0.999, f));
+    }
     if (this.g.speed > 0) this.g.lastSpeed = this.g.speed; // pausing at night keeps the night
     this.g.speed = v;
     this.sim.paused = v === 0;
@@ -456,7 +464,7 @@ export class UI {
   }
   cycleSpeed(d = 1) {
     this.setSpeed((this.g.speed + d + SPEEDS.length) % SPEEDS.length);
-    this.toast(`${SPEEDS[this.g.speed][1]} ${SPEEDS[this.g.speed][0]}${SPEEDS[this.g.speed][3] ? ': watch the day go by' : ''}`);
+    this.toast(`${SPEEDS[this.g.speed][1]} ${SPEEDS[this.g.speed][0]}${this.g.speed === REALTIME ? ': the town right now, on the clock on the wall' : SPEEDS[this.g.speed][3] ? ': watch the day go by' : ''}`);
   }
   refreshClock(hour, day) {
     if (!this.sClock) return;

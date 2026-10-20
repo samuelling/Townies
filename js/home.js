@@ -9,7 +9,7 @@ import { CFG, ZONE } from './config.js';
 import { clamp, hash2, el, fmtMoney } from './util.js';
 import { ROUTES, routeTiles, transitNet, headwayMin } from './transit.js';
 import { weatherDay } from './weather.js';
-import { BEDTIMES, groupOf, clock, twilight, skyTint, SPEEDS } from './daynight.js';
+import { BEDTIMES, groupOf, clock, twilight, skyTint, SPEEDS, SNAIL } from './daynight.js';
 import { homeLot, irvingSeason } from './eggs.js';
 import { floorPlan, SLAB, ROOM_LABEL } from './floorplan.js';
 
@@ -250,7 +250,7 @@ export function openHome(game, lot) {
   const prevWhere = new Map();
   const pos = new Map();
   const prevSpeed = game.speed;
-  if (!SPEEDS[game.speed][3]) game.ui.setSpeed(1); // the house runs on the slow clock
+  if (!SPEEDS[game.speed][3]) game.ui.setSpeed(SNAIL); // the house runs on the slow clock
 
   // ---- DOM ----
   const cv = el('canvas', { class: 'hv-canvas' });
@@ -270,10 +270,11 @@ export function openHome(game, lot) {
   };
   drawFloorBtns();
 
-  const dayNum = () => Math.floor(game.frac * 30 + 0.3) + 1;
+  const dayNum = () => (game.renderer.realTime ? Math.min(30, game.renderer.dom) : Math.floor(game.frac * 30 + 0.3) + 1);
   const ctxFor = (env) => {
     const d = dayNum();
-    const dow = (d + game.sim.m * 3 + game.sim.y) % 7; // a made-up but steady weekday
+    // a made-up but steady weekday (Monday = 0); in Real time, today's
+    const dow = game.renderer.realTime && game.renderer.dow != null ? (game.renderer.dow + 6) % 7 : (d + game.sim.m * 3 + game.sim.y) % 7;
     const mode = st.mode || (env.busMin && env.busMin < env.drive + 8 ? 'bus' : 'drive');
     const commute = mode === 'bus' && env.busMin ? env.busMin : mode === 'bike' && env.bike ? env.bike : env.drive;
     const wx = weatherDay(game.sim, d - 1) || {};
@@ -293,7 +294,7 @@ export function openHome(game, lot) {
     const kv = (k, v, cls) => side.append(el('div', { class: 'kvline' }, el('span', {}, k), el('b', { class: cls || '' }, v)));
     side.append(el('div', { class: 'hv-clock' }, `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][cx.dow]} ${dayNum()} · ${clock(game.renderer.tod)}`, el('small', {}, ` ${cx.wx.hi ?? ''}°/${cx.wx.lo ?? ''}°${cx.wx.snow >= 0.5 ? ` · ${cx.wx.snow}" snow` : cx.wx.rain >= 0.1 ? ' · rain' : ''}`)));
     const speedRow = el('div', { class: 'hv-speed' });
-    for (const [v, lab] of [[0, '❚❚'], [1, '🐌'], [2, '🦥']]) speedRow.append(el('button', { class: game.speed === v ? 'on' : '', onclick: () => { game.ui.setSpeed(v); renderSide(); } }, lab));
+    for (const [v, lab] of [[0, '❚❚'], [1, '🕰'], [2, '🐌'], [3, '🦥']]) speedRow.append(el('button', { class: game.speed === v ? 'on' : '', onclick: () => { game.ui.setSpeed(v); renderSide(); } }, lab));
     speedRow.append(el('button', { title: 'Skip to 6 a.m. tomorrow', onclick: () => { const d = Math.min(29.99, Math.floor(game.frac * 30 + 0.3) + 1 + 6 / 24 - 0.3); game.frac = Math.min(0.9999, Math.max(game.frac, d / 30)); } }, '⏭ morning'));
     side.append(speedRow);
     sec(mine ? 'You live here' : 'Who lives here');

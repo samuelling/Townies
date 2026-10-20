@@ -6,6 +6,7 @@ import { clamp } from './util.js';
 // [name, icon, milliseconds per game month, day/night cycle shown]
 export const SPEEDS = [
   ['Pause', '❚❚', Infinity, false],
+  ['Real time', '🕰', 30 * 86400000, true], // the clock on the wall: today's hour, the buses on today's schedule; a month takes a month
   ['Snail', '🐌', 30 * 72000, true], // a day takes 72 s: dusk lasts several seconds
   ['Sloth', '🦥', 30 * 12000, true], // a day in 12 s: a time-lapse
   ['Turtle', '🐢', 60000, false],
@@ -13,9 +14,12 @@ export const SPEEDS = [
   ['Hare', '🐇', 6000, false],
   ['Cheetah', '🐆', 2000, false],
 ];
-export const DEFAULT_SPEED = 4;
+export const REALTIME = 1, SNAIL = 2;
+export const DEFAULT_SPEED = 5;
 // saves from before the ladder had seven rungs stored 0–3 (Pause, Turtle 14 s, Llama 6 s, Cheetah 2 s)
-export const OLD_SPEED = [0, 4, 5, 6];
+export const OLD_SPEED = [0, 5, 6, 7];
+// saves from before Real time was added (speedV 2) count from Pause without it
+export const V2_SPEED = (v) => (v >= 1 ? v + 1 : v);
 export const cycles = (v) => !!(SPEEDS[v] && SPEEDS[v][3]);
 
 // Approximate sunrise and sunset in Watertown, local clock time (daylight saving included), mid-month.

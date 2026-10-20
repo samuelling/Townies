@@ -12,7 +12,7 @@ import { nextScenario, FOLLOWUPS } from './events.js';
 import { TERMS, startScenario, scenarioMonthly } from './scenarios.js';
 import { el } from './util.js';
 import { rewindWorld, PAST_STARTS } from './history.js';
-import { SPEEDS, DEFAULT_SPEED, OLD_SPEED, cycles } from './daynight.js';
+import { SPEEDS, DEFAULT_SPEED, OLD_SPEED, V2_SPEED, REALTIME, cycles } from './daynight.js';
 
 const QUIPS = [
   'Reticulating splines…',
@@ -224,7 +224,7 @@ function boot(state, scen = null) {
   if (!state) startScenario(game.sim, tutorial ? 'sandbox' : scen || 'sandbox', game.peers);
   game.ui.refreshHud();
   if (state && state.frac != null) game.frac = state.frac;
-  game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? (state.speedV === 2 ? state.speed : OLD_SPEED[state.speed] ?? DEFAULT_SPEED) : DEFAULT_SPEED);
+  game.ui.setSpeed(params.get('speed') ? +params.get('speed') : state && state.speed != null ? (state.speedV === 3 ? state.speed : state.speedV === 2 ? V2_SPEED(state.speed) : OLD_SPEED[state.speed] ?? DEFAULT_SPEED) : DEFAULT_SPEED);
   game.ui.musicBtn.classList.toggle('muted', !game.music.on);
   game.renderer.resize();
   if (tutorial) game.ui.startTutorial();
@@ -258,10 +258,21 @@ function frameBody(now) {
   if (game.renderer) {
     // time of day: each month starts a little after 7 a.m. on the 1st
     const r = game.renderer;
-    r.tod = ((game.frac * 30 + 0.3) % 1) * 24;
-    r.dom = Math.floor(game.frac * 30 + 0.3) + 1; // day of the month, for the bus timetable
+    // in Real time, the clock on the wall (and today's day of the week, for the buses); paused from Real time,
+    // the hour stays where it was
+    r.realTime = game.speed === REALTIME;
+    if (r.realTime) {
+      const d = new Date();
+      r.tod = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+      r.dom = d.getDate();
+      r.dow = d.getDay();
+    } else if (!(game.speed === 0 && game.lastSpeed === REALTIME)) {
+      r.tod = ((game.frac * 30 + 0.3) % 1) * 24;
+      r.dom = Math.floor(game.frac * 30 + 0.3) + 1; // day of the month, for the bus timetable
+      r.dow = null;
+    }
     r.dayCycle = cycles(game.speed) || (game.speed === 0 && cycles(game.lastSpeed));
-    if (game.ui && r.dayCycle) game.ui.refreshClock(r.tod, Math.floor(game.frac * 30 + 0.3) + 1);
+    if (game.ui && r.dayCycle) game.ui.refreshClock(r.tod, r.dom);
   }
   if (game.renderer && game.renderer.needs) game.renderer.draw(dt);
   else if (game.renderer) game.renderer.idle();
@@ -298,7 +309,7 @@ async function save(manual) {
     rot: r.rot,
     z: r.z,
     speed: game.speed,
-    speedV: 2,
+    speedV: 3,
     frac: game.frac,
     at: Date.now(),
     label: `Watertown ${game.sim.dateStr()}`,

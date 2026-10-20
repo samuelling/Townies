@@ -2187,6 +2187,8 @@ export class Renderer {
       const dow = new Date(sim.y || 2026, sim.m || 0, this.dom || 1).getDay();
       kind = dow === 0 ? 'sunday' : dow === 6 ? 'saturday' : 'weekday';
     }
+    // Real time: every bus is where today's schedule puts it right now
+    if (this.realTime) return this.drawScheduledBuses(ctx, s, P, net, this.dow === 0 ? 'sunday' : this.dow === 6 ? 'saturday' : 'weekday', [vx0, vy0, vx1, vy1]);
     const L = this.busLayout(net, kind);
     // how many trips are on each piece right now (cached for a few game minutes)
     const slot = `${kind}:${Math.floor(now / 600)}`;
@@ -2244,7 +2246,11 @@ export class Renderer {
       }
     }
     this._busT = t;
-    // the stops: a post with the MBTA's yellow sign, close up
+    this.drawBusStops(ctx, s, P, net, [vx0, vy0, vx1, vy1]);
+    return drew;
+  }
+  // the stops: a post with the MBTA's yellow sign, close up
+  drawBusStops(ctx, s, P, net, [vx0, vy0, vx1, vy1]) {
     if (s >= 0.9)
       for (const st of net.stops) {
         if (st.x < vx0 - 1 || st.x > vx1 + 1 || st.y < vy0 - 1 || st.y > vy1 + 1) continue;
@@ -2255,6 +2261,40 @@ export class Renderer {
         ctx.fillStyle = '#ffc72c'; ctx.fillRect(g1[0] - sw / 2, g1[1] - sh, sw, sh);
         ctx.fillStyle = '#1c1c1c'; ctx.fillRect(g1[0] - sw / 2, g1[1] - sh, sw, Math.max(1, sh * 0.3));
       }
+  }
+
+  // the timetable taken literally, for Real time: each trip's bus between its stops at this very minute
+  drawScheduledBuses(ctx, s, P, net, kind, [vx0, vy0, vx1, vy1]) {
+    const T = this.sim.transit;
+    const now = this.tod * 3600;
+    let drew = false;
+    const trips = net.trips[kind] || [];
+    const at = (tr, sec) => {
+      const { t: tt, d } = tr;
+      let k = 0;
+      while (k + 1 < tt.length && tt[k + 1] <= sec) k++;
+      if (k + 1 >= tt.length) return;
+      const span = tt[k + 1] - tt[k];
+      const f = span > 0 ? Math.min(1, (sec - tt[k]) / span) : 0;
+      const [x, y, dx, dy] = pieceAt(net.pieces[tr.pc], d[k] + (d[k + 1] - d[k]) * f);
+      if (x < vx0 - 2 || x > vx1 + 2 || y < vy0 - 2 || y > vy1 + 2) return;
+      this.drawBus(ctx, s, P, x, y, dx, dy);
+      drew = true;
+    };
+    for (let n = 0; n < trips.length; n++) {
+      const tr = trips[n];
+      const r = net.routes[tr.r];
+      const fq = (T.freq && r && T.freq[r.id]) || 1;
+      for (const sec of [now, now + 86400]) { // after midnight, last night's late trips run past 24:00
+        if (sec >= tr.t0 && sec < tr.t1) at(tr, sec);
+        if (fq > 1.01 && hash2(n, 17, 3) < fq - 1) {
+          // extra service the City pays for: another bus half a headway behind
+          const lag = ((headwayMin(ROUTES.find((x) => x.id === r.id), this.tod) || 15) * 60) / 2;
+          if (sec - lag >= tr.t0 && sec - lag < tr.t1) at(tr, sec - lag);
+        }
+      }
+    }
+    this.drawBusStops(ctx, s, P, net, [vx0, vy0, vx1, vy1]);
     return drew;
   }
 
