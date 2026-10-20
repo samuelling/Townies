@@ -28,6 +28,12 @@ On phones: one finger uses the tool, two fingers pan and pinch.
 
 Music is generated live in the browser.
 
+**Why?** Any storefront lot (Query it, or tap "Why?" on a news story or in Main Street's log) explains itself from the model's own numbers: what the owner is asking and what's pushing it up, what an independent or a chain can afford there, how each shop is doing and when its lease renews, and why each shop opened or closed, down to your own projects nearby.
+
+**Storefronts for lease** (Windows menu, or Main Street) lets you pick the next tenant for an empty storefront before the market does: an ordinary independent, a signature one the City has recruited, or a chain. The City's small-business office closes two deals a month; independents cost a broker's fee plus a two-year rent grant when the owner asks more than they can pay. Ignore it and the market fills spaces exactly as before.
+
+**Your term** (tap the goal panel) says how to get each goal done and can light up the lots that matter on the map.
+
 ## iPhone and iPad
 `ios/` is a native app that runs the same game offline, full screen, on iPhone and iPad. The game's files are copied into the app when it builds and served to a web view from a tiny server inside the app (`ios/Townies/LocalServer.swift`), so saves, music, sound and the Mac OS 9-style menus and windows are exactly as on the web. The app adds haptics on the same moments as the sound effects, the iOS share sheet for the report card, and keeps the screen awake at the slow, day-and-night speeds. A GitHub Action compile-checks it on every change.
 

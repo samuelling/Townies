@@ -588,10 +588,11 @@ export class Sim {
         title = `Storefront at ${e.lot.addr || st(e.lot)} sits empty for nine months`;
         body = 'The owner is asking well above what the last tenant paid. A sign in the window promises "Coming soon."';
       } else if (e.type === 'popup') line = `Pop-up gallery moved into an empty storefront on ${st(e.lot)}`;
-      if (line) this.sfLog.unshift({ date: this.dateStr(), t: this.t, text: line, type: e.type });
+      if (line) this.sfLog.unshift({ date: this.dateStr(), t: this.t, text: line, type: e.type, lot: e.lot ? e.lot.id : null });
       let item = null;
       if (title && posted < 2) {
         item = this.news(title, body);
+        if (e.lot) item.lot = e.lot.id;
         posted++;
       }
       const ctx = { name: s ? s.n : '', street: st(e.lot), cat: s ? s.cat : '' };
@@ -1720,6 +1721,15 @@ export class Sim {
     const c = this.cellOf(x, y);
     const ramp = rampColor;
     switch (mode) {
+      case 'mission': {
+        // the lots that matter for a goal (Your term → Show on map)
+        const ms = this.missionSpots;
+        if (!ms || w.terrain[i] === 1) return null;
+        const li = w.lotOf[i];
+        const rgb = li >= 0 ? ms.get(li) : null;
+        if (!rgb) return w.road[i] ? null : [40, 40, 48, 70];
+        return [...rgb, 235];
+      }
       case 'zones': {
         if (w.road[i]) return [80, 80, 80, 160];
         const li = w.lotOf[i];

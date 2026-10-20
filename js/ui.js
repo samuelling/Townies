@@ -12,11 +12,12 @@ import { NATIVE, initNative, post as nativePost } from './native.js';
 import { el, fmtMoney, fmtInt, clamp } from './util.js';
 import { SPEEDS, DEFAULT_SPEED, REALTIME, cycles, clock, sunHeight } from './daynight.js';
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
-import { POLICIES } from './storefronts.js';
+import { POLICIES, applicants, signTenant, inProtectedDistrict, DEALS_PER_MONTH } from './storefronts.js';
+import { explainLot } from './why.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
 import { walkLabel } from './walkscore.js';
-import { TERMS, goalStatus } from './scenarios.js';
+import { TERMS, goalStatus, goalSpots, SPOT_KIND } from './scenarios.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
 import { makeProj } from './geo.js';
 import { behindScenes } from './bts.js';
@@ -201,7 +202,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Sound effects on/off', () => { const on = this.g.music.toggleSfx(); this.toast(on ? 'Sound effects on' : 'Sound effects off'); if (on) this.g.music.sfx('drill'); }], ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Storefronts for lease', () => this.leaseWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     this.menuDefs = { file: fileItems, windows: winItems, help: helpItems };
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]).concat(['-', ['Street names on/off (N)', () => this.setNames(!this.r.showNames)]]);
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
@@ -711,6 +712,7 @@ export class UI {
           row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs ${s.y0}${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
           row('Businesses', lot.biz.length ? lot.biz.map((n, k) => { const kd = lot.bizKind && lot.bizKind[k]; const ch = lot.bizChainF && lot.bizChainF[k] ? ', chain' : ''; return kd && kd !== 'yes' ? `${n} (${String(kd).replace(/_/g, ' ')}${ch})` : ch ? `${n} (chain)` : n; }).join(' · ') : '')
         );
+        if (lot.storefronts || (lot.why && lot.why.length)) add(el('tr', {}, el('th', {}, ''), el('td', {}, el('button', { class: 'link', onclick: () => this.whyWindow(lot) }, 'Why? Rents, tenants and what happened here ›'), lot.vacant ? el('button', { class: 'link', onclick: () => this.leaseWindow(lot) }, ` · Pick the next tenant ›`) : null)));
         if (s.readyNote && s.readyNote(lot)) add(row('Note', s.readyNote(lot)));
         else if (lot.stay > s.t) add(row('Note', `On hold for ${lot.stay - s.t} more month${lot.stay - s.t === 1 ? '' : 's'}: Melora's appeal.`));
         if (lot.evClosed) add(row('Note', 'Closed: electric cars took the business. A redevelopment site waiting to happen.'));
@@ -813,6 +815,73 @@ export class UI {
       el('p', { class: 'fine' }, thesis ? `Without the auto-and-parking scoring, vibrancy would be ${f(v.total - v.auto)}. Walking trips, which don't score auto uses at all, moved ${s.streetLife ? `${s.streetLife.change >= 0 ? '+' : '−'}${Math.abs(s.streetLife.change * 100).toFixed(1)}%` : 'n/a'}.` : 'In the neutral model auto uses carry no penalty, so all of this change comes from shops and people.'));
   }
 
+  // ---------------- Why? ----------------
+  whyWindow(lot) {
+    if (!lot) return;
+    this.closeWin('why');
+    this.r.centerOn && this.r.centerOn(lot.cx, lot.cy);
+    this.win('why', `Why? · ${lot.addr || streetOf(lot) || 'storefronts'}`, (body) => {
+      const s = this.sim;
+      const ex = explainLot(s, lot);
+      const P = (t) => el('p', {}, t);
+      if (lot.storefronts) {
+        body.append(el('h4', {}, 'The rent'), ...ex.rent.map(P), el('h4', {}, 'Who can afford it'), ...ex.afford.map(P));
+        if (ex.shops.length || ex.vacant) {
+          body.append(el('h4', {}, 'The shops'));
+          for (const sh of ex.shops) body.append(el('div', { class: 'whyshop' }, el('b', {}, `${sh.n}${sh.sig ? ' ★' : ''}`), ...sh.lines.map((l) => el('small', {}, ' ' + l))));
+          if (ex.vacant) body.append(el('p', {}, `${ex.vacant} storefront${ex.vacant > 1 ? 's' : ''} empty. `, el('button', { class: 'link', onclick: () => this.leaseWindow(lot) }, 'Pick the next tenant ›')));
+        }
+      }
+      if (ex.history.length) {
+        body.append(el('h4', {}, 'What happened here'));
+        for (const h of ex.history) body.append(el('div', { class: 'whyshop' }, el('small', {}, h.date), ' ', el('b', {}, h.head), ...h.lines.map((l) => el('small', {}, ' ' + l))));
+      }
+      body.append(el('p', { class: 'fine' }, 'Rents are shown against the starting year (1.00× = then). These are the storefront model’s own numbers; Help → Model assumptions switches the parts that carry the game’s argument.'));
+    }, { cls: 'wide' });
+  }
+
+  // ---------------- storefronts for lease ----------------
+  leaseWindow(focus) {
+    this.closeWin('lease');
+    this.win('lease', 'Storefronts for lease', (body) => {
+      const s = this.sim;
+      const deals = s.dealsLeft ?? DEALS_PER_MONTH;
+      body.append(el('p', { class: 'fine' }, `Pick the next tenant before the market does. The City’s small-business office can close ${DEALS_PER_MONTH} deals a month (${deals} left this month): an independent costs a broker’s fee, plus a grant for two years of the gap when the owner asks more than it can pay. Letting a chain in costs nothing. Leave a space alone and the market fills it as usual.`));
+      const lots = s.w.lots.filter((l) => !l.dead && l.inTown && l.storefronts && l.vacant > 0 && !l.under && l.bldgs.length);
+      const key = (l) => (l === focus ? -1e9 : 0) + (inProtectedDistrict(s, l) ? -1e6 : 0) - (s.t - (l.vacantSince ?? s.t));
+      lots.sort((a, b) => key(a) - key(b));
+      if (!lots.length) body.append(el('p', {}, 'Every storefront in town is let.'));
+      for (const lot of lots.slice(0, 20)) {
+        const a = applicants(s, lot);
+        if (!a) continue;
+        const where = `${lot.addr || streetOf(lot) || 'Storefront'}`;
+        const box = el('div', { class: `lease${lot === focus ? ' focus' : ''}` });
+        box.append(el('div', {}, el('button', { class: 'link', onclick: () => this.r.centerOn(lot.cx, lot.cy) }, el('b', {}, where)), el('small', {}, ` · empty ${a.months} month${a.months === 1 ? '' : 's'} · asking ${lot.ask.toFixed(2)}× · an independent can pay ${a.m.indieCap.toFixed(2)}×`), ' ', el('button', { class: 'link', onclick: () => this.whyWindow(lot) }, 'Why?')));
+        const go = (which) => {
+          const res = signTenant(s, lot, which);
+          if (res.error) { this.toast(res.error, 2600); this.g.music.sfx('error'); return; }
+          const st = streetOf(lot) || 'Main Street';
+          const item = s.news(which === 'chain' ? `${res.shop.n} signs on ${st}` : `${res.shop.n} opens on ${st}`, which === 'chain' ? 'The City waved the lease through. The rent is good; the window display is corporate.' : `The City’s small-business office closed the deal${res.shop.granted ? ', with a grant to bridge the rent for two years' : ''}.`);
+          item.lot = lot.id;
+          react(s, which === 'chain' ? 'open-chain' : 'open-indie', { name: res.shop.n, street: st, cat: res.shop.cat }, item);
+          this.g.music.sfx(which === 'chain' ? 'gavel' : 'ribbon');
+          this.refreshStatus();
+          this.r.needs = true;
+          this.leaseWindow();
+        };
+        const opt = (which, c, what) => {
+          const cost = a.fee + c.grant;
+          return el('button', { class: 'choice', disabled: deals <= 0 || s.funds < cost, onclick: () => go(which) }, el('b', {}, `Sign ${c.n}${c.sig ? ' ★' : ''}`), el('small', {}, `${fmtMoney(cost)}${c.grant ? ` (${fmtMoney(a.fee)} fee + ${fmtMoney(c.grant)} rent grant)` : ' broker’s fee'} · ${what}`));
+        };
+        box.append(el('div', { class: 'choices' },
+          opt('indie', a.indie, 'an independent: steady, adds to the street'),
+          opt('sig', a.sig, 'a signature independent: draws people, thinner margins'),
+          a.chain ? el('button', { class: 'choice', disabled: deals <= 0, onclick: () => go('chain') }, el('b', {}, `Let ${a.chain.n} in`), el('small', {}, 'free · a chain: pays the full ask, adds less to the street')) : el('small', { class: 'fine' }, a.m.prot ? 'Chain limits keep chains out here.' : 'No chain can make the numbers work here.')));
+        body.append(box);
+      }
+    }, { cls: 'wide' });
+  }
+
   mainStreetWindow() {
     this.win('main', 'Main Street', (body) => {
       const s = this.sim;
@@ -833,6 +902,8 @@ export class UI {
         this.peerTable(),
         el('p', { class: 'fine' }, 'Signature independents (coffee, books, boutiques, galleries, bakeries) make a street feel alive and are the first to go when landlords chase the "Watertown is on the rise" rents. Chains and bank branches can pay more, and add less.'),
         el('button', { class: 'btn', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') }, this.overlay === 'vibrancy' ? 'Hide vibrancy map' : 'Show vibrancy map'),
+        ' ',
+        el('button', { class: 'btn', onclick: () => this.leaseWindow() }, `Storefronts for lease (${st.vacant || 0})`),
         el('h4', {}, 'Policies')
       );
       s.policies = s.policies || {};
@@ -853,7 +924,10 @@ export class UI {
       }
       body.append(el('h4', {}, 'Recent openings & closings'));
       const log = el('div', { class: 'sflog' });
-      for (const l of (s.sfLog || []).slice(0, 12)) log.append(el('div', { class: `sfl ${l.type}` }, el('small', {}, l.date), ' ', l.text));
+      for (const l of (s.sfLog || []).slice(0, 12)) {
+        const lot = l.lot != null ? s.w.lots[l.lot] : null;
+        log.append(el('div', { class: `sfl ${l.type}` }, el('small', {}, l.date), ' ', l.text, lot ? el('button', { class: 'link', onclick: () => this.whyWindow(lot) }, ' Why? ›') : null));
+      }
       if (!(s.sfLog || []).length) log.append(el('p', { class: 'fine' }, 'Nothing yet. Leases turn over every few years.'));
       body.append(log);
     }, { cls: 'wide' });
@@ -1038,7 +1112,7 @@ export class UI {
     this.hud.style.display = '';
     this.hud.innerHTML = '';
     const left = sc.deadline != null ? sc.deadline - s.t : null;
-    this.hud.append(el('div', { class: 'hudt' }, `${T.icon} ${T.title}`, el('small', {}, sc.done ? (sc.done.won ? ` · done ${'★'.repeat(sc.done.stars)}` : ' · ended') : left != null ? ` · ${Math.floor(left / 12)}y ${left % 12}m left` : ` · review ${Math.max(0, sc.nextReview - s.t)} mo`)));
+    this.hud.append(el('div', { class: 'hudt' }, `${T.icon} ${T.title}`, el('small', {}, sc.done ? (sc.done.won ? ` · done ${'★'.repeat(sc.done.stars)}` : ' · ended') : left != null ? ` · ${Math.floor(left / 12)}y ${left % 12}m left` : ` · review ${Math.max(0, sc.nextReview - s.t)} mo`), T.goals.length && !sc.done ? el('small', { class: 'hudhow' }, ' · how? ›') : null));
     for (const g of goalStatus(s)) {
       this.hud.append(el('div', { class: `hudg${g.met ? ' met' : ''}` }, el('span', {}, g.label), el('i', {}, el('em', { style: `width:${Math.round(g.prog * 100)}%` })), el('b', {}, `${g.fmt(g.value)}${g.keep ? ` (≥ ${g.fmt(g.target)})` : g.max ? ` / ${g.target}` : ` / ${g.fmt(g.target)}`}`)));
     }
@@ -1051,11 +1125,31 @@ export class UI {
       const T = TERMS[sc.id];
       body.append(el('h3', {}, `${T.icon} ${T.title}`), el('p', {}, T.blurb));
       if (sc.deadline != null) body.append(el('p', { class: 'fine' }, `Deadline: ${Math.floor((sc.deadline - s.t) / 12)} years ${(sc.deadline - s.t) % 12} months from now.${T.floor ? ` Approval must not stay under ${T.floor.approval}% (now ${sc.lowMonths} month${sc.lowMonths === 1 ? '' : 's'} under).` : ''}`));
-      for (const g of goalStatus(s)) body.append(el('div', { class: 'kvline' }, el('span', {}, `${g.met ? '✅' : '⬜'} ${g.label}`), el('b', {}, `${g.fmt(g.value)} / ${g.fmt(g.target)}`)));
+      for (const g of goalStatus(s)) {
+        body.append(el('div', { class: 'kvline' }, el('span', {}, `${g.met ? '✅' : '⬜'} ${g.label}`), el('b', {}, `${g.fmt(g.value)} / ${g.fmt(g.target)}`)));
+        if (g.how) body.append(el('p', { class: 'goalhow' }, g.how, ' ', g.spots && g.spots.length ? el('button', { class: 'link', onclick: () => this.showGoalSpots(g) }, 'Show on map ›') : null));
+      }
       body.append(el('h4', {}, 'Contract reviews (every 3 years)'));
       if (!sc.reviews.length) body.append(el('p', { class: 'fine' }, `First review ${sc.nextReview - s.t} months from now. The Council looks at approval, the budget, and progress on your goals.`));
       for (const r of sc.reviews) body.append(el('div', { class: 'kvline' }, el('span', {}, r.date), el('b', {}, `Grade ${r.grade} · approval ${r.approval}%`)));
     });
+  }
+  // light up the lots that matter for a goal
+  showGoalSpots(g) {
+    const s = this.sim;
+    const spots = goalSpots(s, g.spots);
+    const used = new Set(spots.values());
+    s.missionSpots = new Map([...spots].map(([li, k]) => [li, SPOT_KIND[k].rgb]));
+    const rgba = (c) => `rgb(${c.join(',')})`;
+    s.missionLegend = { title: g.label, items: [...used].map((k) => ({ color: rgba(SPOT_KIND[k].rgb), label: `${SPOT_KIND[k].label} (${[...spots.values()].filter((v) => v === k).length})` })), note: spots.size ? 'Tap one to look it up.' : 'Nothing to show right now.' };
+    this.setOverlay('mission');
+    this.r.refreshOverlay();
+    this.refreshLegend();
+    this.closeWin('term');
+    // frame the spots
+    let sx = 0, sy = 0, n = 0;
+    for (const li of spots.keys()) { const l = s.w.lots[li]; sx += l.cx; sy += l.cy; n++; }
+    if (n) this.r.centerOn(sx / n, sy / n);
   }
   scenarioEvent(ev) {
     this.g.music.sfx('alert');
@@ -1274,11 +1368,12 @@ export class UI {
       const s = this.sim;
       const top = s.newsLog.find((n) => n.size === 'big') || s.newsLog[0];
       body.append(el('div', { class: 'mast' }, 'The Watertown Townie'), el('div', { class: 'dateline' }, `${s.dateStr()} · Price: one civic grievance`));
-      if (top) body.append(el('h2', { class: 'headline' }, top.title), top.body ? el('p', {}, top.body) : null, this.commentBlock(top.comments));
+      if (top) body.append(el('h2', { class: 'headline' }, top.title), top.body ? el('p', {}, top.body) : null, top.lot != null && s.w.lots[top.lot] ? el('button', { class: 'link', onclick: () => this.whyWindow(s.w.lots[top.lot]) }, 'Why? ›') : null, this.commentBlock(top.comments));
       const list = el('div', { class: 'stories' });
       for (const n of s.newsLog.slice(0, 18)) {
         if (n === top) continue;
-        list.append(el('div', { class: 'story' }, el('small', {}, n.date), el('b', {}, n.title), n.body ? el('p', {}, n.body) : null, this.commentBlock(n.comments)));
+        const lot = n.lot != null ? s.w.lots[n.lot] : null;
+        list.append(el('div', { class: 'story' }, el('small', {}, n.date), el('b', {}, n.title), n.body ? el('p', {}, n.body) : null, lot ? el('button', { class: 'link', onclick: () => this.whyWindow(lot) }, 'Why? ›') : null, this.commentBlock(n.comments)));
       }
       body.append(list);
     }, { cls: 'paper' });

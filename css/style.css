@@ -503,3 +503,14 @@ html { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -w
   .choice { padding: 10px 12px; }
   .search-item { padding: 9px 10px; }
 }
+
+/* Why? and Storefronts for lease */
+.whyshop { margin: 4px 0 6px; line-height: 1.35; }
+.whyshop small { display: block; color: #333; }
+.lease { border-top: 1px solid #bbb; padding: 6px 0 4px; }
+.lease.focus { background: #fff7d6; }
+.lease .choices { margin-top: 4px; }
+.lease .choice[disabled] { opacity: 0.5; }
+.sfl .link { margin-left: 4px; }
+.goalhow { font-size: 12px; margin: 0 0 8px 22px; color: #333; }
+.hudhow { color: #1f4fa8; text-decoration: underline; }

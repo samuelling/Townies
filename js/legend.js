@@ -91,6 +91,8 @@ export function legendFor(sim, mode) {
         title: 'Zoning', items: [1, 2, 3, 4, 5].map((z) => ({ color: rgba([...ZONE_RGB[z], 230]), label: ZONE_NAME[z] })).concat([{ color: 'rgba(80,80,80,0.7)', label: 'Streets' }]),
         note: 'Solid = dense zoning; faint = light.',
       };
+    case 'mission':
+      return sim.missionLegend || null;
     case 'growth':
       return {
         title: 'New & abandoned', items: [{ color: rgba(GROWTH_RGB.built), label: 'Built since you took office' }, { color: rgba(GROWTH_RGB.aband), label: 'Abandoned (under 30% occupied)' }],

@@ -3,12 +3,45 @@ import { CFG } from './config.js';
 import { termSnapshot } from './report.js';
 import { makeProj } from './geo.js';
 import { PEER_CENTERS, MIX_RADIUS_M } from './peers.js';
+import { shopMargin, lotMarket } from './storefronts.js';
+import { ROUTES, routeTiles } from './transit.js';
 
 const squareSig = (sim) => {
   const c = PEER_CENTERS.find((p) => p.id === 'wt-square');
   const [x, y] = makeProj(sim.w.bbox).toGrid(c.lat, c.lon);
   return sim.mixAt(x, y, MIX_RADIUS_M / 16).sig;
 };
+
+// ---- where to look: the lots that matter for a goal, for the map overlay in "Your term" ----
+export const SPOT_KIND = {
+  auto: { label: 'Auto-oriented lot (car lot, body shop, gas station)', rgb: [235, 96, 30] },
+  vacant: { label: 'Empty storefront', rgb: [250, 205, 40] },
+  risk: { label: 'Independent shop at risk', rgb: [214, 52, 160] },
+  site: { label: 'Redevelopment site near a bus route or the Square', rgb: [50, 130, 235] },
+};
+const squareXY = (sim) => {
+  const c = PEER_CENTERS.find((p) => p.id === 'wt-square');
+  return makeProj(sim.w.bbox).toGrid(c.lat, c.lon);
+};
+const nearSquare = (sim, lot, r = MIX_RADIUS_M / CFG.TILE_M) => { const [x, y] = squareXY(sim); return Math.hypot(lot.cx - x, lot.cy - y) <= r; };
+const live = (sim) => sim.w.lots.filter((l) => !l.dead && l.inTown && !l.under);
+export const SPOTS = {
+  auto: (sim) => live(sim).filter((l) => l.auto && !l.evClosed).map((l) => [l.id, 'auto']),
+  vacant: (sim, near) => live(sim).filter((l) => l.storefronts && l.vacant > 0 && (!near || nearSquare(sim, l))).map((l) => [l.id, 'vacant']),
+  risk: (sim, near) => live(sim).filter((l) => l.sf && l.sf.length && (!near || nearSquare(sim, l))).filter((l) => { const m = lotMarket(sim, l); return l.sf.some((sh) => !sh.chain && !sh.popup && shopMargin(sim, l, sh, m).margin < 0.05); }).map((l) => [l.id, 'risk']),
+  site: (sim) => {
+    const onRoute = new Set();
+    for (const r of ROUTES) for (const i of routeTiles(sim, r)) onRoute.add(i);
+    const W = sim.w.W;
+    const near = (l) => nearSquare(sim, l, 45) || l.tiles.some((i) => [i, i - 1, i + 1, i - W, i + W, i - 2, i + 2, i - 2 * W, i + 2 * W].some((q) => onRoute.has(q)));
+    return live(sim).filter((l) => !l.project && l.area >= 1500 && !(l.units > 4) && (l.auto || l.zone === 3 || (l.zone === 2 && (l.dens || 0) <= 2) || l.hist === 'parking') && near(l)).map((l) => [l.id, 'site']);
+  },
+};
+export function goalSpots(sim, ids) {
+  const out = new Map();
+  for (const id of ids) for (const [li, k] of id(sim)) if (!out.has(li)) out.set(li, k);
+  return out;
+}
 
 export const TERMS = {
   sandbox: {
@@ -20,9 +53,9 @@ export const TERMS = {
     title: 'Auto Row to Main Street', years: 6, icon: '🚗',
     blurb: 'Decades of zoning left Watertown with a glut of repair shops, car lots and parking where a main street should be. Turn at least eight auto-oriented parcels into places people walk to, and make sure they do: walking trips in town have to rise 4% — without losing the room.',
     goals: [
-      { id: 'auto', label: 'Auto-oriented parcels converted', target: 8, measure: (s) => s.autoConverted || 0, fmt: (v) => `${v}` },
+      { how: 'Use the Redevelop tool (🏗) to drag a box over car lots, body shops and gas stations and propose homes and shops there. Each converted lot counts once its project opens, so start early: hearings and construction take months.', spots: [SPOTS.auto], id: 'auto', label: 'Auto-oriented parcels converted', target: 8, measure: (s) => s.autoConverted || 0, fmt: (v) => `${v}` },
       // the outcome, not the scoring: converting a lot only counts if people then walk there (js/streetlife.js)
-      { id: 'walk', label: 'Walking trips', target: 0.04, measure: (s) => walkGain(s), fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%` },
+      { how: 'People walk when shops are close to where they live: put homes and storefronts on the converted lots, keep empty storefronts filled (Main Street → Storefronts for lease), and make the streets around them pleasant.', spots: [SPOTS.vacant, SPOTS.auto], id: 'walk', label: 'Walking trips', target: 0.04, measure: (s) => walkGain(s), fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%` },
     ],
     floor: { approval: 45 },
   },
@@ -30,8 +63,8 @@ export const TERMS = {
     title: 'The Vibrancy Mandate', years: 5, icon: '☕',
     blurb: 'The Council wants the Square to feel alive again: coffee, books, galleries, people on the sidewalk at 9 p.m. Raise Vibrancy by 5 points, and keep approval above 45 while you do it.',
     goals: [
-      { id: 'vib', label: 'Vibrancy gain', target: 5, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
-      { id: 'sig', label: 'Signature shops citywide', target: (s) => (s.scenario.start.sig || 50) + 20, measure: (s) => (s.sfStats ? s.sfStats.sig : 0), fmt: (v) => `${v}` },
+      { how: 'Street life comes from open storefronts, especially independents. Fill empty ones (Storefronts for lease), protect the shops at risk (rent relief, the legacy registry), and add homes within a walk of the Square.', spots: [SPOTS.vacant, SPOTS.risk], id: 'vib', label: 'Vibrancy gain', target: 5, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
+      { how: 'Signature shops are cafés, bakeries, bookshops, boutiques, galleries and record stores. When you sign a tenant, pick the ★ ones; keep rents in reach with rent relief or chain limits.', spots: [SPOTS.vacant, SPOTS.risk], id: 'sig', label: 'Signature shops citywide', target: (s) => (s.scenario.start.sig || 50) + 20, measure: (s) => (s.sfStats ? s.sfStats.sig : 0), fmt: (v) => `${v}` },
     ],
     floor: { approval: 45 },
   },
@@ -39,8 +72,8 @@ export const TERMS = {
     title: '1,701 Homes', years: 6, icon: '🏘',
     blurb: 'The state says Watertown must make room for at least 1,701 homes near transit. Build them — without killing what is left of the Square. Vibrancy may not fall more than 2 points.',
     goals: [
-      { id: 'homes', label: 'New homes', target: 1701, measure: (s) => s.units - (s.scenario.start.units || s.units), fmt: (v) => `${Math.round(v)}` },
-      { id: 'vibkeep', label: 'Vibrancy change', target: -2, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
+      { how: 'Redevelop parking lots, auto lots and old industrial sites near the bus routes and the Square into apartments, or zone them dense residential. Big sites add homes fastest; every project needs a hearing.', spots: [SPOTS.site], id: 'homes', label: 'New homes', target: 1701, measure: (s) => s.units - (s.scenario.start.units || s.units), fmt: (v) => `${Math.round(v)}` },
+      { how: "Build homes without bulldozing storefronts: pick sites without shops, and keep the Square's storefronts filled and its independents open.", spots: [SPOTS.risk, SPOTS.vacant], id: 'vibkeep', label: 'Vibrancy change', target: -2, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
     ],
     floor: { approval: 40 },
   },
@@ -48,7 +81,7 @@ export const TERMS = {
     title: 'Catch Moody Street', years: 7, icon: '📚',
     blurb: "Waltham's Moody Street has nearly twice the signature independents of Watertown Square within a seven-minute walk. Close the gap.",
     goals: [
-      { id: 'sqsig', label: 'Signature shops near the Square', target: (s) => { const p = (s.peersRef || []).find((c) => c.id === 'moody'); return p ? p.sig : 45; }, measure: squareSig, fmt: (v) => `${v}` },
+      { how: 'Within a seven-minute walk of the Square: fill empty storefronts with ★ independents (Storefronts for lease), keep rents in reach (rent relief, chain limits), and bring more people within a walk.', spots: [(s) => SPOTS.vacant(s, true), (s) => SPOTS.risk(s, true)], id: 'sqsig', label: 'Signature shops near the Square', target: (s) => { const p = (s.peersRef || []).find((c) => c.id === 'moody'); return p ? p.sig : 45; }, measure: squareSig, fmt: (v) => `${v}` },
     ],
     floor: { approval: 40 },
   },
@@ -66,8 +99,8 @@ export const TERMS = {
       s.approvalOff.homeowners -= 3;
     },
     goals: [
-      { id: 'solvent', label: 'Years ending in the black', target: 4, measure: (s) => s.scenario.blackYears || 0, fmt: (v) => `${v}` },
-      { id: 'vac', label: 'Empty storefronts (max 30)', target: 30, measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
+      { how: "Watch the Budget: hold off on big projects and new civic buildings, collect fees where you can, and don't let reserves dip below zero at the end of a December.", spots: [], id: 'solvent', label: 'Years ending in the black', target: 4, measure: (s) => s.scenario.blackYears || 0, fmt: (v) => `${v}` },
+      { how: "Sign tenants for empty storefronts (Storefronts for lease), letting chains in where independents can't pay; a vacancy fee pushes landlords to cut their asks.", spots: [SPOTS.vacant], id: 'vac', label: 'Empty storefronts (max 30)', target: 30, measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
     ],
     fail: (s) => (s.overrides || 0) > 0 ? 'You asked voters for an override.' : null,
     floor: { approval: 40 },
@@ -76,9 +109,9 @@ export const TERMS = {
     title: 'Before the Boom', years: 26, icon: '⏪', start: 2000, noEarly: true,
     blurb: 'It’s 2000. The Arsenal Mall is aging, Pleasant Street is warehouses and body shops, and Kendall Square hasn’t spilled over the river yet. For 26 years you face the decisions that made today’s Watertown. Beat history: reach 2026 with at least as many homes as the real town has, more signature shops near the Square, and fewer auto-oriented parcels.',
     goals: [
-      { id: 'homes', label: 'Homes (at least real 2026)', target: (s) => (s.w.real ? s.w.real.units : 15000), measure: (s) => s.units, fmt: (v) => fmtK(v) },
-      { id: 'sqsig', label: 'Signature shops near the Square (beat real 2026)', target: (s) => { const p = (s.peersRef || []).find((c) => c.id === 'wt-square'); return (p ? p.sig : 28) + 1; }, measure: squareSig, fmt: (v) => `${v}` },
-      { id: 'auto', label: 'Auto-oriented parcels (at most real 2026)', target: (s) => (s.w.real ? s.w.real.auto : 60), measure: (s) => autoCount(s), fmt: (v) => `${v}`, max: true },
+      { how: 'Say yes to housing: redevelop parking, auto and industrial sites near the bus routes, and zone for density.', spots: [SPOTS.site], id: 'homes', label: 'Homes (at least real 2026)', target: (s) => (s.w.real ? s.w.real.units : 15000), measure: (s) => s.units, fmt: (v) => fmtK(v) },
+      { how: 'Signature shops within a seven-minute walk of the Square: fill empty storefronts there with ★ independents and keep the ones you have.', spots: [(s) => SPOTS.vacant(s, true), (s) => SPOTS.risk(s, true)], id: 'sqsig', label: 'Signature shops near the Square (beat real 2026)', target: (s) => { const p = (s.peersRef || []).find((c) => c.id === 'wt-square'); return (p ? p.sig : 28) + 1; }, measure: squareSig, fmt: (v) => `${v}` },
+      { how: 'Redevelop car lots, body shops and gas stations (Redevelop tool) as history offers them.', spots: [SPOTS.auto], id: 'auto', label: 'Auto-oriented parcels (at most real 2026)', target: (s) => (s.w.real ? s.w.real.auto : 60), measure: (s) => autoCount(s), fmt: (v) => `${v}`, max: true },
     ],
     floor: { approval: 35 },
   },
@@ -90,8 +123,8 @@ export const TERMS = {
       for (const l of s.w.lots) if (l.storefronts && !l.dead) l.ask = (l.ask || 1) * 1.3;
     },
     goals: [
-      { id: 'indie', label: 'Independent storefronts', target: (s) => Math.ceil(0.95 * (s.scenario.start.indie || 330)), measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}`, keep: true },
-      { id: 'vibkeep', label: 'Vibrancy change', target: 0, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
+      { how: 'Rents are jumping 30%. Rent relief and the legacy registry buy your independents time, chain limits keep credit tenants out of the Square and Main St, and when a space empties, sign an independent before a chain gets it.', spots: [SPOTS.risk, SPOTS.vacant], id: 'indie', label: 'Independent storefronts', target: (s) => Math.ceil(0.95 * (s.scenario.start.indie || 330)), measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}`, keep: true },
+      { how: 'Keep the Square as lively as it is: fill empty storefronts and keep its independents open.', spots: [(s) => SPOTS.vacant(s, true), (s) => SPOTS.risk(s, true)], id: 'vibkeep', label: 'Vibrancy change', target: 0, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
     ],
     floor: { approval: 40 },
   },
