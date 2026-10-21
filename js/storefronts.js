@@ -106,7 +106,7 @@ function seedLot(sim, lot, rnd) {
   lot.sf = [];
   lot.vacant = lot.vacant || 0;
   // only commercial and mixed-use parcels have storefronts (home businesses on house lots don't)
-  if (!(lot.zone === ZONE.C || lot.mixed)) return;
+  if (!(lot.zone === ZONE.C || lot.mixed || lot.shops)) return;
   if (lot.biz && lot.biz.length && !lot.bizCat) classifyLot(lot);
   (lot.biz || []).forEach((name, k) => {
     const cat = lot.bizCat[k];

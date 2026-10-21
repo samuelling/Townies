@@ -1276,7 +1276,7 @@ export class Renderer {
     }
     this.fillPoly(g, T0, shade(roofC, 1.02, mix, mixAmt), stroke);
     const lotB = b.lot >= 0 ? this.world.lots[b.lot] : null;
-    const plainRoof = b.arch !== 'lab' && b.arch !== 'church' && b.arch !== 'garage' && !aband && b.area > 0.25;
+    const plainRoof = b.arch !== 'lab' && b.arch !== 'church' && b.arch !== 'garage' && b.arch !== 'deck' && !aband && b.area > 0.25;
     if (plainRoof && L >= 0.5) {
       const green = b.era === 'future' || hash2(b.id, 43, 5) < 0.9 * this.techA('green');
       if (green) this.fillPoly(g, this.inset(T0, 0.84), shade([104, 156, 78], 1, mix, mixAmt));
@@ -1368,6 +1368,11 @@ export class Renderer {
     }
     if (arch === 'garage') {
       if (front) Q(0.2, 0.8, 0, 2.2, shade([200, 200, 196], f * 0.9, mix, mixAmt));
+      return;
+    }
+    if (arch === 'deck') {
+      // a parking garage: open decks, a dark slot under each floor slab
+      for (let fl = 0; fl < floors; fl++) Q(0.03, 0.97, fl * fh + 0.35, (fl + 1) * fh - 0.45, `rgba(40,42,46,${0.55 + 0.1 * f})`);
       return;
     }
     if (arch === 'glass' || arch === 'lab') {

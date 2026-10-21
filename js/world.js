@@ -2,6 +2,7 @@
 import { CFG, ZONE, COVER, SERVICES } from './config.js';
 import { makeProj, fillSegs, traverse, signedArea, centroid, simplify, obb, maxRect } from './geo.js';
 import { hash2, median, percentile, titleCase } from './util.js';
+import { bizCategory } from './vibrancy.js';
 
 const ROAD_CLASS = {
   motorway: 3, motorway_link: 3, trunk: 3, trunk_link: 3, primary: 3, primary_link: 3,
@@ -39,7 +40,7 @@ function kindFromTags(t) {
   if (['church', 'chapel', 'cathedral', 'mosque', 'synagogue', 'temple', 'religious'].includes(b) || t.amenity === 'place_of_worship') return 'church';
   if (['school', 'university', 'college', 'kindergarten'].includes(b) || t.amenity === 'school') return 'school';
   if (['civic', 'public', 'government', 'hospital', 'fire_station', 'police', 'townhall', 'library', 'train_station', 'transportation'].includes(b)) return 'civic';
-  if (['garage', 'garages', 'shed', 'carport', 'roof', 'hut', 'parking', 'service'].includes(b)) return 'garage';
+  if (['garage', 'garages', 'shed', 'carport', 'roof', 'hut', 'parking', 'service'].includes(b) || t.amenity === 'parking' || t.parking === 'multi-storey') return 'garage';
   if (b === 'residential') return 'auto-res';
   return 'auto';
 }
@@ -177,7 +178,7 @@ export function styleBuilding(b, lot) {
     else if (k === 'ind') arch = m2 > 1800 ? 'warehouse' : 'strip';
     else if (k === 'civic' || k === 'school' || k === 'police' || k === 'fire') arch = 'brick';
     else if (k === 'church') arch = 'church';
-    else if (k === 'garage') arch = 'garage';
+    else if (k === 'garage') arch = b.deck ? 'deck' : 'garage';
     b.roof = 'flat';
     const flatRoof = pick(PAL.flatRoof, r2);
     if (arch === 'brick') { b.col = pick(BRICK, r); b.trim = '#e8e2d4'; }
@@ -190,6 +191,7 @@ export function styleBuilding(b, lot) {
     else if (arch === 'precast') b.col = pick(['#cfc7b6', '#bdb6a8'], r);
     else if (arch === 'church') b.col = pick(PAL.church, r);
     else if (arch === 'garage') b.col = pick(PAL.garage, r);
+    else if (arch === 'deck') b.col = pick(['#bdbab2', '#c6c2b8', '#b2b0aa'], r);
     else b.col = pick(PAL.shop, r);
     b.roofCol = arch === 'lab' ? '#cfd3d6' : flatRoof;
     if (b.asr && !b.svcType) arch = boxFromAssessor(b, b.asr, k, arch, r, r2);
@@ -207,7 +209,7 @@ export function styleBuilding(b, lot) {
   if (oc) b.col = oc;
   if (orc) b.roofCol = orc;
   b.arch = arch;
-  b.h = (k === 'garage' ? 1 : b.levels) * CFG.FLOOR_M;
+  b.h = (k === 'garage' && !b.deck ? 1 : b.levels) * CFG.FLOOR_M;
   // measured from the 2021 lidar where the fit is good: the walls' real height (the sim keeps its floor count)
   b.hMeasured = false;
   if (b.lid && b.lid.q >= 45) {
@@ -900,6 +902,7 @@ export function buildWorld(raw, progress = () => {}) {
     bldgs.push({
       id: bldgs.length, pts: p, area: a, cx, cy, levels: isFinite(lv) && lv > 0 ? Math.min(lv, 40) : NaN, lvSrc: isFinite(lv) && lv > 0 ? 'osm' : 'default',
       kind: kindFromTags(t), name: t.name || '', alive: 1, lot: -1, proc: 0,
+      deckTag: t.amenity === 'parking' || t.parking === 'multi-storey' || t.building === 'parking' || undefined,
       osmColour: t['building:colour'] || null, osmRoofColour: t['roof:colour'] || null, roofShape: t['roof:shape'] || null, material: t['building:material'] || null,
     });
   }
@@ -1020,6 +1023,17 @@ export function buildWorld(raw, progress = () => {}) {
     if (!lot.zone) lot.zone = zoneHint[lot.tiles[0]] || ZONE.R;
   }
 
+  // which buildings have shops and restaurants in them (the business listings' points, by footprint): a
+  // building the map only calls "yes" on a lab- or office-coded parcel is a shop if that's what's inside
+  const SF_CAT = new Set(['food', 'retail', 'service']);
+  for (const p of pois) {
+    if (!p.name) continue;
+    const x = Math.floor(p.pt[0]), y = Math.floor(p.pt[1]);
+    if (!inB(x, y)) continue;
+    const bi = bAt[y * W + x];
+    if (bi < 0 || !SF_CAT.has(bizCategory(p.kind, p.name))) continue;
+    bldgs[bi].shopPOI = (bldgs[bi].shopPOI || 0) + 1;
+  }
   // ---- finalize building kinds, heights, colours ----
   for (const b of bldgs) {
     const lot = b.lot >= 0 ? lots[b.lot] : null;
@@ -1033,7 +1047,15 @@ export function buildWorld(raw, progress = () => {}) {
       else if (z === ZONE.CIVIC) k = lot && /school/i.test(lot.useDesc) ? 'school' : lot && lot.code3 === '906' ? 'church' : 'civic';
       else k = m2 < 200 ? 'house' : 'shop';
     }
-    if (k === 'garage' && m2 > 1500) k = 'shop';
+    // the businesses inside decide a plain building's use; a big building on a retail parcel is a store
+    if (b.shopPOI && (b.kind === 'auto' || b.kind === 'auto-res') && ['lab', 'ind', 'office', 'civic'].includes(k)) k = 'shop';
+    if (k === 'office' && lot && /^32/.test(lot.code3 || '') && b.levels <= 2.5) k = 'shop';
+    if (k === 'office' && b.shopPOI && b.levels <= 2.5 && (b.kind === 'auto' || b.kind === 'auto-res')) k = 'shop';
+    if (k === 'garage' && m2 > 1500) {
+      // a parking garage stays a garage (a deck); a big "garage" anything else was a misread store
+      if (b.deckTag) { b.deck = true; if (!isFinite(b.levels)) b.levels = 4; }
+      else k = 'shop';
+    }
     b.kind = k;
     if (!isFinite(b.levels)) {
       let lv = DEFAULT_LEVELS[k] || 2;
@@ -1063,7 +1085,7 @@ export function buildWorld(raw, progress = () => {}) {
     for (let d = 1; li < 0 && d <= 1; d++)
       for (let dy = -d; dy <= d && li < 0; dy++)
         for (let dx = -d; dx <= d && li < 0; dx++) if (inB(x + dx, y + dy)) li = lotOf[(y + dy) * W + x + dx];
-    if (li >= 0 && p.name && lots[li].biz.length < 14 && !lots[li].biz.includes(p.name)) {
+    if (li >= 0 && p.name && lots[li].biz.length < Math.min(40, Math.max(14, lots[li].area / 1500)) && !lots[li].biz.includes(p.name)) {
       lots[li].biz.push(p.name);
       (lots[li].bizKind || (lots[li].bizKind = []))[lots[li].biz.length - 1] = p.kind || '';
     }
@@ -1072,6 +1094,13 @@ export function buildWorld(raw, progress = () => {}) {
       if (!services.some((s) => s.type === st && Math.hypot(s.x - p.pt[0], s.y - p.pt[1]) < 8))
         services.push({ id: services.length, type: st, x: p.pt[0], y: p.pt[1], name: p.name || '', real: 1, lot: li, alive: 1 });
     }
+  }
+
+  // a lab- or office-coded parcel with a row of shops and restaurants (Arsenal Yards is coded R&D) has storefronts
+  for (const lot of lots) {
+    if (lot.zone === ZONE.C || lot.mixed || !lot.biz.length) continue;
+    const n = lot.biz.filter((nm, k) => SF_CAT.has(bizCategory(lot.bizKind ? lot.bizKind[k] : '', nm))).length;
+    if (n >= 4 && lot.bldgs.some((id) => bldgs[id].kind === 'shop')) lot.shops = true;
   }
 
   // ---- trees ----

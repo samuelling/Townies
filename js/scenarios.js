@@ -87,7 +87,7 @@ export const TERMS = {
   },
   labbust: {
     title: 'The Lab Bust', years: 4, icon: '🧪',
-    blurb: 'The life-science boom is over. Half-empty lab buildings are appealing their assessments and the tax base is wobbling. Keep the budget out of the red every year, keep empty storefronts under 30, and do it without an override.',
+    blurb: 'The life-science boom is over. Half-empty lab buildings are appealing their assessments and the tax base is wobbling. Keep the budget out of the red every year, keep empty storefronts to about one in twelve (around 34 today), and do it without an override.',
     setup: (s) => {
       s.demandMod.I = -0.9;
       for (const l of s.w.lots) if (!l.dead && l.zone === 3 && l.dens >= 3) { l.occ *= 0.6; l.baseBldg *= 0.7; }
@@ -100,7 +100,7 @@ export const TERMS = {
     },
     goals: [
       { how: "Watch the Budget: hold off on big projects and new civic buildings, collect fees where you can, and don't let reserves dip below zero at the end of a December.", spots: [], id: 'solvent', label: 'Years ending in the black', target: 4, measure: (s) => s.scenario.blackYears || 0, fmt: (v) => `${v}` },
-      { how: "Sign tenants for empty storefronts (Storefronts for lease), letting chains in where independents can't pay; a vacancy fee pushes landlords to cut their asks.", spots: [SPOTS.vacant], id: 'vac', label: 'Empty storefronts (max 30)', target: 30, measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
+      { how: "Sign tenants for empty storefronts (Storefronts for lease), letting chains in where independents can't pay; a vacancy fee pushes landlords to cut their asks.", spots: [SPOTS.vacant], id: 'vac', label: 'Empty storefronts (at most 8%)', target: (s) => Math.round(0.08 * ((s.scenario.start.sf || 373))), measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
     ],
     fail: (s) => (s.overrides || 0) > 0 ? 'You asked voters for an override.' : null,
     floor: { approval: 40 },
@@ -162,7 +162,7 @@ export function startScenario(sim, id, peers) {
   sim.peersRef = peers ? peers.centers : null;
   sim.scenario = {
     id, startT: sim.t, deadline: T.years ? sim.t + T.years * 12 : null,
-    start: { units: sim.units, indie: sim.sfStats ? sim.sfStats.indie : 0, sig: sim.sfStats ? sim.sfStats.sig : 0, vib: sim.vibrancy },
+    start: { units: sim.units, indie: sim.sfStats ? sim.sfStats.indie : 0, sig: sim.sfStats ? sim.sfStats.sig : 0, sf: sim.sfStats ? (sim.sfStats.open || 0) + (sim.sfStats.vacant || 0) : 0, vib: sim.vibrancy },
     lowMonths: 0, reviews: [], blackYears: 0, done: null, nextReview: sim.t + 36,
   };
   if (T.setup) T.setup(sim);
