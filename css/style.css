@@ -517,3 +517,8 @@ html { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -w
 .draw .kvline { gap: 8px; align-items: baseline; }
 .draw .kvline small { display: block; opacity: 0.75; font-size: 0.85em; }
 .draw > small { display: block; margin-top: 4px; }
+.shibar { position: relative; height: 12px; background: #ddd; border: 1px solid #555; margin: 6px 0 2px; }
+.shibar i { position: absolute; left: 0; top: 0; bottom: 0; background: #5f9f5f; }
+.shibar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #c00; }
+.shibar span { position: absolute; left: calc(66.7% + 4px); top: -1px; font-size: 10px; }
+.hnote { display: block; margin: -2px 0 6px; }

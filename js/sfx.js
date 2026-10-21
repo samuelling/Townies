@@ -110,7 +110,7 @@ export function bulldoze(m, t, n = 1) {
 }
 
 // Zoning: a rubber stamp (thump and snap) with a little two-note chime that differs by zone.
-const CHIME = { zoneR: [784, 988], zoneC: [659, 988], zoneI: [392, 523], dezone: [523, 392] };
+const CHIME = { zoneR: [784, 988], zoneC: [659, 988], zoneM: [698, 988], zoneI: [392, 523], dezone: [523, 392] };
 export function stamp(m, t, kind = 'zoneR') {
   tone(m, t, 'sine', 170, 60, 0.09, 0.2);
   tick(m, t, 3200, 0.1, 0.03, 2);

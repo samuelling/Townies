@@ -14,6 +14,7 @@ import { frontage, classifyLot } from './vibrancy.js';
 import { walkScore, walkCat } from './walkscore.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
 import { retailMonthly } from './retail.js';
+import { initHousing, housingMonthly, shapeNewBuilding, newGroundFloor, recordHomes, removeHomes, feasibility, housingApproval } from './housing.js';
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
@@ -31,7 +32,7 @@ const DEFAULT_LANES = [0, 2, 2, 4];
 // Market redevelopment rates by zone, and how much more often big parcels get rebuilt than small ones.
 // Calibrated by replaying 2000–2026 (tools/validate.mjs): with the real decisions made, the market should add
 // about as many homes and jobs as really appeared, and big parcels should be where it happens.
-export const GROWTH = { R: 1, C: 0.15, I: 0.3, size: 1.5, vacant: 0.06 };
+export const GROWTH = { R: 1, C: 0.15, I: 0.3, M: 0.25, size: 1.5, vacant: 0.06 };
 const sizeW = (lot) => (GROWTH.size ? clamp(Math.pow(lot.area / 1500, GROWTH.size), 0.03, 5) : 1);
 
 // Budget growth, calibrated by the 2000–2026 replay: newGrowth is the yearly new growth from renovations,
@@ -171,6 +172,7 @@ export class Sim {
     this.computeTraffic(true); // second pass: intersections now see real volumes
     if (this.calF) this.trafficFit();
     initStorefronts(this);
+    initHousing(this);
     initIncidents(this);
     initTech(this);
     initTransit(this);
@@ -898,6 +900,7 @@ export class Sim {
     computeTransit(this);
     this.storefrontNews(storefrontsMonthly(this));
     retailMonthly(this);
+    housingMonthly(this);
     computeStreetLife(this);
     techMonthly(this);
     meloraMonthly(this);
@@ -975,12 +978,12 @@ export class Sim {
     for (let k = 0; k < K; k++) {
       const lot = w.lots[this.zLots[Math.floor(this.rand() * n)]];
       if (!lot || lot.dead || !lot.inTown || lot.under || lot.project) continue;
-      const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
-      const d = this.demand[key];
+      const key = lot.muZ ? 'M' : lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
+      const d = key === 'M' ? this.mixedDemand() : this.demand[key];
       const c = this.cellOf(lot.cx, lot.cy);
       const crime = this.crimeC[c] / this.base.crimeN;
       const poll = this.pollC[c] / this.base.pollN;
-      const des = (this.lvMod[c] - 1) * 1.5 - 0.3 * crime - (key === 'R' ? 0.35 * poll : 0) + (lot.road < 0 ? -1 : 0) + (key === 'C' ? 0.5 * this.vibSat[c] : 0.15 * this.vibSat[c]);
+      const des = (this.lvMod[c] - 1) * 1.5 - 0.3 * crime - (key === 'R' ? 0.35 * poll : 0) + (lot.road < 0 ? -1 : 0) + (key === 'C' || key === 'M' ? 0.5 * this.vibSat[c] : 0.15 * this.vibSat[c]);
       const target = clamp(0.88 + 0.22 * d + 0.12 * des, 0.12, 1);
       const was = lot.occ;
       lot.occ += (target - lot.occ) * 0.12;
@@ -994,6 +997,8 @@ export class Sim {
       else if (hasB && lot.bldgZone !== lot.zone && d > 0.1 && this.rand() < 0.04 * slow) { target2 = lot.dense ? 3 : 2; why = 'rezoned'; }
       else if (hasB && lot.dens < cap && d > 0.2 && des > -0.1 && lot.area >= 250 && this.t - (lot.built || -999) > 48 && this.rand() < (lot.dense ? 0.05 : 0.025) * d * (1 + des) * slow * GROWTH[key] * sizeW(lot))
         { target2 = Math.min(cap, lot.dens + 1 + (lot.dense && lot.dens <= 2 ? 1 : 0)); why = 'denser'; }
+      // the town's housing rules decide whether bigger buildings pencil out (js/housing.js)
+      if (target2 >= 3 && (key === 'R' || key === 'M') && this.rand() > Math.min(1, feasibility(this, lot))) target2 = 0;
       if (target2 > 0 && this.marketBuild !== false) { // marketBuild=false: history replay builds only what really got built
         this.buildLot(lot, target2, key, why, touched);
         devs++;
@@ -1007,8 +1012,9 @@ export class Sim {
       if (!lot || lot.dead || lot.under || lot.project || lot.locked || lot.stay > this.t) continue;
       if (lot.bldgs.some((b) => w.bldgs[b].alive)) { delete lot.ready; continue; }
       if (lot.road < 0 || this.marketBuild === false) continue;
-      const key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
-      if (this.rand() >= this.readyOdds(lot, key) * slow) continue;
+      const key = lot.muZ ? 'M' : lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I';
+      // a mixed-use building is a bigger bet: financing, a site plan review, a podium; it takes longer to start
+      if (this.rand() >= this.readyOdds(lot, key) * slow * (key === 'M' ? 0.3 : 1) * ((lot.dense || key === 'M') && key !== 'C' && key !== 'I' ? Math.min(1, feasibility(this, lot)) : 1)) continue;
       this.buildLot(lot, lot.dense ? 3 : key === 'R' ? 1 : 2, key, 'ready', touched);
       delete lot.ready;
       devs++;
@@ -1023,11 +1029,15 @@ export class Sim {
     const w = this.w;
     const oldVal = lot.landVal + lot.bldgVal;
     const u0 = lot.units || 0, j0 = lot.jobs || 0;
+    removeHomes(this, lot);
     touched.push(...developLot(w, lot, target2, this.t));
+    const stories = shapeNewBuilding(this, lot); // height limits; mixed-use zoning builds homes over shops
     lot.bldgZone = lot.zone;
     lot.built = this.t;
     lot.occ = 0.6;
     computeLotMetrics(w, lot, false);
+    if (lot.muZ) newGroundFloor(this, lot);
+    if ((lot.units || 0) - u0 >= 2 && target2 >= 3) recordHomes(this, lot, lot.units, { stories, why: key === 'M' ? 'mixed use' : 'apartments', name: streetOf(lot) ? `${lot.units} homes on ${streetOf(lot)}` : null });
     setBldgValue(this, lot, lot.bldArea * bldRate(lot.zone));
     lot.year = this.y;
     const r = this.rates();
@@ -1050,8 +1060,13 @@ export class Sim {
 
   // monthly chance that builders take up a shovel-ready lot: strong demand fills it within a few months; weak
   // demand still gets something eventually (a slow trickle, not never)
-  readyOdds(lot, key = lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I') {
-    const d = this.demand[key] || 0;
+  // mixed-use builders answer to both markets: mostly the housing one
+  mixedDemand() {
+    const d = this.demand || { R: 0, C: 0 };
+    return 0.65 * d.R + 0.35 * d.C;
+  }
+  readyOdds(lot, key = lot.muZ ? 'M' : lot.zone === ZONE.R ? 'R' : lot.zone === ZONE.C ? 'C' : 'I') {
+    const d = key === 'M' ? this.mixedDemand() : this.demand[key] || 0;
     const c = this.cellOf(lot.cx, lot.cy);
     const des = (this.lvMod[c] - 1) * 1.5 + (key === 'C' ? 0.5 : 0.15) * this.vibSat[c];
     return clamp(0.05 + 0.3 * d + 0.08 * des, 0.012, 0.25);
@@ -1112,7 +1127,7 @@ export class Sim {
     add('business', 'road conditions', 6 * (this.roadCond - 1)); add('commuters', 'road conditions', 15 * (this.roadCond - 1));
     add('renters', 'street life', 0.6 * dv); add('homeowners', 'street life', 0.35 * dv); add('business', 'street life', 0.4 * dv); add('seniors', 'street life', 0.2 * dv);
     if (this.funds < 0) for (const k of FACTIONS) add(k, 'budget in the red', -6);
-    const groups = [['projects and places', this.specialApproval()], ['Main Street policies', policyApproval(this)], ['potholes, fires and crews', Object.fromEntries(Object.entries(incidentPenalty(this)).map(([k, v]) => [k, -v]))], ['new technology', techApproval(this)]];
+    const groups = [...housingApproval(this), ['projects and places', this.specialApproval()], ['Main Street policies', policyApproval(this)], ['potholes, fires and crews', Object.fromEntries(Object.entries(incidentPenalty(this)).map(([k, v]) => [k, -v]))], ['new technology', techApproval(this)]];
     for (const [why, sp] of groups) for (const [k, v] of Object.entries(sp)) {
       if (k === 'all') for (const g of FACTIONS) add(g, why, v);
       else if (FACTIONS.includes(k)) add(k, why, v);
@@ -1400,7 +1415,7 @@ export class Sim {
       }
       this.bulldozeMode = only;
       msg = only === 'roads' ? (roadN ? `Remove ${roadN} road tile${roadN > 1 ? 's' : ''} · buildings untouched` : 'Roads only: drag over road') : lotsHit.size ? `Demolish ${lotsHit.size} building lot${lotsHit.size > 1 ? 's' : ''}${only === 'buildings' ? ' · roads untouched' : ''}` : only === 'buildings' ? 'Bulldoze (roads untouched)' : 'Bulldoze everything';
-    } else if (tool === 'zoneR' || tool === 'zoneC' || tool === 'zoneI' || tool === 'dezone') {
+    } else if (tool === 'zoneR' || tool === 'zoneC' || tool === 'zoneM' || tool === 'zoneI' || tool === 'dezone') {
       tiles = (opts.tiles || this.rectTiles(a, b)).filter((i) => inTown[i] && terrain[i] !== 1 && !road[i] && svcAt[i] < 0);
       const lotsHit = new Set();
       let fresh = 0;
@@ -1411,7 +1426,7 @@ export class Sim {
       cost = lotsHit.size * 1500 + fresh * 300;
       msg = `${lotsHit.size} lots rezoned, ${fresh} new tiles`;
       if (tool !== 'dezone' && this.demand) {
-        const d = this.demand[tool === 'zoneR' ? 'R' : tool === 'zoneC' ? 'C' : 'I'];
+        const d = tool === 'zoneM' ? this.mixedDemand() : this.demand[tool === 'zoneR' ? 'R' : tool === 'zoneC' ? 'C' : 'I'];
         msg += d > 0.2 ? ' · demand strong' : d > -0.1 ? ' · demand middling' : ' · demand weak: may sit empty';
       }
     } else if (tool === 'park') {
@@ -1511,7 +1526,7 @@ export class Sim {
       idx.forEach((i, j) => (vals[j] = old[i]));
       diffs.push([o, k, Int32Array.from(idx), vals]);
     }
-    const label = { bulldoze: 'Bulldoze', road: 'Road', zoneR: 'Residential zoning', zoneC: 'Commercial zoning', zoneI: 'Industrial zoning', dezone: 'Dezoning', park: 'Park' }[p.tool] || 'Build';
+    const label = { bulldoze: 'Bulldoze', road: 'Road', zoneR: 'Residential zoning', zoneC: 'Commercial zoning', zoneM: 'Mixed-use zoning', zoneI: 'Industrial zoning', dezone: 'Dezoning', park: 'Park' }[p.tool] || 'Build';
     this.undoStack = (this.undoStack || []).concat([{ ...u, arrays: null, diffs, label, cost: u.funds - this.funds, roads: p.tool === 'road' || p.tool === 'bulldoze' }]).slice(-20);
   }
   canUndo() {
@@ -1604,7 +1619,8 @@ export class Sim {
       this.refreshRoadAccess(p.tiles);
       if (this.roadsCut && this.flow) { this.roadsCut = false; this.reassign(); }
     } else if (p.tool.startsWith('zone') || p.tool === 'dezone') {
-      const zone = p.tool === 'zoneR' ? ZONE.R : p.tool === 'zoneC' ? ZONE.C : p.tool === 'zoneI' ? ZONE.I : ZONE.NONE;
+      const zone = p.tool === 'zoneR' ? ZONE.R : p.tool === 'zoneC' || p.tool === 'zoneM' ? ZONE.C : p.tool === 'zoneI' ? ZONE.I : ZONE.NONE;
+      const mu = p.tool === 'zoneM'; // mixed use: commercial zoning that allows (and expects) homes above the shops
       const dense = !!opts.dense;
       const lotsHit = new Set();
       const freeT = [];
@@ -1616,6 +1632,8 @@ export class Sim {
         const lot = w.lots[li];
         lot.zone = zone;
         lot.dense = dense;
+        if (mu) lot.muZ = true;
+        else delete lot.muZ;
         if (lot.bldgZone == null) lot.bldgZone = zone;
         // empty land the player zones is shovel-ready (see growth())
         if (zone !== ZONE.NONE && !lot.bldgs.some((id) => bldgs[id].alive)) lot.ready = this.t;
@@ -1634,7 +1652,8 @@ export class Sim {
           if (freeSet.has(j) && x + dx < W) { tiles.push(j); freeSet.delete(j); }
         }
         if (zone === ZONE.NONE) continue;
-        this.newLot(tiles, zone, dense);
+        const nl = this.newLot(tiles, zone, dense);
+        if (mu && nl) nl.muZ = true;
         touched.push(...tiles);
       }
     } else if (p.tool === 'park') {

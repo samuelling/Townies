@@ -21,7 +21,26 @@ export const POLICIES = {
   legacy: { label: 'Legacy business registry', blurb: 'Long-standing independents get grants and lease help. Cheap, popular with seniors.' },
   formulaRetail: { label: 'Chain-store limits (Square & Main St)', blurb: 'National chains need a special permit in the Square and along Main St / Mt Auburn St. Fewer chains, but spaces can stay empty longer.' },
   popups: { label: 'Pop-up arts program', blurb: 'Empty storefronts host rotating galleries and makers until a tenant signs ($3,000/mo each).' },
+  gfDesign: { label: 'Ground-floor design rules', blurb: 'New mixed-use buildings must build small, shallow storefront bays with restaurant venting and grease traps. Costs developers (a few fewer projects); cafés, restaurants and shops can actually move in.' },
+  gfDeed: { label: 'Rent-restricted storefronts', blurb: 'New mixed-use buildings deed-restrict their storefronts near today\'s rents for 15 years, for independents. Developers build a few fewer projects.' },
+  serviceCap: { label: 'Limit on service tenants', blurb: 'Gyms, salons, spas and banks need a special permit once they fill a third of a building\'s storefronts. Livelier ground floors; some spaces wait longer.' },
 };
+// what a developer's ground floor is built for: deep, unvented boxes at pro-forma rents suit appointment
+// businesses (they don't need passers-by) and credit tenants; restaurants and most shops can't fit or can't pay
+const SERVICE_NAMES = [['{P} Boxing Club', 'fitness'], ['Iron {P} Fitness', 'fitness'], ['{P} Barre', 'fitness'], ['{P} Cycle Studio', 'fitness'], ['Luxe {P} Salon', 'hairdresser'], ['{P} Nail Bar', 'nails'], ['Serenity Day Spa', 'beauty'], ['{P} Med Spa', 'beauty'], ['{P} Brow & Lash', 'beauty'], ['{P} Wax Studio', 'beauty']];
+const isService = (s) => (s.cat || bizCategory(s.k, s.n)) === 'service' || /bank|dentist|clinic|fitness/.test(s.k || '');
+function serviceName(rand) {
+  const [n, k] = pick(SERVICE_NAMES, rand());
+  return { n: n.replace('{P}', pick(PLACE, rand())), k, sig: false };
+}
+// the service-tenant limit: a building whose storefronts are a third or more gyms, salons, spas and banks takes no more
+function serviceCapped(sim, lot) {
+  if (!(sim.policies || {}).serviceCap) return false;
+  const n = (lot.sf || []).length + (lot.vacant || 0);
+  return n >= 2 && (lot.sf || []).filter(isService).length + 1 > n / 3;
+}
+// an empty storefront in a developer's ground floor that wasn't built to the design rules
+export const rawGF = (lot) => !!lot.newGF && !lot.newGF.design;
 
 const PLACE = ['Coolidge', 'Arsenal', 'Charles', 'Galen', 'Bemis', 'Square', 'Riverside', 'Spring St', 'Pequossette', 'Saltonstall', 'Whitney', 'Orchard', 'Elm', 'Delta', 'Mill', 'Common', 'Union', 'Fifth Corner', 'Dam', 'Herring Run'];
 const NAMES = {
@@ -303,13 +322,23 @@ export function storefrontsMonthly(sim) {
         const indieOk = lot.ask <= indieCap;
         const chainOk = !protectedD && lot.ask <= chainCap;
         let shop = null;
-        // in a calm market far more independents than chains want the space; speculation tilts it to credit tenants
-        if (indieOk && (!chainOk || rand() > Math.min(0.55, SF.chainFill + 0.5 * hype * A(sim, 'chainTilt')))) {
-          const nm = indieName(rand);
-          shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: nm.sig, orig: 0, lease: 60, rent: lot.ask, cushion: indieCap - lot.ask > 0 ? Math.min(0.3, 0.45 * (indieCap - lot.ask)) : 0.02, since: sim.t };
+        const capped = serviceCapped(sim, lot);
+        // a raw developer box: gyms, salons and spas can pay a chain's rent there (they don't live on passers-by);
+        // cafés, restaurants and most shops would need to pay for venting and build-out on top of the rent
+        const raw = rawGF(lot);
+        const serviceOk = raw && !capped && lot.ask <= chainCap * 0.97;
+        const fitOk = !raw || lot.ask <= indieCap - 0.15;
+        if (serviceOk && (!fitOk || rand() < 0.65) && rand() > Math.min(0.5, 0.15 + 0.4 * hype)) {
+          const nm = serviceName(rand);
+          shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: false, orig: 0, lease: 120, rent: lot.ask, cushion: 0.12, since: sim.t };
+        } else if (indieOk && fitOk && (!chainOk || rand() > Math.min(0.55, SF.chainFill + 0.5 * hype * A(sim, 'chainTilt')))) {
+          let nm = indieName(rand);
+          if (capped && nm.k === 'hairdresser') nm = indieName(rand);
+          if (!(capped && nm.k === 'hairdresser')) shop = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: nm.sig, orig: 0, lease: 60, rent: lot.ask, cushion: indieCap - lot.ask > 0 ? Math.min(0.3, 0.45 * (indieCap - lot.ask)) : 0.02, since: sim.t };
         } else if (chainOk) {
-          const [n, k] = pick(CHAINS, rand());
-          shop = { n, k, cat: bizCategory(k, n), chain: true, sig: false, orig: 0, lease: 120, rent: lot.ask, cushion: 0.3, since: sim.t };
+          let [n, k] = pick(CHAINS, rand());
+          if (capped && isService({ n, k })) [n, k] = pick(CHAINS, rand());
+          if (!(capped && isService({ n, k }))) shop = { n, k, cat: bizCategory(k, n), chain: true, sig: false, orig: 0, lease: 120, rent: lot.ask, cushion: 0.3, since: sim.t };
         }
         if (shop) {
           openShop(sim, lot, shop);
@@ -346,6 +375,7 @@ export function storefrontsMonthly(sim) {
   set('pol:legacy', P.legacy, 'Legacy business registry', 15000);
   set('pol:formula', P.formulaRetail, 'Chain-store permit review', 6000);
   set('pol:popups', P.popups, 'Pop-up arts program', popups * 3000);
+  set('pol:svccap', P.serviceCap, 'Service-tenant permit review', 3000);
   set('pol:vacfee', P.vacancyFee, 'Vacant storefront fees', -vacantOld * 2000);
   refreshStats(sim);
   return events;
@@ -361,6 +391,9 @@ export function policyApproval(sim) {
   if (P.legacy) { add('seniors', 2); add('homeowners', 1); }
   if (P.formulaRetail) { add('business', -3); add('homeowners', 2); add('renters', 1); }
   if (P.popups) { add('renters', 2); }
+  if (P.gfDesign) { add('business', -1); add('renters', 1); }
+  if (P.gfDeed) { add('business', -2); add('renters', 1); add('homeowners', 1); }
+  if (P.serviceCap) { add('business', -2); add('homeowners', 1); }
   return o;
 }
 
@@ -383,16 +416,23 @@ export function applicants(sim, lot) {
   const pf = sim.priceF ? sim.priceF() : 1;
   const fee = Math.round(5000 * pf);
   const grantFor = (cap) => { const gap = Math.max(0, lot.ask - cap); return gap > 0 ? Math.round((gap * GAP_RENT * 24 * pf) / 1000) * 1000 : 0; };
-  const indie = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: false, cap: m.indieCap };
+  const raw = rawGF(lot), capped = serviceCapped(sim, lot);
+  // in a raw developer box the independent who wants the space is a gym, salon or spa, and can pay like a chain;
+  // anyone else pays for venting and build-out on top of the rent
+  if (raw && !capped) nm = serviceName(r);
+  for (let t = 0; t < 6 && capped && nm.k === 'hairdresser'; t++) nm = indieName(r);
+  const fit = raw ? 0.15 : 0;
+  const indie = { n: nm.n, k: nm.k, cat: bizCategory(nm.k, nm.n), chain: false, sig: false, cap: raw && !capped ? m.chainCap * 0.97 : m.indieCap - fit };
   indie.grant = grantFor(indie.cap);
   const SIG = ['coffee', 'bakery', 'books', 'boutique', 'gallery', 'records'];
   const st = SIG[Math.floor(r() * SIG.length)];
   const sn = pick(NAMES[st], r()).replace('{P}', pick(PLACE, r())).replace('{N}', String(10 + Math.floor(r() * 90)));
-  const sig = { n: sn, k: KIND_FOR[st], cat: bizCategory(KIND_FOR[st], sn), chain: false, sig: true, cap: m.indieCap - 0.12 };
+  const sig = { n: sn, k: KIND_FOR[st], cat: bizCategory(KIND_FOR[st], sn), chain: false, sig: true, cap: m.indieCap - 0.12 - fit };
   sig.grant = grantFor(sig.cap);
-  const [cn, ck] = pick(CHAINS, r());
-  const chain = !m.prot && lot.ask <= m.chainCap ? { n: cn, k: ck, cat: bizCategory(ck, cn), chain: true, sig: false } : null;
-  return { m, indie, sig, chain, fee, grant: indie.grant, gap: Math.max(0, lot.ask - m.indieCap), months: sim.t - (lot.vacantSince ?? sim.t) };
+  let [cn, ck] = pick(CHAINS, r());
+  for (let t = 0; t < 6 && capped && isService({ n: cn, k: ck }); t++) [cn, ck] = pick(CHAINS, r());
+  const chain = !m.prot && lot.ask <= m.chainCap && !(capped && isService({ n: cn, k: ck })) ? { n: cn, k: ck, cat: bizCategory(ck, cn), chain: true, sig: false } : null;
+  return { m, raw, indie, sig, chain, fee, grant: indie.grant, gap: Math.max(0, lot.ask - m.indieCap), months: sim.t - (lot.vacantSince ?? sim.t) };
 }
 export function signTenant(sim, lot, which) {
   const a = applicants(sim, lot);

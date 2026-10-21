@@ -15,6 +15,7 @@ import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES, applicants, signTenant, inProtectedDistrict, DEALS_PER_MONTH } from './storefronts.js';
 import { explainLot } from './why.js';
 import { retailNow, retailFor, fmtM } from './retail.js';
+import { housingStats, HTYPE, HOUSING_REAL, feasibility, lotHousingType, heightCap } from './housing.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
 import { walkLabel } from './walkscore.js';
@@ -47,6 +48,7 @@ const ICON = {
   zoneR: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5fd35f" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">R</text></svg>',
   zoneC: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5f9fff" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">C</text></svg>',
   zoneI: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#f0c840" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">I</text></svg>',
+  zoneM: '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z" fill="#5f9fff" stroke="#000"/><path d="M2 2h20v9H2z" fill="#5fd35f"/><path d="M2 2h20v20H2z" fill="none" stroke="#000"/><text x="12" y="17" font-size="13" text-anchor="middle" font-weight="bold" font-family="sans-serif">M</text></svg>',
   dezone: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#bbb" stroke="#000"/><path d="M6 6l12 12M18 6L6 18" stroke="#c00" stroke-width="2.5"/></svg>',
   park: '<svg viewBox="0 0 24 24"><rect x="11" y="14" width="2" height="7" fill="#6b4a2b"/><circle cx="12" cy="10" r="7" fill="#3a8a2c" stroke="#000"/></svg>',
   police: '<svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" fill="#3a5fbf" stroke="#000"/><path d="M12 7l1.4 3 3.2.3-2.4 2 .8 3.2L12 14l-3 1.5.8-3.2-2.4-2 3.2-.3z" fill="#f1c232"/></svg>',
@@ -74,6 +76,7 @@ const TOOLS = [
   { id: 'zoneR', label: 'Residential', key: '1', tip: 'Drag to zone residential. Tap again to switch light/dense.' },
   { id: 'zoneC', label: 'Commercial', key: '2', tip: 'Drag to zone commercial. Tap again to switch light/dense.' },
   { id: 'zoneI', label: 'Industrial / R&D', key: '3', tip: 'Drag to zone industrial or lab. Tap again to switch light/dense.' },
+  { id: 'zoneM', label: 'Mixed use', key: 'm', tip: 'Drag to zone mixed use: homes over ground-floor shops. Tap again to switch light (three stories) / dense (up to the height limit).' },
   { id: 'dezone', label: 'De-zone', key: '4', tip: 'Drag to remove zoning from lots.' },
   { id: 'park', label: 'Park', key: 'p', tip: 'Drag over clear land to make a park.' },
   { id: 'police', label: 'Police station', key: '', tip: 'Tap to place a 3×3 police station ($12M).' },
@@ -89,12 +92,12 @@ const TOOLS = [
 // Grouped tools: one toolbar button opens a flyout of its members.
 const GROUPS = [
   { id: 'roads', label: 'Roads', members: ['road', 'curve', 'junction'] },
-  { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneI', 'dezone'] },
+  { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneM', 'zoneI', 'dezone'] },
   { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'firehouse', 'school', 'library', 'clinic', 'hospital', 'museum', 'stadium', 'park'] },
 ];
 const TOOL_NOTE = {
   road: 'Straight, any angle · tap again for avenue', curve: 'Drag, bend, click · tap again for avenue', junction: 'Signals, roundabouts, rotaries',
-  zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', dezone: 'Remove zoning',
+  zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', zoneM: 'Homes over shops · tap again for dense', dezone: 'Remove zoning',
   police: '$12M · 3×3 · cuts crime', fire: '$9M · 3×3 · fewer fires', school: '$45M · 5×5 · raises land value', park: '$25K per tile',
   firehouse: '$7M · 2×2 · fire cover + charm', library: '$18M · 3×3 · land value, approval', clinic: '$14M · 3×3 · seniors & renters',
   hospital: '$60M · 5×5 · big boost, high upkeep', museum: '$30M · 4×4 · land value, business', stadium: '$120M · 7×7 · pride, but traffic',
@@ -203,7 +206,7 @@ export class UI {
     };
     const fileItems = [['Save city', () => this.g.save(true)], ['Load last save', () => this.g.loadSave()], ['New term (restart)', () => this.g.restart()], '-', ['Sound effects on/off', () => { const on = this.g.music.toggleSfx(); this.toast(on ? 'Sound effects on' : 'Sound effects off'); if (on) this.g.music.sfx('drill'); }], ['Re-download map data', () => this.g.restart(true)]];
     const helpItems = [['Tutorial', () => this.startTutorial()], ['Behind the scenes', () => this.behindScenes()], ['Model assumptions', () => this.assumptionsWindow()], '-', ['About Townies', () => this.aboutWindow()]];
-    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Storefronts for lease', () => this.leaseWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
+    const winItems = [['Main Street', () => this.mainStreetWindow()], ['Housing & heights', () => this.housingWindow()], ['Storefronts for lease', () => this.leaseWindow()], ['Watertown Square traffic', () => this.junctionWindow(squareCtl(this.sim))], ['Buses', () => this.busesWindow()], ['Weather', () => this.weatherWindow()], ['A Pattern Language', () => this.patternsWindow()], ['Projects', () => this.projectsWindow()], ['Crews', () => this.crewsWindow()], ['Technology', () => this.techWindow()], ['Comment Section', () => this.commentsWindow()], ['Budget', () => this.budgetWindow()], ['City Council', () => this.councilWindow()], ['Graphs', () => this.graphsWindow()], ['Map', () => this.mapWindow()], ['Newspaper', () => this.newsWindow()], ['Report card', () => this.reportWindow()]];
     this.menuDefs = { file: fileItems, windows: winItems, help: helpItems };
     const ovItems = OVERLAYS.map(([k, l]) => [l, () => this.setOverlay(k)]).concat(['-', ['Street names on/off (N)', () => this.setNames(!this.r.showNames)]]);
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
@@ -699,7 +702,7 @@ export class UI {
         add(
           row('Landmark', names.length ? names.slice(0, 3).join(', ') : sv && sv.name ? sv.name : ''),
           row('Use', (lot.useDesc || ZONE_NAME[lot.zone]) + (lot.auto ? ' — auto-oriented, dead frontage' : '')),
-          row('Zone', `${ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''}${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
+          row('Zone', `${lot.muZ ? 'Mixed use' : ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''} · up to ${heightCap(this.sim, lot)} stories${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
           row('Style', lot.style),
           row('Exterior', exteriorNote(lot, w)),
           row('Built', lot.year ? String(lot.year) : ''),
@@ -707,7 +710,7 @@ export class UI {
           row('  land / bldg', `${fmtMoney(lot.landVal)} / ${fmtMoney(lot.bldgVal + (lot.otherVal || 0))}`),
           row('Lot size', `${fmtInt(lot.area * 10.764)} sq ft`),
           row('Floor area', lot.bldArea > 0 ? `${fmtInt(lot.bldArea * 10.764)} sq ft` : ''),
-          row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents` : ''),
+          row('Homes', lot.units ? `${lot.units} unit${lot.units > 1 ? 's' : ''} · ~${Math.round(lot.units * 2.3 * lot.occ)} residents · ${lot.hNew ? (lot.tenure === 'condo' ? 'new condos' : 'new rentals') : HTYPE[lotHousingType(lot)].toLowerCase()}${lot.affU ? ` · ${lot.affU} affordable` : ''}` : ''),
           row('Jobs', lot.jobs >= 1 ? `~${Math.round(lot.jobs * lot.occ)}` : ''),
           row('Occupancy', `${Math.round(lot.occ * 100)}%${lot.occ < 0.3 ? ' (abandoned)' : ''}`),
           row('Storefronts', lot.storefronts ? `${(lot.sf || []).length} open${lot.vacant ? ` · ${lot.vacant} for lease` : ''} · asking rent ${lot.ask >= 1.005 ? '+' : ''}${Math.round((lot.ask - 1) * 100)}% vs ${s.y0}${lot.greed > 1.15 ? ' (owner holding out)' : ''}` : ''),
@@ -875,8 +878,9 @@ export class UI {
           const cost = a.fee + c.grant;
           return el('button', { class: 'choice', disabled: deals <= 0 || s.funds < cost, onclick: () => go(which) }, el('b', {}, `Sign ${c.n}${c.sig ? ' ★' : ''}`), el('small', {}, `${fmtMoney(cost)}${c.grant ? ` (${fmtMoney(a.fee)} fee + ${fmtMoney(c.grant)} rent grant)` : ' broker’s fee'} · ${what}${reach(c)}`));
         };
+        if (a.raw) box.append(el('small', { class: 'fine' }, 'A developer’s raw ground floor: the gym, salon or spa can pay its ask; anyone else pays for venting and build-out too.'));
         box.append(el('div', { class: 'choices' },
-          opt('indie', a.indie, 'an independent: steady, adds to the street'),
+          opt('indie', a.indie, a.raw ? 'an appointment business: pays the ask, adds little to the street' : 'an independent: steady, adds to the street'),
           opt('sig', a.sig, 'a signature independent: draws people, thinner margins'),
           a.chain ? el('button', { class: 'choice', disabled: deals <= 0, onclick: () => go('chain') }, el('b', {}, `Let ${a.chain.n} in`), el('small', {}, `free · a chain: pays the full ask, adds less to the street${reach(a.chain)}`)) : el('small', { class: 'fine' }, a.m.prot ? 'Chain limits keep chains out here.' : 'No chain can make the numbers work here.')));
         body.append(box);
@@ -911,7 +915,7 @@ export class UI {
       );
       s.policies = s.policies || {};
       for (const [k, p] of Object.entries(POLICIES)) {
-        const rec = s.recurring['pol:' + { vacancyFee: 'vacfee', rentRelief: 'relief', legacy: 'legacy', formulaRetail: 'formula', popups: 'popups' }[k]];
+        const rec = s.recurring['pol:' + { vacancyFee: 'vacfee', rentRelief: 'relief', legacy: 'legacy', formulaRetail: 'formula', popups: 'popups', serviceCap: 'svccap' }[k]];
         const cost = rec ? (rec.monthly < 0 ? `+${fmtMoney(-rec.monthly * 12)}/yr` : `${fmtMoney(rec.monthly * 12)}/yr`) : '';
         const cb = el('input', { type: 'checkbox' });
         cb.checked = !!s.policies[k];
@@ -933,6 +937,67 @@ export class UI {
       }
       if (!(s.sfLog || []).length) log.append(el('p', { class: 'fine' }, 'Nothing yet. Leases turn over every few years.'));
       body.append(log);
+    }, { cls: 'wide' });
+  }
+
+  // ---------------- housing: kinds of homes, the state's 10%, and the rules new buildings follow ----------------
+  housingWindow() {
+    this.win('housing', 'Housing & heights', (body) => {
+      const s = this.sim;
+      const H = housingStats(s), P = H.P, R = HOUSING_REAL;
+      const stat = (label, val, sub) => el('div', { class: 'mstat' }, el('small', {}, label), el('b', {}, val), sub ? el('i', {}, sub) : null);
+      const shi = H.shi;
+      body.append(
+        el('div', { class: 'mstats' },
+          stat('Homes', fmtInt(H.units), `${fmtInt(H.H.mktAdded + H.H.affAdded)} new since you took office`),
+          stat('On the state’s affordable list', `${shi.pct.toFixed(1)}%`, shi.pct >= 10 ? 'past 10%: 40B safe harbor' : `${fmtInt(Math.ceil(0.1 * shi.denom - shi.units))} homes short of 10%`),
+          stat('New affordable homes', fmtInt(H.H.affAdded), `${H.H.filings || 0} 40B filing${H.H.filings === 1 ? '' : 's'}`)
+        ),
+        el('div', { class: 'shibar' }, el('i', { style: `width:${Math.min(100, shi.pct * 6.67).toFixed(1)}%` }), el('b', { style: 'left:66.7%' }), el('span', {}, '10%')),
+        el('p', { class: 'fine' }, 'Below 10%, a developer can file a comprehensive permit under Chapter 40B and build over the town’s zoning; the Zoning Board can shrink it but rarely stop it. A rental building with at least a quarter of its homes affordable counts on the list in full.'),
+        el('h4', {}, 'What kind of homes')
+      );
+      const tbl = el('div', { class: 'htypes' });
+      for (const [k, label] of Object.entries(HTYPE)) {
+        const v = H.by[k] || 0;
+        if (!v && k.startsWith('new')) continue;
+        tbl.append(el('div', { class: 'kvline' }, el('span', {}, label), el('b', {}, `${fmtInt(v)} · ${Math.round((100 * v) / Math.max(1, H.units))}%`)));
+      }
+      body.append(tbl);
+      // the rules
+      body.append(el('h4', {}, 'The rules new buildings follow'));
+      const refresh = () => { s.updateApproval(); this.refreshStatus(); this.wins.get('housing') && this.wins.get('housing').refresh(); };
+      const slider = (label, val, min, max, step, fmt, on, note) => {
+        const out = el('span', { class: 'sval' }, fmt(val));
+        const inp = el('input', { type: 'range', min, max, step, value: val });
+        inp.addEventListener('input', () => { on(+inp.value); out.textContent = fmt(+inp.value); });
+        inp.addEventListener('change', refresh);
+        return el('div', {}, el('div', { class: 'srow2' }, el('label', {}, label), inp, out), note ? el('small', { class: 'fine hnote' }, note) : null);
+      };
+      const probe = (k) => ({ zone: k === 'R' ? ZONE.R : ZONE.C, muZ: k === 'M', dense: k !== 'R', mixed: k === 'M' });
+      const pct = (f) => `${f >= 1 ? '+' : '−'}${Math.abs(Math.round((f - 1) * 100))}%`;
+      const st = (v) => `${v} stor${v === 1 ? 'y' : 'ies'}`;
+      body.append(
+        slider('Inclusionary', P.iz, 0, 0.3, 0.025, (v) => `${(v * 100).toFixed(1)}%`, (v) => (P.iz = v),
+          `Share of homes in buildings of 20 or more that must be affordable (2.5 points less for 6–19). Watertown’s rule: ${R.iz * 100}%. Builders now go ahead ${pct(feasibility(s, probe('M')))} as often as under the real rules.`),
+        slider('Neighborhoods', P.hR, 2, 4, 0.5, st, (v) => (P.hR = v), `Single- and two-family streets. Real: ${R.heights.R} stories (35 ft).`),
+        slider('Apartments & mixed use', P.hM, 3, 10, 1, st, (v) => (P.hM = v), `Dense residential and mixed-use zoning, by right. Real: about ${R.heights.M} (the Square and Pleasant St, with step-backs). Taller fits more homes and makes podium buildings pay; homeowners fight every story.`),
+        slider('Commercial & labs', P.hC, 3, 12, 1, st, (v) => (P.hC = v), `Real: ${R.heights.C} stories (55 ft).`)
+      );
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = !!P.bonus;
+      cb.addEventListener('change', () => { P.bonus = cb.checked; refresh(); });
+      body.append(el('label', { class: 'policy' }, cb, el('span', {}, el('b', {}, 'Affordability height bonus'), el('small', {}, 'One more story by right on apartment and mixed-use lots if that story’s homes are affordable (not next to houses). Watertown Square has one.'))));
+      body.append(el('p', { class: 'fine' }, 'What developers do with the ground floor of a mixed-use building (design rules, rent-restricted storefronts, a limit on gyms and salons) is under Main Street → Policies. ', el('button', { class: 'link', onclick: () => this.mainStreetWindow() }, 'Main Street ›')));
+      if (H.H.log.length) {
+        body.append(el('h4', {}, 'New buildings'));
+        const log = el('div', { class: 'sflog' });
+        for (const e of H.H.log.slice(0, 10)) {
+          const lot = s.w.lots[e.lot];
+          log.append(el('div', { class: 'sfl' }, el('small', {}, e.date), ' ', el('b', {}, e.name), el('small', {}, ` · ${e.units} ${e.condo ? 'condos' : 'rentals'}, ${e.aff} affordable${e.stories ? `, ${Math.round(e.stories)} stories` : ''}${e.shi === e.units ? ' · all count toward 10%' : ''}${e.why ? ` · ${e.why}` : ''}`), lot ? el('button', { class: 'link', onclick: () => this.r.centerOn(lot.cx, lot.cy) }, ' ›') : null));
+        }
+        body.append(log);
+      }
     }, { cls: 'wide' });
   }
 
@@ -1634,7 +1699,7 @@ export class UI {
       const r = cv.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    const dragTools = new Set(['bulldoze', 'road', 'curve', 'zoneR', 'zoneC', 'zoneI', 'dezone', 'park', 'develop']);
+    const dragTools = new Set(['bulldoze', 'road', 'curve', 'zoneR', 'zoneC', 'zoneM', 'zoneI', 'dezone', 'park', 'develop']);
     const gridAt = (p) => this.r.screenToGrid(p[0], p[1]);
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('pointerdown', (e) => {
@@ -1798,7 +1863,7 @@ export class UI {
     }
     const tool = this.tool === 'curve' ? 'road' : this.tool;
     let tiles = null;
-    if (/^(zoneR|zoneC|zoneI|dezone|park)$/.test(tool) && this.dragCss && Math.hypot(this.dragCss[1][0] - this.dragCss[0][0], this.dragCss[1][1] - this.dragCss[0][1]) >= 6) tiles = this.r.tilesInScreenRect(this.dragCss[0], this.dragCss[1]);
+    if (/^(zoneR|zoneC|zoneM|zoneI|dezone|park)$/.test(tool) && this.dragCss && Math.hypot(this.dragCss[1][0] - this.dragCss[0][0], this.dragCss[1][1] - this.dragCss[0][1]) >= 6) tiles = this.r.tilesInScreenRect(this.dragCss[0], this.dragCss[1]);
     if (tool === 'bulldoze' && this.dragCss) {
       // select what you see: a tap takes what's drawn under it (a tall building in front wins); a drag takes the
       // tiles inside the rectangle you drew on screen, not a diamond that reaches past it
@@ -1809,7 +1874,7 @@ export class UI {
     const p = this.sim.plan(tool, a, b, { dense: this.dense, avenue: this.avenue, ctrl: this.tool === 'curve' && this.curveSt ? this.curveSt.ctrl : null, tiles, only: this.bdMode || 'auto' });
     this.plan = p;
     if (!p) { this.r.preview = null; return; }
-    const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneC: 'rgba(95,159,255,0.45)', zoneI: 'rgba(240,200,64,0.5)' }[this.tool] : null;
+    const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneC: 'rgba(95,159,255,0.45)', zoneM: 'rgba(80,190,200,0.5)', zoneI: 'rgba(240,200,64,0.5)' }[this.tool] : null;
     this.r.preview = { tiles: p.tiles, ok: p.ok, color, line: p.line && p.tiles.length > 1 ? p.line : null };
     this.r.needs = true;
     this.updateHint(`${p.msg}${p.cost ? ' · ' + fmtMoney(p.cost) : ''}`);

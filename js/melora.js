@@ -128,7 +128,7 @@ export function meloraOnEdit(sim, tool, lots) {
   const pf = sim.priceF ? sim.priceF() : 1;
   let kind = null;
   if (tool === 'bulldoze' && live.some((l) => l.real && l.year && l.year < 1930)) kind = 'demo';
-  else if ((tool === 'zoneC' || tool === 'zoneI') && live.some((l) => l.bldgZone === ZONE.R || nearHomes(sim, l))) kind = 'rezone';
+  else if ((tool === 'zoneC' || tool === 'zoneI' || tool === 'zoneM') && live.some((l) => l.bldgZone === ZONE.R || nearHomes(sim, l))) kind = 'rezone';
   else if (tool === 'zoneR' && live.some((l) => l.dense)) kind = 'rezone';
   if (!kind) return;
   const pr = clamp((kind === 'demo' ? 0.15 : 0.1) + 0.4 * (m.steam / 100), 0, 0.6) * (rules(sim) ? 0.7 : 1);

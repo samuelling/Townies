@@ -9,6 +9,7 @@ import { react } from './comments.js';
 import { addShops } from './projects.js';
 import { classifyLot } from './vibrancy.js';
 import { syncBiz } from './storefronts.js';
+import { recordHomes, removeHomes, shiNow, housingPolicy, housingState } from './housing.js';
 
 export function vale(sim) {
   if (!sim.vale) sim.vale = { ambition: 35, wins: 0, losses: 0, homes: 0, chains: 0, legal: 0 };
@@ -65,6 +66,7 @@ export const VALE_FOLLOWUPS = {
     lot.auto = false;
     s.walkDirty = true;
     s.megaprojects = (s.megaprojects || 0) + 1;
+    recordHomes(s, lot, d.homes, { aff: Math.round(d.homes * (d.aff ?? housingPolicy(s).iz)), condo: false, stories: 7, name: d.name, why: 'Vale Harbor' });
     s.recalc();
     s.reassign && s.reassign();
     const v = vale(s);
@@ -73,6 +75,42 @@ export const VALE_FOLLOWUPS = {
     const item = s.news(`${d.name} opens`, `${d.homes.toLocaleString()} apartments over ${d.local + d.chains} storefronts${d.chains > d.local ? ', mostly national names' : ', mostly local'}, and a garage. Preston Vale cuts the ribbon with oversized scissors.`, 'big');
     s.moment && s.moment('ribbon', lot.cx, lot.cy, d.name);
     react(s, 'vale-win', { name: d.name }, item, 3);
+  },
+  // a comprehensive permit (Chapter 40B): rental homes, a quarter of them affordable, over the town's zoning
+  '40b-done': (s, d) => {
+    const lot = s.w.lots[d.id];
+    if (!lot || lot.dead) return;
+    lot.project = null;
+    removeHomes(s, lot);
+    s.develop(lot, 4, ZONE.R);
+    lot.dense = true;
+    lot.locked = 1;
+    for (const id of lot.bldgs) { const b = s.w.bldgs[id]; b.levels = d.stories; b.h = d.stories * 3.1; b.kind = 'apt'; }
+    lot.units = d.homes;
+    lot.dens = 4;
+    lot.code3 = '';
+    lot.auto = false;
+    lot.useDesc = `${d.name}: ${d.homes} rental homes under a comprehensive permit (40B), ${Math.round(d.homes * 0.25)} affordable`;
+    recordHomes(s, lot, d.homes, { aff: Math.round(d.homes * 0.25), condo: false, stories: d.stories, name: d.name, why: 'Chapter 40B' });
+    s.recalc();
+    const item = s.news(`${d.name} opens`, `${d.homes} rental homes, a quarter of them affordable, ${d.stories} stories on a street of two-families. Every one of them counts toward the state's 10%.`, 'big');
+    s.moment && s.moment('ribbon', lot.cx, lot.cy, d.name);
+    react(s, 'new-building', { street: d.street }, item, 3);
+  },
+  '40b-hac': (s, d) => {
+    const v = vale(s);
+    const cost = 300e3 * (s.priceF ? s.priceF() : 1);
+    v.legal += cost;
+    // the state's Housing Appeals Committee upholds most denials only where the town has reached its 10%
+    const p = shiNow(s).pct >= 10 ? 0.15 : 0.8;
+    if (s.rand() < p) {
+      s.apply({ funds: -cost, approval: { homeowners: -3, renters: 1 }, news: [`State overrules the Board on ${d.name}`, 'The Housing Appeals Committee finds the town short of its 10% and orders the permit issued, as filed. The City pays its lawyers anyway.', 'big'] });
+      s.pending.push({ at: s.t + 20, id: '40b-done', data: d });
+      v.wins++;
+    } else {
+      s.apply({ funds: -cost, approval: { homeowners: 2 }, news: [`State upholds denial of ${d.name}`, 'With the town at its 10%, the Housing Appeals Committee sides with the Board.'] });
+      bump(s, -8);
+    }
   },
   'vale-appeal': (s, d) => {
     const v = vale(s);
@@ -103,7 +141,51 @@ export const VALE_FOLLOWUPS = {
   },
 };
 
+// a big lot zoned for houses or a small strip of shops, where the zoning would never allow what he wants
+function pick40b(s) {
+  const c = s.w.lots.filter((l) => !l.dead && l.inTown && !l.project && !l.under && !l.locked && l.area >= 3000 && l.road >= 0 && ((l.zone === ZONE.R && !l.dense && (l.units || 0) <= 4) || (l.zone === ZONE.C && (l.dens || 0) <= 2 && !(l.sf && l.sf.length))));
+  if (!c.length) return null;
+  c.sort((a, b) => b.area - a.area);
+  const lot = c[Math.floor(s.rand() * Math.min(10, c.length))];
+  const st = streetOf(lot) || (s.w.names[s.w.roadName[lot.road]] || 'Orchard St');
+  const homes = Math.max(40, Math.min(240, Math.round(lot.area / 28)));
+  return { id: lot.id, cx: lot.cx, cy: lot.cy, street: st, homes, stories: 6, name: `${st.replace(/\s+(St|Street|Ave|Avenue|Rd|Road)$/i, '')} Residences`, shi: shiNow(s).pct };
+}
+
 export const VALE_SCENARIOS = [
+  {
+    id: 'vale-40b',
+    cooldown: 30,
+    when: (s) => s.t >= 12 && shiNow(s).pct < 10 && vale(s).ambition >= 30,
+    prep: (s) => pick40b(s),
+    title: (s, c) => `40B on ${c.street}`,
+    text: (s, c) => `Vale Harbor has filed for a comprehensive permit under Chapter 40B: ${c.name}, about ${c.homes} rental homes, a quarter of them affordable, ${c.stories} stories, on a ${c.street} site zoned for nothing of the kind. Only ${c.shi.toFixed(1)}% of Watertown's homes are on the state's subsidized inventory, short of the 10% that would let the Zoning Board say no. Neighbors have already printed lawn signs.`,
+    choices: [
+      { label: 'Negotiate it down', fx: (s, c) => `about ${Math.round(c.homes * 0.8)} homes, 5 stories · Homeowners ↓ · Renters ↑`, run: (s, c) => {
+        const lot = s.w.lots[c.id];
+        if (lot) lot.project = 'vale';
+        vale(s).wins++;
+        housingState(s).filings++;
+        s.pending.push({ at: s.t + 30, id: '40b-done', data: { ...c, homes: Math.round(c.homes * 0.8), stories: 5 } });
+        s.apply({ approval: { homeowners: -2, seniors: -1, renters: 2 }, news: [`Board trims ${c.name}, then approves it`, 'A story comes off, the setbacks grow, and Vale gets his permit. Both sides call it a loss, which may mean it was fair.'] });
+      } },
+      { label: 'Approve it as filed', fx: (s, c) => `${c.homes} homes, ${c.stories} stories, ${Math.round(c.homes * 0.25)} affordable · Homeowners ↓↓ · Renters ↑`, run: (s, c) => {
+        const lot = s.w.lots[c.id];
+        if (lot) lot.project = 'vale';
+        vale(s).wins++;
+        bump(s, 6);
+        housingState(s).filings++;
+        s.pending.push({ at: s.t + 24, id: '40b-done', data: c });
+        s.apply({ approval: { homeowners: -4, seniors: -1, renters: 3 }, news: [`Zoning Board grants permit for ${c.name}`, 'The vote is 3–2. The lawn signs stay up out of spite.'] });
+      } },
+      { label: 'Deny it', fx: 'Homeowners ↑ now · he appeals to the state, and below 10% he usually wins', run: (s, c) => {
+        vale(s).losses++;
+        housingState(s).filings++;
+        s.pending.push({ at: s.t + 16, id: '40b-hac', data: c });
+        s.apply({ approval: { homeowners: 3, seniors: 1, renters: -1 }, news: [`Zoning Board denies ${c.name}`, 'The room applauds. Vale\'s lawyer files the appeal with the state before the meeting ends.'] });
+      } },
+    ],
+  },
   {
     id: 'vale-pitch',
     cooldown: 26,
@@ -124,14 +206,14 @@ export const VALE_SCENARIOS = [
         s.apply({ approval: { business: 3, renters: 1, homeowners: -2, commuters: -2 } });
         react(s, 'vale-pitch', { name: c.name }, item, 3);
       } },
-      { label: 'Counter: local shops, 15% affordable', fx: '−$3M incentive · he might walk', run: (s, c) => {
+      { label: 'Counter: local shops, more affordable', fx: (s) => `−$3M incentive · ${Math.round(100 * housingPolicy(s).iz) + 5}% affordable · he might walk`, run: (s, c) => {
         if (s.rand() < 0.6) {
           const lot = s.w.lots[c.id];
           if (lot) lot.project = 'vale';
           vale(s).wins++;
           bump(s, 5);
-          s.pending.push({ at: s.t + 28, id: 'vale-done', data: { ...c, homes: Math.round(c.homes * 0.9), local: 3, chains: 2 } });
-          s.apply({ funds: -3e6, approval: { renters: 3, business: 1, homeowners: -1 }, news: [`Vale takes the deal on ${c.name}`, 'Smaller garage, local storefronts, 15% affordable. Everyone claims they got what they wanted.'] });
+          s.pending.push({ at: s.t + 28, id: 'vale-done', data: { ...c, homes: Math.round(c.homes * 0.9), local: 3, chains: 2, aff: housingPolicy(s).iz + 0.05 } });
+          s.apply({ funds: -3e6, approval: { renters: 3, business: 1, homeowners: -1 }, news: [`Vale takes the deal on ${c.name}`, 'Smaller garage, local storefronts, more affordable homes than the rule requires. Everyone claims they got what they wanted.'] });
         } else {
           vale(s).losses++;
           bump(s, -10);

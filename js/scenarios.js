@@ -61,9 +61,9 @@ export const TERMS = {
   },
   vibrancy: {
     title: 'The Vibrancy Mandate', years: 5, icon: '☕',
-    blurb: 'The Council wants the Square to feel alive again: coffee, books, galleries, people on the sidewalk at 9 p.m. Raise Vibrancy by 5 points, and keep approval above 45 while you do it.',
+    blurb: 'The Council wants the Square to feel alive again: coffee, books, galleries, people on the sidewalk at 9 p.m. Left alone, Main Street loses a couple of points over five years. Raise Vibrancy by 2 instead, and keep approval above 45 while you do it.',
     goals: [
-      { how: 'Street life comes from open storefronts, especially independents. Fill empty ones (Storefronts for lease), protect the shops at risk (rent relief, the legacy registry), and add homes within a walk of the Square.', spots: [SPOTS.vacant, SPOTS.risk], id: 'vib', label: 'Vibrancy gain', target: 5, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
+      { how: 'Street life comes from open storefronts, especially independents, and people living within a walk of them. Fill empty ones (Storefronts for lease), protect the shops at risk (rent relief, the legacy registry), zone parking lots and car lots near the Square for mixed use with the ground-floor rules on, and consider a Main Street infill project or a plaza.', spots: [SPOTS.vacant, SPOTS.risk], id: 'vib', label: 'Vibrancy gain', target: 2, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}` },
       { how: 'Signature shops are cafés, bakeries, bookshops, boutiques, galleries and record stores. When you sign a tenant, pick the ★ ones; keep rents in reach with rent relief or chain limits.', spots: [SPOTS.vacant, SPOTS.risk], id: 'sig', label: 'Signature shops citywide', target: (s) => (s.scenario.start.sig || 50) + 20, measure: (s) => (s.sfStats ? s.sfStats.sig : 0), fmt: (v) => `${v}` },
     ],
     floor: { approval: 45 },
@@ -87,7 +87,7 @@ export const TERMS = {
   },
   labbust: {
     title: 'The Lab Bust', years: 4, icon: '🧪',
-    blurb: 'The life-science boom is over. Half-empty lab buildings are appealing their assessments and the tax base is wobbling. Keep the budget out of the red every year, keep empty storefronts to about one in twelve (around 34 today), and do it without an override.',
+    blurb: 'The life-science boom is over. Half-empty lab buildings are appealing their assessments and the tax base is wobbling. Keep the budget out of the red every year, keep empty storefronts to about one in nine (around 46 today), and do it without an override. Expect to trim department budgets.',
     setup: (s) => {
       s.demandMod.I = -0.9;
       for (const l of s.w.lots) if (!l.dead && l.zone === 3 && l.dens >= 3) { l.occ *= 0.6; l.baseBldg *= 0.7; }
@@ -100,7 +100,7 @@ export const TERMS = {
     },
     goals: [
       { how: "Watch the Budget: hold off on big projects and new civic buildings, collect fees where you can, and don't let reserves dip below zero at the end of a December.", spots: [], id: 'solvent', label: 'Years ending in the black', target: 4, measure: (s) => s.scenario.blackYears || 0, fmt: (v) => `${v}` },
-      { how: "Sign tenants for empty storefronts (Storefronts for lease), letting chains in where independents can't pay; a vacancy fee pushes landlords to cut their asks.", spots: [SPOTS.vacant], id: 'vac', label: 'Empty storefronts (at most 8%)', target: (s) => Math.round(0.08 * ((s.scenario.start.sf || 373))), measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
+      { how: "Sign tenants for empty storefronts (Storefronts for lease), letting chains in where independents can't pay; a vacancy fee pushes landlords to cut their asks.", spots: [SPOTS.vacant], id: 'vac', label: 'Empty storefronts (at most 11%)', target: (s) => Math.round(0.11 * ((s.scenario.start.sf || 373))), measure: (s) => (s.sfStats ? s.sfStats.vacant : 0), fmt: (v) => `${v}`, max: true },
     ],
     fail: (s) => (s.overrides || 0) > 0 ? 'You asked voters for an override.' : null,
     floor: { approval: 40 },
@@ -117,13 +117,13 @@ export const TERMS = {
   },
   rents: {
     title: "The Rent's Too High", years: 5, icon: '🏷',
-    blurb: 'Word is out that Watertown is "the next Somerville." Landlords on Main St and Mt Auburn St are already asking 30% more. Keep at least 95% of the independent storefronts open over the next five years, and keep the Square as lively as it is today.',
+    blurb: 'Word is out that Watertown is "the next Somerville." Landlords on Main St and Mt Auburn St are already asking 30% more. Keep at least 92% of the independent storefronts open over the next five years, and keep the Square as lively as it is today.',
     setup: (s) => {
-      s.hype = 0.35;
+      s.hype = 0.1; // the buzz is just starting; it builds on its own from here
       for (const l of s.w.lots) if (l.storefronts && !l.dead) l.ask = (l.ask || 1) * 1.3;
     },
     goals: [
-      { how: 'Rents are jumping 30%. Rent relief and the legacy registry buy your independents time, chain limits keep credit tenants out of the Square and Main St, and when a space empties, sign an independent before a chain gets it.', spots: [SPOTS.risk, SPOTS.vacant], id: 'indie', label: 'Independent storefronts', target: (s) => Math.ceil(0.95 * (s.scenario.start.indie || 330)), measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}`, keep: true },
+      { how: 'Rents are jumping 30%. Rent relief and the legacy registry buy your independents time, chain limits keep credit tenants out of the Square and Main St, and when a space empties, sign an independent before a chain gets it.', spots: [SPOTS.risk, SPOTS.vacant], id: 'indie', label: 'Independent storefronts', target: (s) => Math.ceil(0.92 * (s.scenario.start.indie || 330)), measure: (s) => (s.sfStats ? s.sfStats.indie : 0), fmt: (v) => `${v}`, keep: true },
       { how: 'Keep the Square as lively as it is: fill empty storefronts and keep its independents open.', spots: [(s) => SPOTS.vacant(s, true), (s) => SPOTS.risk(s, true)], id: 'vibkeep', label: 'Vibrancy change', target: 0, measure: (s) => s.vibrancy - s.base.vib0, fmt: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`, keep: true },
     ],
     floor: { approval: 40 },

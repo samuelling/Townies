@@ -379,7 +379,7 @@ export class Music {
       drill: () => FX.drill(this, t, Math.min(1.3, 0.45 + 0.04 * n)),
       road: () => FX.road(this, t, n),
       bulldoze: () => FX.bulldoze(this, t, n),
-      zoneR: () => FX.stamp(this, t, 'zoneR'), zoneC: () => FX.stamp(this, t, 'zoneC'), zoneI: () => FX.stamp(this, t, 'zoneI'), dezone: () => FX.stamp(this, t, 'dezone'),
+      zoneR: () => FX.stamp(this, t, 'zoneR'), zoneC: () => FX.stamp(this, t, 'zoneC'), zoneI: () => FX.stamp(this, t, 'zoneI'), zoneM: () => FX.stamp(this, t, 'zoneM'), dezone: () => FX.stamp(this, t, 'dezone'),
       park: () => FX.park(this, t),
       civic: () => FX.civic(this, t),
       ribbon: () => FX.ribbon(this, t),

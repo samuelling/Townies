@@ -9,6 +9,7 @@ import { classifyLot } from './vibrancy.js';
 import { react } from './comments.js';
 import { openShop } from './storefronts.js';
 import { techBuildCostF, techBuildTimeF } from './tech.js';
+import { recordHomes, removeHomes, heightCap } from './housing.js';
 import { meloraOnSubmit, meloraAtHearing, meloraAfterVote, pauseActive } from './melora.js';
 
 const M2 = 256; // m² per tile
@@ -414,6 +415,7 @@ function rebuildInfillLot(sim, p, lot) {
   const touched = [];
   for (const id of lot.bldgs) touched.push(...demolish(w, w.bldgs[id]));
   lot.bldgs = [];
+  removeHomes(sim, lot);
   clearLot(lot);
   lot.zone = ZONE.C;
   lot.mixed = p.t.upper === 'homes';
@@ -440,6 +442,7 @@ function rebuildInfillLot(sim, p, lot) {
   lot.year = sim.y;
   lot.built = sim.t;
   lot.useDesc = 'Mixed use: storefronts with ' + (lot.mixed ? 'apartments' : 'offices') + ' above';
+  if (lot.units > 0) recordHomes(sim, lot, lot.units, { stories: p.t.floors, name: p.name, why: 'Main Street infill' });
   let fr = 0;
   for (const i of lot.tiles) if (w.road[i - 1] || w.road[i + 1] || w.road[i - w.W] || w.road[i + w.W]) fr++;
   const shops = Math.max(1, Math.min(8, Math.round(fr * 1.1)));
@@ -541,6 +544,7 @@ function complete(sim, p) {
       main.tripF = p.t.parking != null ? 0.55 + 0.45 * p.t.parking : 1;
       main.useDesc = PROGRAMS[p.prog].label + (o.affordable ? ` (${o.affordable} affordable homes)` : '');
       main.affordable = o.affordable;
+      if (o.homes) recordHomes(sim, main, o.homes, { aff: o.affordable, nonprofit: !!p.t.nonprofit, condo: false, stories: p.t.floors, name: p.name, why: PROGRAMS[p.prog].label });
       if (o.storefronts) addShops(sim, main, o.localShops, o.chainShops, p.prog === 'mega' && p.t.local >= 50);
       if (p.prog === 'mega') sim.megaprojects = (sim.megaprojects || 0) + 1;
       if (p.prog === 'lab') sim.flags.labs = (sim.flags.labs || 0) + 1;
@@ -559,7 +563,9 @@ function complete(sim, p) {
   }
   // politics of the finished thing
   const ap = {};
-  if (o.affordable) ap.renters = Math.min(6, o.affordable / 15);
+  // (affordable homes move renters for as long as they stand: js/housing.js); taller than the limit took a variance
+  const over = p.t.floors && p.site && w.lots[p.ids[0]] ? p.t.floors - heightCap(sim, w.lots[p.ids[0]]) : 0;
+  if (over > 0 && p.prog !== 'plaza') ap.homeowners = (ap.homeowners || 0) - Math.min(5, 0.8 * over);
   if (p.prog === 'plaza') ap.all = 2;
   if (p.prog === 'infill') { ap.renters = (ap.renters || 0) + 2; ap.homeowners = 1; ap.business = 2; }
   if (p.prog !== 'lab') sim.autoConverted = (sim.autoConverted || 0) + (p.site.auto || 0);

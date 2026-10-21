@@ -171,7 +171,9 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
 }
 
 function boot(state, scen = null) {
+  const seedQ = new URLSearchParams(location.search).get('seed');
   const hooks = {
+    seed: seedQ != null ? +seedQ : null,
     invalidateTiles: (t) => game.renderer && game.renderer.invalidateTiles(t),
     invalidateBuilding: (b) => game.renderer && game.renderer.invalidateBuilding(b),
     invalidateAll: () => game.renderer && game.renderer.invalidateAll(),

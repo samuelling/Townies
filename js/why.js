@@ -1,7 +1,7 @@
 // "Why?": the storefront model's own numbers, put into words. For any lot with storefronts it explains what
 // the landlord is asking and why, what each kind of tenant can afford, how each shop is doing, and the story of
 // what opened and closed here and the reasons, down to the decisions of yours nearby that moved them.
-import { lotMarket, shopMargin, buzzNow } from './storefronts.js';
+import { lotMarket, shopMargin, buzzNow, rawGF } from './storefronts.js';
 import { CFG } from './config.js';
 import { retailLine } from './retail.js';
 
@@ -68,6 +68,8 @@ function affordStory(sim, lot, m) {
   else if (lot.ask <= m.chainCap && !m.prot) lines.push('So when a space empties here, only a chain can afford it.');
   else if (lot.ask <= m.chainCap && m.prot) lines.push('Only a chain could afford it, and the chain-store limits keep chains out, so empty spaces wait for the rent to come down.');
   else lines.push('Nobody can afford it at this rent; the owner will have to come down.');
+  if (rawGF(lot)) lines.push('This is a developer’s ground floor, built deep and without restaurant venting, and priced at the rent the lender underwrote. Gyms, salons, spas and chains can make that work (they don’t live on passers-by); a café or a shop would have to pay for the build-out on top. The ground-floor design rules (Main Street → Policies) change how the next ones are built.');
+  else if (lot.newGF && lot.newGF.deed) lines.push('A new building whose storefronts are deed-restricted near today’s rents, for independents.');
   return lines;
 }
 

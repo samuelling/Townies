@@ -3,6 +3,7 @@ import { TERMS, goalStatus } from './scenarios.js';
 import { autoUse } from './vibrancy.js';
 import { patternsNow } from './patterns.js';
 import { retailNow } from './retail.js';
+import { shiNow, housingState } from './housing.js';
 
 const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 const FLABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
@@ -29,6 +30,7 @@ export function termSnapshot(sim) {
     apl: patternsNow(sim).score,
     walkTrips: sim.streetLife ? sim.streetLife.trips : null,
     shopOut: rt ? rt.out : null, shopFar: rt ? rt.far : null,
+    shi: +shiNow(sim).pct.toFixed(1), affNew: housingState(sim).affAdded,
   };
 }
 
@@ -57,6 +59,8 @@ export function reportCard(sim) {
   const up = (d) => d > 0, down = (d) => d < 0;
   row('Population', a.pop, now.pop, int, up);
   row('Homes', a.units, now.units, int, up);
+  row('Affordable homes built', a.affNew, now.affNew, int, up);
+  row('On the state’s affordable list (%)', a.shi, now.shi, (v) => `${v.toFixed(1)}%`, up);
   row('Jobs', a.jobs, now.jobs, int, up);
   row('Vibrancy', a.vib, now.vib, (v) => v.toFixed(1), up);
   row('Walking trips a day (estimate)', a.walkTrips, now.walkTrips, int, up);

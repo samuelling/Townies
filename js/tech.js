@@ -140,7 +140,7 @@ const HISTORY = [
 ];
 
 export function initTech(sim) {
-  sim.tech = { a: {}, base: {}, stance: {}, arrived: {}, decided: {}, closures: 0, conversions: 0, hubs: 0, bucket: {}, hist: 0 };
+  sim.tech = { a: {}, base: {}, stance: {}, arrived: {}, decided: {}, closures: 0, conversions: 0, hubs: 0, bucket: {}, hist: null };
   fillTech(sim);
   updateEra(sim);
 }
