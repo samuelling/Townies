@@ -14,6 +14,7 @@ import { SPEEDS, DEFAULT_SPEED, REALTIME, cycles, clock, sunHeight } from './day
 import { FACTIONS, FACTION_LABEL, DEPTS, DEPT_LABEL, streetOf } from './sim.js';
 import { POLICIES, applicants, signTenant, inProtectedDistrict, DEALS_PER_MONTH } from './storefronts.js';
 import { explainLot } from './why.js';
+import { retailNow, retailFor, fmtM } from './retail.js';
 import { CAST, react, reactAgenda, neighborQuote } from './comments.js';
 import { INC, DEPTS as CREW_DEPTS, dispatch, incidentStats } from './incidents.js';
 import { walkLabel } from './walkscore.js';
@@ -869,14 +870,15 @@ export class UI {
           this.r.needs = true;
           this.leaseWindow();
         };
+        const reach = (c) => { const r = retailFor(c); return r ? ` · about ${Math.round(r.far * 100)}% of its customers from 8+ km` : ''; };
         const opt = (which, c, what) => {
           const cost = a.fee + c.grant;
-          return el('button', { class: 'choice', disabled: deals <= 0 || s.funds < cost, onclick: () => go(which) }, el('b', {}, `Sign ${c.n}${c.sig ? ' ★' : ''}`), el('small', {}, `${fmtMoney(cost)}${c.grant ? ` (${fmtMoney(a.fee)} fee + ${fmtMoney(c.grant)} rent grant)` : ' broker’s fee'} · ${what}`));
+          return el('button', { class: 'choice', disabled: deals <= 0 || s.funds < cost, onclick: () => go(which) }, el('b', {}, `Sign ${c.n}${c.sig ? ' ★' : ''}`), el('small', {}, `${fmtMoney(cost)}${c.grant ? ` (${fmtMoney(a.fee)} fee + ${fmtMoney(c.grant)} rent grant)` : ' broker’s fee'} · ${what}${reach(c)}`));
         };
         box.append(el('div', { class: 'choices' },
           opt('indie', a.indie, 'an independent: steady, adds to the street'),
           opt('sig', a.sig, 'a signature independent: draws people, thinner margins'),
-          a.chain ? el('button', { class: 'choice', disabled: deals <= 0, onclick: () => go('chain') }, el('b', {}, `Let ${a.chain.n} in`), el('small', {}, 'free · a chain: pays the full ask, adds less to the street')) : el('small', { class: 'fine' }, a.m.prot ? 'Chain limits keep chains out here.' : 'No chain can make the numbers work here.')));
+          a.chain ? el('button', { class: 'choice', disabled: deals <= 0, onclick: () => go('chain') }, el('b', {}, `Let ${a.chain.n} in`), el('small', {}, `free · a chain: pays the full ask, adds less to the street${reach(a.chain)}`)) : el('small', { class: 'fine' }, a.m.prot ? 'Chain limits keep chains out here.' : 'No chain can make the numbers work here.')));
         body.append(box);
       }
     }, { cls: 'wide' });
@@ -900,6 +902,7 @@ export class UI {
         this.vibBreakdown(),
         el('div', { class: 'kvline' }, el('span', {}, 'Walkability where people live'), el('b', {}, `${Math.round(s.walkIndex || 0)} · ${walkLabel(s.walkIndex || 0)}`)),
         this.peerTable(),
+        this.shopperDraw(),
         el('p', { class: 'fine' }, 'Signature independents (coffee, books, boutiques, galleries, bakeries) make a street feel alive and are the first to go when landlords chase the "Watertown is on the rise" rents. Chains and bank branches can pay more, and add less.'),
         el('button', { class: 'btn', onclick: () => this.setOverlay(this.overlay === 'vibrancy' ? 'none' : 'vibrancy') }, this.overlay === 'vibrancy' ? 'Hide vibrancy map' : 'Show vibrancy map'),
         ' ',
@@ -931,6 +934,30 @@ export class UI {
       if (!(s.sfLog || []).length) log.append(el('p', { class: 'fine' }, 'Nothing yet. Leases turn over every few years.'));
       body.append(log);
     }, { cls: 'wide' });
+  }
+
+  // who comes to Watertown to shop, and from how far (estimates; see js/retail.js)
+  shopperDraw() {
+    const s = this.sim;
+    const T = retailNow(s);
+    if (!T || !T.shops) return null;
+    const r0 = s.retail0;
+    const since = (v, v0) => (v0 ? ` · ${v >= v0 ? '+' : '−'}${Math.abs(Math.round((100 * (v - v0)) / v0))}% since you took office` : '');
+    const box = el('div', { class: 'draw' }, el('h4', {}, 'Who comes here to shop'));
+    const kv = (k, v, sub) => el('div', { class: 'kvline' }, el('span', {}, k, sub ? el('small', {}, ' ' + sub) : null), el('b', {}, v));
+    box.append(
+      kv('Spent at Watertown storefronts a year', fmtM(T.sales)),
+      kv('…by people from outside Watertown', `${fmtM(T.out)} (${Math.round((100 * T.out) / T.sales)}%)`, `chains ${fmtM(T.outChain)} · independents ${fmtM(T.outIndie)}${since(T.out, r0 && r0.out)}`),
+      kv('…by people from 8 km or more away', fmtM(T.far), `past plenty of other stores to get here · chains ${fmtM(T.farChain)} · independents ${fmtM(T.farIndie)}${since(T.far, r0 && r0.far)}`)
+    );
+    const list = el('div', { class: 'sflog' });
+    for (const t of T.top.slice(0, 6)) {
+      const lot = s.w.lots[t.lot];
+      list.append(el('div', { class: 'sfl' }, el('b', {}, `${t.n}${t.sig ? ' ★' : ''}`), el('small', {}, ` ${t.chain ? 'chain' : 'independent'} · ${fmtM(t.far)} a year from 8+ km (${Math.round(t.farPct * 100)}% of its sales)`), lot ? el('button', { class: 'link', onclick: () => this.whyWindow(lot) }, ' Why? ›') : null));
+    }
+    box.append(el('small', {}, 'The biggest draws from far away:'), list,
+      el('p', { class: 'fine' }, `Estimates: nobody publishes a store’s sales. A gravity model of where the region’s 2.9 million people shop (2020 Census populations, every comparable store within 25 km from Overture Maps, spending per person by kind of store) splits each store’s customers by distance. ${T.real} of ${T.shops} shops are real stores estimated one by one; the rest take the typical figures for their kind. Watertown is small, so even a pizza place gets most of its customers from the towns next door; what makes a destination is the far draw: the big boxes by sheer size, and one-of-a-kind shops because nothing like them is nearby.`));
+    return box;
   }
 
   rotateTicker() {

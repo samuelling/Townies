@@ -13,6 +13,7 @@ import { computeLotMetrics, developLot, findRoad, demolish, addServiceBuilding, 
 import { frontage, classifyLot } from './vibrancy.js';
 import { walkScore, walkCat } from './walkscore.js';
 import { initStorefronts, storefrontsMonthly, policyApproval } from './storefronts.js';
+import { retailMonthly } from './retail.js';
 import { react, ambient } from './comments.js';
 import { initIncidents, stepIncidents, syncCrews, storm as stormFn, refreshBlocks, incidentPenalty } from './incidents.js';
 import { projectsMonthly } from './projects.js';
@@ -896,6 +897,7 @@ export class Sim {
     projectsMonthly(this);
     computeTransit(this);
     this.storefrontNews(storefrontsMonthly(this));
+    retailMonthly(this);
     computeStreetLife(this);
     techMonthly(this);
     meloraMonthly(this);

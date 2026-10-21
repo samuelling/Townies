@@ -2,6 +2,7 @@
 import { TERMS, goalStatus } from './scenarios.js';
 import { autoUse } from './vibrancy.js';
 import { patternsNow } from './patterns.js';
+import { retailNow } from './retail.js';
 
 const FACTIONS = ['homeowners', 'renters', 'seniors', 'business', 'commuters'];
 const FLABEL = { homeowners: 'Homeowners', renters: 'Renters', seniors: 'Seniors', business: 'Business owners', commuters: 'Commuters' };
@@ -14,6 +15,7 @@ export function termSnapshot(sim) {
   const [sx, sy] = w.start;
   const sq = (w.ctl || []).find((c) => c.id === 'square');
   const sf = sim.sfStats || {};
+  const rt = retailNow(sim);
   return {
     t: sim.t, date: sim.dateStr(), y: sim.y,
     pop: Math.round(sim.pop), units: sim.units, jobs: Math.round(sim.jobs),
@@ -26,6 +28,7 @@ export function termSnapshot(sim) {
     autoConverted: sim.autoConverted || 0,
     apl: patternsNow(sim).score,
     walkTrips: sim.streetLife ? sim.streetLife.trips : null,
+    shopOut: rt ? rt.out : null, shopFar: rt ? rt.far : null,
   };
 }
 
@@ -62,6 +65,8 @@ export function reportCard(sim) {
   row('Signature shops', a.sig, now.sig, int, up);
   row('Chain stores', a.chains, now.chains, int, down);
   row('Empty storefronts', a.vacant, now.vacant, int, down);
+  row('Shopping by out-of-towners a year (estimate)', a.shopOut, now.shopOut, money, up);
+  row('…by shoppers from 8+ km away', a.shopFar, now.shopFar, money, up);
   row('Auto-oriented parcels', a.auto, now.auto, int, down);
   row('Rush-hour delay at the Square (s)', a.sqDelay, now.sqDelay, int, down);
   row('Pattern Language fit (0–100)', a.apl, now.apl, int, up);

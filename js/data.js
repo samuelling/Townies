@@ -224,6 +224,7 @@ export async function fetchGround(path = 'data/ground.bin.gz') {
 }
 // MBTA bus routes, stops and timetables (data/transit.json.gz, built by tools/transit/)
 export const fetchTransit = () => fetchAssessor('data/transit.json.gz');
+export const fetchRetail = () => fetchAssessor('data/retail.json.gz');
 
 export async function loadRawData({ refresh = false, progress = () => {} } = {}) {
   const forceLive = typeof location !== 'undefined' && new URLSearchParams(location.search).has('live');

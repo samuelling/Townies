@@ -1,7 +1,8 @@
 import { CFG } from './config.js';
-import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, fetchGround, kvGet, kvSet, kvDel } from './data.js';
+import { loadRawData, fetchAssessor, fetchLidar, fetchTrees, fetchYards, fetchTransit, fetchRetail, fetchGround, kvGet, kvSet, kvDel } from './data.js';
 import { SHORT_CREDITS } from './credits.js';
 import { setTransitData } from './transit.js';
+import { setRetailData } from './retail.js';
 import { nativeLog, reportError } from './native.js';
 import { buildWorld, applyAssessor, applyLidar, applyTrees, applyYards, applyGround } from './world.js';
 import { Sim } from './sim.js';
@@ -153,6 +154,8 @@ async function start(mode, status, btns, scen = 'sandbox', year = null, preset =
     } catch (e) {}
     // the MBTA's real routes, stops and timetables (optional: without them the buses follow their streets)
     setTransitData(await fetchTransit(), game.world);
+    // estimated store sales and where the customers come from (optional, informational)
+    setRetailData(await fetchRetail(), game.world);
     log('Waking up the City Council…');
     await nextFrame();
     boot(state, mode === 'continue' ? null : scen);

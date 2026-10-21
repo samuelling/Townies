@@ -3,6 +3,7 @@
 // what opened and closed here and the reasons, down to the decisions of yours nearby that moved them.
 import { lotMarket, shopMargin, buzzNow } from './storefronts.js';
 import { CFG } from './config.js';
+import { retailLine } from './retail.js';
 
 const x = (v) => `${v.toFixed(2)}×`;
 const pct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v * 100))}%`;
@@ -88,6 +89,8 @@ function shopStory(sim, lot, s, m) {
     const after = sm.margin - 0.45 * (lot.ask - s.rent);
     lines.push(`Its lease renews in ${s.lease} month${s.lease === 1 ? '' : 's'}, at the owner's asking rent (${pct(lot.ask / s.rent - 1)})${after < 0 ? ': at that rent it would lose money' : ''}.`);
   }
+  const rl = retailLine(lot, s, sim);
+  if (rl) lines.push(rl);
   return { n: s.n, chain: s.chain, sig: s.sig, margin: sm.margin, lines };
 }
 

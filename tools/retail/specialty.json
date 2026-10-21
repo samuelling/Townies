@@ -1,0 +1,10 @@
+{
+  "about": "Watertown's best-known destination food shops, which Overture's categories can't tell from any grocery or bakery. Each market lists the shops and a pattern for recognising their competitors across the region by name or category.",
+  "markets": {
+    "armenian_middle_eastern_food": {
+      "names": ["Arax Market", "Massis Bakery", "Sevan Bakery"],
+      "words": "armenian|lebanese|syrian|persian|iranian|turkish|middle[ _]eastern|mediterranean market|halal|kabob|lahmajun|lamejun|sahag|arax|massis|sevan",
+      "source": "WGBH, 'Want the best authentic Armenian food? Head to Watertown' (2018), https://www.wgbh.org/dining-out/2018/01/16/want-the-best-authentic-armenian-food-head-to-watertown"
+    }
+  }
+}

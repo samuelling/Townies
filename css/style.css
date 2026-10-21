@@ -514,3 +514,6 @@ html { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -w
 .sfl .link { margin-left: 4px; }
 .goalhow { font-size: 12px; margin: 0 0 8px 22px; color: #333; }
 .hudhow { color: #1f4fa8; text-decoration: underline; }
+.draw .kvline { gap: 8px; align-items: baseline; }
+.draw .kvline small { display: block; opacity: 0.75; font-size: 0.85em; }
+.draw > small { display: block; margin-top: 4px; }
