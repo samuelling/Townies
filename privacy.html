@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Townies: privacy and support</title>
+<style>
+  :root { --bg: #c9c9c9; --fg: #111; --card: #e6e6e6; --line: #555; --link: #1f4fa8; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #2a2a2a; --fg: #eee; --card: #383838; --line: #888; --link: #8fb4ff; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+  .card { background: var(--card); border: 1px solid var(--line); box-shadow: 2px 2px 0 var(--line); padding: 16px 20px; margin-bottom: 20px; }
+  h1 { font-size: 22px; letter-spacing: 0.08em; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  a { color: var(--link); }
+  small { opacity: 0.75; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TOWNIES</h1>
+  <p><small>(Water) Townies: a city game set in the real Watertown, Massachusetts.</small></p>
+
+  <div class="card" id="privacy">
+    <h2>Privacy</h2>
+    <p>Townies doesn’t collect, store or share any information about you. There are no accounts, no ads, no analytics and no tracking.</p>
+    <p>Your saved cities stay on your device, in the app’s own storage. The game runs from files inside the app and doesn’t send what you do anywhere. The one exception is the option to refresh the map from live OpenStreetMap data: that asks OpenStreetMap’s public servers for the map of Watertown, and the request contains nothing but the map area. The map and town data it shows are public records and open data, listed under Help → Behind the scenes.</p>
+    <p>If this ever changes, this page will say so first.</p>
+    <p><small>Last updated October 2026.</small></p>
+  </div>
+
+  <div class="card" id="support">
+    <h2>Support</h2>
+    <p>Questions, bugs, or something about Watertown the game gets wrong? Open an issue on <a href="https://github.com/samuelling/Townies/issues">GitHub</a>.</p>
+    <p>You can also play Townies in a browser at <a href="./">this site</a>.</p>
+  </div>
+</main>
+</body>
+</html>
