@@ -212,7 +212,7 @@ export class UI {
     const spItems = SPEEDS.map(([l, icon, ms, cyc], v) => [`${icon}  ${l}${cyc ? ' · day & night' : ''}`, () => this.setSpeed(v)]);
     this.musicBtn = el('button', { class: 'mbtn muted', title: 'Music on/off', onclick: () => this.toggleMusic() }, '♪');
     this.speedBtn = el('button', { class: 'mbtn speedstep', title: 'Speed', onclick: (e) => this.cycleSpeed(e.shiftKey ? -1 : 1) }, '▶');
-    // on phones, where there's no room for the Speed menu, the speed button opens it instead of stepping
+    // the speed button opens the speeds as a dropdown, on the web as in the iOS app
     this.speedMenu = menu('▶', spItems);
     this.speedMenu.className = 'menu m-speedbtn';
     this.speedMenu.firstChild.classList.add('mbtn');

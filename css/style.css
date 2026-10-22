@@ -30,7 +30,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (hover: hover) { .dropdown button:hover { background: var(--accent); color: #fff; } }
 .dropdown button.checked::before { content: '✓'; position: absolute; margin-left: -12px; }
 .dropdown button { position: relative; }
-.m-speedbtn { display: none; }
+.speedstep { display: none; } /* the speed button is a dropdown everywhere, as in the iOS app */
 .m-speedbtn .dropdown { left: auto; right: 0; min-width: 230px; }
 .dropdown hr { border: 0; border-top: 1px solid var(--chrome-lo); margin: 2px 0; }
 .spacer { flex: 1; }
@@ -236,8 +236,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .ticker { width: 100%; padding: 2px 6px; font-size: 11px; }
   .logo { font-size: 12px; margin-right: 4px; }
   .mlabel { padding: 3px 5px; }
-  .menu.m-speed, .speedstep { display: none; }
-  .menu.m-speedbtn { display: block; }
+  .menu.m-speed { display: none; }
   .win, .win.wide { left: 0 !important; right: 0; bottom: 0; top: auto !important; max-width: none; width: 100%; border-radius: 0; }
   .wbody { max-height: 55vh; }
   .win.modal { max-width: none; }
