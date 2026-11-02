@@ -86,7 +86,7 @@ echo "Apple accepted it."
 
 # save everything as encrypted repository secrets
 for R in "${REPOS[@]}"; do
-  say "Saving the secrets to $R…"
+  say "Saving the secrets to ${R}…"
   base64 -i "$TMP/devid.p12" | gh secret set MACOS_CERT_P12 -R "$R"
   printf '%s' "$PW2" | gh secret set MACOS_CERT_PASSWORD -R "$R"
   printf '%s' "$APPLE_ID" | gh secret set NOTARY_APPLE_ID -R "$R"
