@@ -19,12 +19,26 @@ die() { printf '\n\033[31m%s\033[0m\n' "$*"; exit 1; }
 [ "$(uname)" = Darwin ] || die "Run this on your Mac."
 command -v xcrun > /dev/null || die "Install Xcode (or its command-line tools) first: xcode-select --install"
 
-# GitHub's command-line tool, signed in
-if ! command -v gh > /dev/null; then
-  command -v brew > /dev/null || die "Install the GitHub CLI first: https://cli.github.com (or install Homebrew, then rerun)."
-  say "Installing the GitHub command-line tool…"; brew install gh
+# GitHub's command-line tool, signed in. If it isn't installed, fetch GitHub's own build of it (no Homebrew
+# needed), check it against GitHub's published checksums, and keep it in ~/.townies-tools.
+GH=$(command -v gh || true)
+if [ -z "$GH" ]; then
+  DIR="$HOME/.townies-tools"; mkdir -p "$DIR"
+  if [ ! -x "$DIR/gh" ]; then
+    say "Fetching GitHub's command-line tool (from github.com/cli/cli)…"
+    TAG=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p' | head -1)
+    [ -n "$TAG" ] || die "Couldn't reach GitHub to download its command-line tool. Check your connection and rerun."
+    ARCH=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)
+    ZIP="gh_${TAG}_macOS_${ARCH}.zip"
+    curl -fsSL -o "$DIR/$ZIP" "https://github.com/cli/cli/releases/download/v$TAG/$ZIP"
+    curl -fsSL -o "$DIR/checksums.txt" "https://github.com/cli/cli/releases/download/v$TAG/gh_${TAG}_checksums.txt"
+    (cd "$DIR" && grep " $ZIP\$" checksums.txt | shasum -a 256 -c -) || die "The download didn't match GitHub's checksum; not using it."
+    (cd "$DIR" && unzip -oq "$ZIP" && cp "gh_${TAG}_macOS_${ARCH}/bin/gh" gh && rm -rf "$ZIP" checksums.txt "gh_${TAG}_macOS_${ARCH}")
+  fi
+  GH="$DIR/gh"
 fi
-gh auth status > /dev/null 2>&1 || { say "Sign in to GitHub (a browser window opens):"; gh auth login --web --git-protocol https; }
+"$GH" auth status > /dev/null 2>&1 || { say "Sign in to GitHub (a browser window opens; paste the code it shows):"; "$GH" auth login --web --git-protocol https; }
+gh() { "$GH" "$@"; }
 
 # 1. the Developer ID certificate
 find_id() { security find-identity -v -p codesigning | grep '"Developer ID Application' | head -1 | sed -E 's/^[^"]*"(.*)"$/\1/'; }
