@@ -1,13 +1,17 @@
 name: Mac app
 
-# Build Townies.app for the Mac and a disk image (macos/build.sh), check it starts, and keep the dmg as this
-# run's artifact (townies-mac). Signed and notarized when the Developer ID secrets are set (see below);
+# Build Townies.app for the Mac and a disk image (macos/build.sh), check it starts, keep the dmg as this
+# run's artifact (townies-mac), and, on main, put it on the "Townies for Mac" release (tag mac-latest), whose
+# download link megaZINE uses: https://github.com/samuelling/Townies/releases/download/mac-latest/Townies.dmg Signed and notarized when the Developer ID secrets are set (see below);
 # otherwise ad-hoc signed, which opens on any Mac after a right-click › Open the first time.
 on:
   push:
     branches: [main]
     paths: ['macos/**', 'ios/Townies/LocalServer.swift', 'js/**', 'css/**', 'index.html', 'fonts/**', 'data/**', '.github/workflows/macos.yml']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: mac-app
@@ -82,3 +86,17 @@ jobs:
           path: |
             macos/build/Townies.dmg
             shots
+      - name: Publish the dmg on the "Townies for Mac" release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Townies for the Mac (Apple silicon and Intel, macOS 13 or later), built from $(git rev-parse --short HEAD). Open the disk image and drag Townies to Applications."
+          if [ "$HAS_SIGNING" = "true" ]; then NOTES="$NOTES Signed and notarized by Apple."; else NOTES="$NOTES Not notarized: the first time, right-click Townies and choose Open."; fi
+          git tag -f mac-latest && git push -f origin refs/tags/mac-latest
+          if gh release view mac-latest > /dev/null 2>&1; then
+            gh release edit mac-latest --title "Townies for Mac" --notes "$NOTES"
+            gh release upload mac-latest macos/build/Townies.dmg --clobber
+          else
+            gh release create mac-latest macos/build/Townies.dmg --title "Townies for Mac" --notes "$NOTES"
+          fi
