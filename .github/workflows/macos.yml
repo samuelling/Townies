@@ -23,7 +23,8 @@ jobs:
         with:
           fetch-depth: 0
       # Optional: Developer ID signing. Secrets: MACOS_CERT_P12 (base64 of a .p12 with the "Developer ID
-      # Application" certificate and key), MACOS_CERT_PASSWORD, MACOS_SIGN_ID (the certificate's name).
+      # Application" certificate and its key) and MACOS_CERT_PASSWORD. The signing identity and team ID are
+      # read from the certificate.
       - name: Import the Developer ID certificate
         if: env.HAS_SIGNING == 'true'
         env:
@@ -38,20 +39,25 @@ jobs:
           security import $RUNNER_TEMP/cert.p12 -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$PW" "$KC"
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed -E 's/^[^"]*"(.*)"$/\1/')
+          test -n "$ID" || { echo "::error::No Developer ID Application identity in MACOS_CERT_P12"; exit 1; }
+          echo "SIGN_ID=$ID" >> $GITHUB_ENV
+          echo "TEAM_ID=$(echo "$ID" | sed -E 's/.*\(([A-Z0-9]+)\)$/\1/')" >> $GITHUB_ENV
       - name: Build the app and the disk image
-        env:
-          SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
         run: macos/build.sh
-      # Optional: notarization. Secrets: NOTARY_APPLE_ID, NOTARY_PASSWORD (an app-specific password), NOTARY_TEAM_ID.
+      # Notarization (Apple checks the signed app for malware and issues a ticket, stapled to the dmg so it
+      # opens without a warning even offline). Secrets: NOTARY_APPLE_ID (the developer account's Apple ID) and
+      # NOTARY_PASSWORD (an app-specific password for it, from appleid.apple.com).
       - name: Notarize
         if: env.HAS_SIGNING == 'true'
         env:
           APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           APPLE_PW: ${{ secrets.NOTARY_PASSWORD }}
-          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
         run: |
-          xcrun notarytool submit macos/build/Townies.dmg --apple-id "$APPLE_ID" --password "$APPLE_PW" --team-id "$TEAM_ID" --wait
+          xcrun notarytool submit macos/build/Townies.dmg --apple-id "$APPLE_ID" --password "$APPLE_PW" --team-id "$TEAM_ID" --wait --timeout 30m | tee notary.log
+          grep -q "status: Accepted" notary.log || { ID=$(grep -m1 "  id:" notary.log | awk '{print $2}'); xcrun notarytool log "$ID" --apple-id "$APPLE_ID" --password "$APPLE_PW" --team-id "$TEAM_ID" || true; exit 1; }
           xcrun stapler staple macos/build/Townies.dmg
+          spctl -a -vv -t install macos/build/Townies.dmg
       - name: Check the app starts and the game loads
         run: |
           hdiutil attach macos/build/Townies.dmg -mountpoint /Volumes/Townies -nobrowse -quiet
