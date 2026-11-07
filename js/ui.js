@@ -48,6 +48,9 @@ const ICON = {
   zoneR: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5fd35f" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">R</text></svg>',
   zoneC: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#5f9fff" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">C</text></svg>',
   zoneI: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#f0c840" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">I</text></svg>',
+  zoneS: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#ff7fae" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">S</text></svg>',
+  zoneV: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#d88aff" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">E</text></svg>',
+  zoneP: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#3faf5f" stroke="#000"/><text x="12" y="17" font-size="14" text-anchor="middle" font-weight="bold" font-family="sans-serif">P</text></svg>',
   zoneM: '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z" fill="#5f9fff" stroke="#000"/><path d="M2 2h20v9H2z" fill="#5fd35f"/><path d="M2 2h20v20H2z" fill="none" stroke="#000"/><text x="12" y="17" font-size="13" text-anchor="middle" font-weight="bold" font-family="sans-serif">M</text></svg>',
   dezone: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="#bbb" stroke="#000"/><path d="M6 6l12 12M18 6L6 18" stroke="#c00" stroke-width="2.5"/></svg>',
   park: '<svg viewBox="0 0 24 24"><rect x="11" y="14" width="2" height="7" fill="#6b4a2b"/><circle cx="12" cy="10" r="7" fill="#3a8a2c" stroke="#000"/></svg>',
@@ -74,10 +77,13 @@ const TOOLS = [
   { id: 'junction', label: 'Intersection', key: 'j', tip: 'Tap an intersection to compare signals, roundabouts and rotaries with real traffic counts.' },
   { id: 'develop', label: 'Redevelop', key: 'v', tip: 'Drag a box over parcels to plan a redevelopment project.' },
   { id: 'zoneR', label: 'Residential', key: '1', tip: 'Drag to zone residential. Tap again to switch light/dense.' },
-  { id: 'zoneC', label: 'Commercial', key: '2', tip: 'Drag to zone commercial. Tap again to switch light/dense.' },
-  { id: 'zoneI', label: 'Industrial / R&D', key: '3', tip: 'Drag to zone industrial or lab. Tap again to switch light/dense.' },
+  { id: 'zoneS', label: 'Retail', key: '2', tip: 'Drag to zone retail: shops, restaurants and services along the street. Tap again to switch light (one story) / dense (two).' },
+  { id: 'zoneC', label: 'Commercial', key: '3', tip: 'Drag to zone commercial: offices. Tap again to switch light/dense.' },
+  { id: 'zoneI', label: 'Industrial & labs', key: '4', tip: 'Drag to zone industrial or lab. Tap again to switch light/dense.' },
+  { id: 'zoneV', label: 'Civic & educational', key: '5', tip: 'Drag to reserve land for schools, libraries and City buildings: no developer can build there, and City buildings placed on it cost a quarter less.' },
+  { id: 'zoneP', label: 'Recreational', key: '6', tip: 'Drag to zone recreational: open land becomes park ($25,000 a tile); built lots are held for recreation, so no developer can rebuild them.' },
   { id: 'zoneM', label: 'Mixed use', key: 'm', tip: 'Drag to zone mixed use: homes over ground-floor shops. Tap again to switch light (three stories) / dense (up to the height limit).' },
-  { id: 'dezone', label: 'De-zone', key: '4', tip: 'Drag to remove zoning from lots.' },
+  { id: 'dezone', label: 'De-zone', key: '0', tip: 'Drag to remove zoning from lots.' },
   { id: 'park', label: 'Park', key: 'p', tip: 'Drag over clear land to make a park.' },
   { id: 'police', label: 'Police station', key: '', tip: 'Tap to place a 3×3 police station ($12M).' },
   { id: 'fire', label: 'Fire station', key: '', tip: 'Tap to place a 3×3 fire station ($9M).' },
@@ -92,12 +98,12 @@ const TOOLS = [
 // Grouped tools: one toolbar button opens a flyout of its members.
 const GROUPS = [
   { id: 'roads', label: 'Roads', members: ['road', 'curve', 'junction'] },
-  { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneC', 'zoneM', 'zoneI', 'dezone'] },
+  { id: 'zone', label: 'Zones', members: ['zoneR', 'zoneS', 'zoneC', 'zoneM', 'zoneI', 'zoneV', 'zoneP', 'dezone'] },
   { id: 'civic', label: 'Civic buildings', members: ['police', 'fire', 'firehouse', 'school', 'library', 'clinic', 'hospital', 'museum', 'stadium', 'park'] },
 ];
 const TOOL_NOTE = {
   road: 'Straight, any angle · tap again for avenue', curve: 'Drag, bend, click · tap again for avenue', junction: 'Signals, roundabouts, rotaries',
-  zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', zoneM: 'Homes over shops · tap again for dense', dezone: 'Remove zoning',
+  zoneR: 'Homes · tap again for dense', zoneC: 'Shops & offices · tap again for dense', zoneI: 'Industry & labs · tap again for dense', zoneM: 'Homes over shops · tap again for dense', zoneS: 'Shops & restaurants · tap again for dense', zoneV: 'Reserved for schools & City buildings', zoneP: 'Parks, fields & playgrounds', dezone: 'Remove zoning',
   police: '$12M · 3×3 · cuts crime', fire: '$9M · 3×3 · fewer fires', school: '$45M · 5×5 · raises land value', park: '$25K per tile',
   firehouse: '$7M · 2×2 · fire cover + charm', library: '$18M · 3×3 · land value, approval', clinic: '$14M · 3×3 · seniors & renters',
   hospital: '$60M · 5×5 · big boost, high upkeep', museum: '$30M · 4×4 · land value, business', stadium: '$120M · 7×7 · pride, but traffic',
@@ -268,7 +274,7 @@ export class UI {
     this.sInc = el('button', { class: 'sinc', title: 'Open problems around town. Tap for Crews.', onclick: () => this.crewsWindow() });
     this.sVib = el('button', { class: 'svib', title: 'Vibrancy: street life within walking distance of homes. Tap for Main Street.', onclick: () => this.mainStreetWindow() });
     this.sAppr = el('button', { class: 'sappr', onclick: () => this.councilWindow() });
-    this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Commercial, Industrial' });
+    this.rci = el('canvas', { class: 'rci', width: 54, height: 40, title: 'Demand: Residential, Retail (shops), Commercial (offices), Industrial & labs' });
     this.ticker = el('button', { class: 'ticker', onclick: () => (this.tickerMode === 'c' ? this.commentsWindow() : this.newsWindow()) });
     this.tickerFlip = 0;
     clearInterval(this.tickerTimer);
@@ -520,13 +526,13 @@ export class UI {
     g.fillStyle = '#000';
     g.fillRect(0, 19, 54, 1);
     const d = s.demand || { R: 0, C: 0, I: 0 };
-    [['R', '#5fd35f'], ['C', '#5f9fff'], ['I', '#f0c840']].forEach(([k, c], j) => {
-      const v = clamp(d[k], -1, 1) * 18;
+    [['R', '#5fd35f'], ['S', '#ff7fae'], ['C', '#5f9fff'], ['I', '#f0c840']].forEach(([k, c], j) => {
+      const v = clamp(d[k] ?? d.C ?? 0, -1, 1) * 18;
       g.fillStyle = c;
-      g.fillRect(4 + j * 17, v > 0 ? 19 - v : 20, 12, Math.abs(v) || 1);
+      g.fillRect(3 + j * 13, v > 0 ? 19 - v : 20, 10, Math.abs(v) || 1);
       g.fillStyle = '#000';
       g.font = 'bold 8px sans-serif';
-      g.fillText(k, 7 + j * 17, v > 0 ? 38 : 8);
+      g.fillText(k, 5 + j * 13, v > 0 ? 38 : 8);
     });
     this.refreshIncidents();
     const n = s.newsLog[0];
@@ -702,7 +708,7 @@ export class UI {
         add(
           row('Landmark', names.length ? names.slice(0, 3).join(', ') : sv && sv.name ? sv.name : ''),
           row('Use', (lot.useDesc || ZONE_NAME[lot.zone]) + (lot.auto ? ' — auto-oriented, dead frontage' : '')),
-          row('Zone', `${lot.muZ ? 'Mixed use' : ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''} · up to ${heightCap(this.sim, lot)} stories${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
+          row('Zone', `${lot.muZ ? 'Mixed use' : lot.zone === ZONE.C ? (lot.retailZ ? 'Retail' : 'Commercial (offices)') : ZONE_NAME[lot.zone]}${lot.dense ? ' · dense' : ''} · up to ${heightCap(this.sim, lot)} stories${lot.zoning ? ` (city district ${lot.zoning})` : ''}`),
           row('Style', lot.style),
           row('Exterior', exteriorNote(lot, w)),
           row('Built', lot.year ? String(lot.year) : ''),
@@ -1699,7 +1705,7 @@ export class UI {
       const r = cv.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    const dragTools = new Set(['bulldoze', 'road', 'curve', 'zoneR', 'zoneC', 'zoneM', 'zoneI', 'dezone', 'park', 'develop']);
+    const dragTools = new Set(['bulldoze', 'road', 'curve', 'zoneR', 'zoneS', 'zoneC', 'zoneM', 'zoneI', 'zoneV', 'zoneP', 'dezone', 'park', 'develop']);
     const gridAt = (p) => this.r.screenToGrid(p[0], p[1]);
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('pointerdown', (e) => {
@@ -1863,7 +1869,7 @@ export class UI {
     }
     const tool = this.tool === 'curve' ? 'road' : this.tool;
     let tiles = null;
-    if (/^(zoneR|zoneC|zoneM|zoneI|dezone|park)$/.test(tool) && this.dragCss && Math.hypot(this.dragCss[1][0] - this.dragCss[0][0], this.dragCss[1][1] - this.dragCss[0][1]) >= 6) tiles = this.r.tilesInScreenRect(this.dragCss[0], this.dragCss[1]);
+    if (/^(zone[RSCMIVP]|dezone|park)$/.test(tool) && this.dragCss && Math.hypot(this.dragCss[1][0] - this.dragCss[0][0], this.dragCss[1][1] - this.dragCss[0][1]) >= 6) tiles = this.r.tilesInScreenRect(this.dragCss[0], this.dragCss[1]);
     if (tool === 'bulldoze' && this.dragCss) {
       // select what you see: a tap takes what's drawn under it (a tall building in front wins); a drag takes the
       // tiles inside the rectangle you drew on screen, not a diamond that reaches past it
@@ -1874,7 +1880,7 @@ export class UI {
     const p = this.sim.plan(tool, a, b, { dense: this.dense, avenue: this.avenue, ctrl: this.tool === 'curve' && this.curveSt ? this.curveSt.ctrl : null, tiles, only: this.bdMode || 'auto' });
     this.plan = p;
     if (!p) { this.r.preview = null; return; }
-    const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneC: 'rgba(95,159,255,0.45)', zoneM: 'rgba(80,190,200,0.5)', zoneI: 'rgba(240,200,64,0.5)' }[this.tool] : null;
+    const color = this.tool.startsWith('zone') && p.ok ? { zoneR: 'rgba(95,211,95,0.45)', zoneS: 'rgba(255,127,174,0.5)', zoneC: 'rgba(95,159,255,0.45)', zoneM: 'rgba(80,190,200,0.5)', zoneI: 'rgba(240,200,64,0.5)', zoneV: 'rgba(216,138,255,0.5)', zoneP: 'rgba(63,175,95,0.5)' }[this.tool] : null;
     this.r.preview = { tiles: p.tiles, ok: p.ok, color, line: p.line && p.tiles.length > 1 ? p.line : null };
     this.r.needs = true;
     this.updateHint(`${p.msg}${p.cost ? ' · ' + fmtMoney(p.cost) : ''}`);

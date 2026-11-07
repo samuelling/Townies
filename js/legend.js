@@ -1,6 +1,6 @@
 // Legends for the map overlays: what each colour means, in units a person can interpret.
 import { CFG, SERVICES, ZONE_NAME } from './config.js';
-import { rampColor, walkColor, vibColor, ZONE_RGB, GROWTH_RGB } from './sim.js';
+import { rampColor, walkColor, vibColor, ZONE_RGB, RETAIL_RGB, MIXED_RGB, GROWTH_RGB } from './sim.js';
 
 const rgba = (c) => `rgba(${c[0]},${c[1]},${c[2]},${((c[3] ?? 255) / 255).toFixed(2)})`;
 const sample = (fn, a, b, n = 12) => Array.from({ length: n + 1 }, (_, k) => fn(a + ((b - a) * k) / n));
@@ -88,7 +88,9 @@ export function legendFor(sim, mode) {
       };
     case 'zones':
       return {
-        title: 'Zoning', items: [1, 2, 3, 4, 5].map((z) => ({ color: rgba([...ZONE_RGB[z], 230]), label: ZONE_NAME[z] })).concat([{ color: 'rgba(80,80,80,0.7)', label: 'Streets' }]),
+        title: 'Zoning',
+        items: [[ZONE_RGB[1], 'Residential'], [RETAIL_RGB, 'Retail'], [ZONE_RGB[2], 'Commercial (offices)'], [MIXED_RGB, 'Mixed use'], [ZONE_RGB[3], ZONE_NAME[3]], [ZONE_RGB[4], ZONE_NAME[4]], [ZONE_RGB[5], ZONE_NAME[5]]]
+          .map(([c, label]) => ({ color: rgba([...c, 230]), label })).concat([{ color: 'rgba(80,80,80,0.7)', label: 'Streets' }]),
         note: 'Solid = dense zoning; faint = light.',
       };
     case 'mission':

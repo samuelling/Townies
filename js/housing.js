@@ -143,6 +143,28 @@ export function initHousing(sim) {
   housingPolicy(sim);
   housingState(sim);
   for (const l of sim.w.lots) if (!l.dead && l.mixed && l.zone === ZONE.C) l.muZ = true;
+  splitCommercial(sim);
+}
+
+// Commercial zoning in two kinds: retail (shops, restaurants and services at street level) and offices. The
+// town's commercial parcels start as whichever they hold: storefronts or a shop building make them retail.
+export function splitCommercial(sim) {
+  if (sim.zsplit) return;
+  sim.zsplit = 1;
+  const w = sim.w;
+  for (const l of w.lots) {
+    if (l.dead || l.zone !== ZONE.C || l.muZ) continue;
+    const kinds = l.bldgs.map((id) => w.bldgs[id]).filter((b) => b && b.alive).map((b) => b.kind);
+    const shopB = kinds.filter((k) => k === 'shop').length, officeB = kinds.filter((k) => k === 'office' || k === 'lab').length;
+    if ((l.storefronts || 0) > 0 || l.shops || shopB > officeB || (!kinds.length && (l.auto || l.hist === 'parking'))) l.retailZ = true;
+  }
+}
+// which market a lot's zoning answers to: R, S (retail), C (offices), I, or M (mixed use)
+export function zoneKey(lot) {
+  if (lot.muZ) return 'M';
+  if (lot.zone === ZONE.R) return 'R';
+  if (lot.zone === ZONE.C) return lot.retailZ ? 'S' : 'C';
+  return 'I';
 }
 
 // The market put up a building (sim.buildLot calls this right after the walls go up): hold it to the height
@@ -169,6 +191,17 @@ export function shapeNewBuilding(sim, lot) {
       b.awning = null;
       b.roof = 'flat';
       b.h = b.levels * 3.3;
+    } else if (lot.zone === ZONE.C && lot.retailZ) {
+      // retail zoning: a one- or two-story shop building, storefronts along the street
+      b.kind = 'shop';
+      b.levels = Math.min(cap, lot.dense ? 2 : 1);
+      b.h = b.levels * 4;
+      b.awning = null;
+    } else if (lot.zone === ZONE.C && b.kind === 'shop') {
+      // office zoning: offices, not shops
+      b.kind = 'office';
+      b.levels = Math.min(cap, Math.max(2, b.levels));
+      b.h = b.levels * 3.6;
     } else if (b.levels > cap) {
       b.levels = cap;
       b.h = cap * 3.1;
@@ -205,6 +238,7 @@ export function newGroundFloor(sim, lot) {
 
 // monthly: the state's 10% line
 export function housingMonthly(sim) {
+  splitCommercial(sim); // saves from before retail and office zoning were split
   const H = housingState(sim), pct = shiNow(sim).pct;
   if (pct >= 10 && !H.safe) {
     H.safe = true;

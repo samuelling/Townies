@@ -26,7 +26,13 @@ export const CFG = {
 };
 
 export const ZONE = { NONE: 0, R: 1, C: 2, I: 3, CIVIC: 4, PARK: 5 };
-export const ZONE_NAME = ['Unzoned', 'Residential', 'Commercial', 'Industrial / R&D', 'Civic / exempt', 'Open space'];
+export const ZONE_NAME = ['Unzoned', 'Residential', 'Commercial', 'Industrial & labs', 'Civic & educational', 'Recreational'];
+// commercial zoning comes in two kinds: retail (shops and restaurants at street level, lot.retailZ) and
+// offices; mixed use (lot.muZ) is commercial zoning with homes above the shops
+export const RETAIL_COLOR = '#ff7fae';
+export const MIXED_COLOR = '#50bec8';
+// what each zoning brush paints: [zone, kind]
+export const ZONE_TOOLS = { zoneR: [1, ''], zoneS: [2, 'retail'], zoneC: [2, 'office'], zoneM: [2, 'mixed'], zoneI: [3, ''], zoneV: [4, ''], zoneP: [5, ''], dezone: [0, ''] };
 export const ZONE_COLOR = ['#888', '#5fd35f', '#5f9fff', '#f0c840', '#d88aff', '#3faf5f'];
 
 export const COVER = { GRASS: 0, PARK: 1, WOOD: 2, PAVED: 3, CEMETERY: 4, SPORT: 5, WETLAND: 6 };
